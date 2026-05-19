@@ -1,5 +1,6 @@
 // Compose the full PQID whitepaper into a single .docx.
 const fs = require("fs");
+const path = require("path");
 const H = require("./wp_helpers");
 const {
   Document, Packer, Paragraph, TextRun, AlignmentType, LevelFormat,
@@ -124,7 +125,7 @@ const doc = new Document({
   }],
 });
 
-const OUT = "/home/claude/pqid/docs/PQID_Whitepaper.docx";
+const OUT = path.join(__dirname, "PQID_Whitepaper.docx");
 Packer.toBuffer(doc).then((buffer) => {
   fs.writeFileSync(OUT, buffer);
   console.log("Wrote:", OUT, "(" + (buffer.length / 1024).toFixed(1) + " KB)");

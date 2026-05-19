@@ -28,7 +28,7 @@ import statistics
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-sys.path.insert(0, '/home/claude/pqid/python')
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "python"))
 import pqid
 import pqid_fast
 
