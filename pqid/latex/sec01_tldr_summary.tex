@@ -1,0 +1,18 @@
+% ============================================================================
+%  TL;DR
+% ============================================================================
+\section*{TL;DR}
+\addcontentsline{toc}{section}{TL;DR}
+
+\textsf{PQID} is a 41-byte, lexicographically-sortable identifier designed to be useful for the next thirty years of distributed systems. It pairs a 48-bit millisecond timestamp with 256 bits of cryptographically-strong randomness --- the smallest random field that retains 128 bits of effective security under Grover's quantum search algorithm \citep{grover1996}. A version byte and a 16-bit per-millisecond counter sit between them. Two variants of the format share the same wire layout: \textbf{Standard} (variant \code{0x01}) for centralized generation against a wall clock, and \textbf{Hybrid Logical Clock} (variant \code{0x02}) for distributed systems where causal ordering across nodes matters \citep{kulkarni2014hlc}.
+
+PQID encodes to \textbf{55 characters} of canonical Base64URL \citep{rfc4648} or \textbf{66 characters} of human-typable Crockford Base32 \citep{crockford}. Both encodings round-trip to identical 41-byte binary values, and binary sort and Crockford ASCII sort both reflect generation time. (Canonical Base64URL preserves byte order only when compared as bytes --- its alphabet ordering does not match ASCII codepoint order, so consumers that need a textual column to sort by time should use Crockford or sort the underlying bytes.) The 55-character Base64URL form fits comfortably in URL paths, JSON, headers, and database primary-key columns; the Crockford form is meant for human transcription, log lines, CLI tools, and any column where lexicographic text sort must reflect generation time.
+
+The format runs at over \textbf{2.1 million IDs/second per thread} in C, C++, Rust, and Java on a 2.10\,GHz x86-64 core, and at over 4.6\,M IDs/sec in Go. The bottleneck across every implementation is the OS CSPRNG, not PQID's own logic. Time-sortedness across consecutive IDs is 100\% by construction, matching ULID \citep{ulid} and beating UUIDv4 \citep{rfc4122}, UUIDv7 \citep{rfc9562}, and KSUID \citep{ksuid}.
+
+This document is the canonical reference for PQID v1: the wire format, the rationale for every numeric choice, when to use each variant, how to implement generators correctly, the security model, the distributed-systems model, detailed comparisons against UUIDv4, UUIDv7, ULID, KSUID, and Snowflake, and \textbf{eight reference implementations} (Python, Go, Rust, TypeScript, C, C++, Java, and a CPython extension) with verified benchmark data.
+
+\begin{calloutinfo}[The million-node regime]
+At the scales now emerging in frontier-AI training clusters and globally-distributed inference fleets, PQID is the only published format whose collision math, coordination model, causal-ordering semantics, and post-quantum margins all hold simultaneously. UUIDv4 fails on collision math (the 122-bit random field is undersized for trillions of identifiers per training run). UUIDv7 fails on intra-millisecond sort guarantees (RFC 9562 §6.2 permits implementations that randomize within a ms) and on causal ordering across geographically-distributed nodes. ULID and KSUID fail on entropy. Snowflake \citep{snowflake} fails on coordination requirements. Part \ref{sec:ai-scale} makes this case in detail.
+\end{calloutinfo}
+

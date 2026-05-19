@@ -1,0 +1,23 @@
+% ============================================================================
+%  Part XII: Future Work
+% ============================================================================
+\section{Future Work}
+\label{sec:future}
+
+PQID v1 is meant to be a stable, deployable specification. The directions sketched here could become v2 or v3 if real use cases demand them; none are part of v1.
+
+\textbf{ML-DSA signed variant (deferred).} An earlier draft included an embedded post-quantum signature using ML-DSA \citep{fips204}. It was dropped because the smallest ML-DSA signature ($\sim$3{,}300 bytes for ML-DSA-44) is two orders of magnitude larger than the identifier itself, and embedding a signature in the identifier conflates identification with authentication. A future variant \code{0x03} may revisit this with a more compact scheme (e.g., a hash-based MAC keyed off a shared secret).
+
+\textbf{Time-authority variant.} A variant whose timestamp is signed by a trusted time authority (e.g., Roughtime \citep{roughtime}, an RFC 3161 TSA \citep{rfc3161}) would eliminate the timestamp-tampering concern for compliance-sensitive use cases. The signature would live outside the 41-byte container with the identifier carrying a reference.
+
+\textbf{Hierarchical PQID.} A future variant could repurpose part of the random tail to carry a derivation hash that encodes parent--child relationships --- e.g., a child trace span's PQID derived from its parent's. Cost: reduced effective entropy in the tail. Benefit: implicit hierarchy without a separate parent-pointer field.
+
+\textbf{Compressed-encoding variant.} For storage-constrained use cases that don't need text encoding, a future variant could specify a more compact binary encoding (e.g., 39 bytes by repurposing 16 bits of the random tail). If storage is dominant, KSUID at 20 bytes already fills this niche.
+
+\textbf{IETF standardization.} PQID is currently a community specification. Filing an Internet-Draft and seeking IETF review for eventual RFC status is the natural next step; the path through the Identifiers area (alongside RFC 9562) takes 18--36 months and is contingent on community uptake.
+
+\textbf{Native database support.} Several major database engines (PostgreSQL, MySQL, SQLite, BigQuery, Snowflake) added native UUIDv7 column types in 2024--2026. A natural next step is to seek similar native PQID support: a 41-byte/55-char column type, prefix-locality index optimizations, accessor functions for timestamp/variant/counter, and a generator function that avoids the application-side round-trip.
+
+\textbf{Hardware acceleration.} The bulk of generation cost is the CSPRNG syscall. Offloading to a hardware RNG (\code{RDRAND}/\code{RDSEED}, Intel SGX, AMD SEV, vectorized HRNGs) can drive generation rates above the syscall floor for workloads where the CSPRNG is genuinely the bottleneck.
+
+\textbf{Library certification.} For deployments that need confidence a third-party PQID implementation conforms to the spec, a community-run test-vector suite and conformance-checker tool would let conformant implementations be listed on a registry.

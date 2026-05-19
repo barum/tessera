@@ -1,0 +1,135 @@
+% ============================================================================
+%  Appendices
+% ============================================================================
+\appendix
+
+\section{Test Vectors}
+\label{app:test-vectors}
+
+These test vectors are normative. A conformant implementation MUST decode the encoded forms and recover the listed binary forms; conversely, encoding the listed binary forms MUST produce the listed encoded forms.
+
+\subsection*{Vector 1: Standard variant}
+
+Inputs:
+\begin{itemize}
+  \item Timestamp: \code{1700000000000} (2023-11-14T22:13:20Z), hex \code{0x018BCFE56800}
+  \item Variant: \code{0x01}
+  \item Counter: \code{0x0042}
+  \item Random tail: 32 bytes of \code{0xAA} (synthetic, for test purposes)
+\end{itemize}
+
+Binary form (41 bytes, hex):
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize,frame=single]
+01 8B CF E5 68 00  01  00 42  AA AA AA AA AA AA AA AA
+                                AA AA AA AA AA AA AA AA
+                                AA AA AA AA AA AA AA AA
+                                AA AA AA AA AA AA AA AA
+\end{lstlisting}
+
+Base64URL: \code{AYvP5WgAAQBCqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo}
+
+Crockford Base32: \code{06EFZWB80020960NAJD1KAA9D40MAANMVAR50W2KEHRA8AKQGEN9D8AKQGEN9D80}
+
+\subsection*{Vector 2: HLC variant}
+
+Inputs:
+\begin{itemize}
+  \item Logical timestamp: \code{1700000000123} (2023-11-14T22:13:20.123Z), hex \code{0x018BCFE5687B}
+  \item Variant: \code{0x02}
+  \item Counter: \code{0x0001}
+  \item Random tail: 32 bytes of \code{0x55} (synthetic)
+\end{itemize}
+
+Binary form (41 bytes, hex):
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize,frame=single]
+01 8B CF E5 68 7B  02  00 01  55 55 55 55 55 55 55 55
+                                55 55 55 55 55 55 55 55
+                                55 55 55 55 55 55 55 55
+                                55 55 55 55 55 55 55 55
+\end{lstlisting}
+
+\section{Quick Reference Card}
+\label{app:quickref}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{ll}
+\toprule
+\textbf{Property} & \textbf{Value} \\
+\midrule
+Total size                  & 41 bytes \\
+Timestamp width             & 48 bits (ms since Unix epoch) \\
+Variant byte                & offset 6, \code{0x01} (Std) or \code{0x02} (HLC) \\
+Counter width               & 16 bits, big-endian \\
+Random tail width           & 256 bits (32 bytes) \\
+Base64URL length            & 55 chars (no padding) \\
+Crockford Base32 length     & 66 chars (no padding) \\
+Time range                  & through year 10889 (8{,}919-year forward) \\
+Classical PQ security       & 128 bits \\
+Quantum (Grover) security   & 128 bits (second-preimage) \\
+HLC drift bound             & 60{,}000 ms (configurable) \\
+Max counter step            & 16 (random in [1,16]) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Example PQIDs (Same Millisecond)}
+\label{app:examples}
+
+The following 12 Crockford-encoded PQIDs were generated within a single millisecond by the reference Python implementation. They sort lexicographically in generation order, and each decodes to a valid 41-byte binary value.
+
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+06KFJ7QJ9G05A1MM2P0V0PMR9P5K3T8MR2X8R7P98E0J3HVD3FX1A0
+06KFJ7QJ9G05B6CKBC1H7VPNYW3GR4ZP9V9HG7VEP59G7Q9PPQ4540
+06KFJ7QJ9G05C2NSXQRH9F4G3X1KZWY7M0YN6QZJP9YVTXSCRA0DC0
+06KFJ7QJ9G05D9P25KZRX5Y4PCJ09KX7Q4FY1A1S6E5MGE7AQEJK40
+06KFJ7QJ9G05ECPM8VWF55XF8MV9MNFP5TGQAW3RT8M8DSPGQAY200
+06KFJ7QJ9G05F8RHMA8B0VP4XJG9RBWDDM4WMA1AKEPYJW2N0VFV40
+06KFJ7QJ9G05GBQ8WDQM2BCFFXP08AQAFJ7CHFAY7N7KQR1RH88M00
+06KFJ7QJ9G05HC8KFR0GZ4AYC4GBT3K9D9G3Q9JD3MFSCJBAY0RV80
+06KFJ7QJ9G05J78V0F8VEX2MJ4QHFJBCAQNDP3F2GFBKEKWZ9EZ240
+06KFJ7QJ9G05K3MSXQRH9F4G3X1KZWY7M0YN6QZJP9YVTXSCRA0DC0
+06KFJ7QJ9G05MGV5J3KFKR1FCBT3T0SR9XBP06FQS7HJZ4XGB6KX80
+06KFJ7QJ9G05NBYVRG7GW1QXY7CK5R6Q5RPYK9DBSV1KH4SCXY00C0
+\end{lstlisting}
+
+The first 14 characters are identical across all 12 (the timestamp prefix); only the counter and random tail differ. The shared prefix demonstrates the time-clustering property that makes PQID friendly to B-tree indexes.
+
+\section{Glossary of Terms}
+\label{app:glossary}
+
+\textbf{Base32, Base64.} Binary-to-text encoding schemes. Base32 packs 5 bits per character (32-character alphabet); Base64 packs 6 bits per character (64-character alphabet). Defined in RFC 4648.
+
+\textbf{Base64URL.} The URL-and-filename-safe variant of Base64 (RFC 4648 §5), using \code{A--Z}, \code{a--z}, \code{0--9}, \code{-}, \code{\_}. PQID's canonical text encoding.
+
+\textbf{BHT (Brassard--H{\o}yer--Tapp).} A 1997 quantum collision-finding algorithm. Costs $\sim 2^{n/3}$ operations for an $n$-bit space, vs $\sim 2^{n/2}$ classically.
+
+\textbf{Birthday bound.} The expected number of generations before a collision in a random sample. Classically $\sqrt{\pi/2} \cdot 2^{n/2}$ for an $n$-bit space.
+
+\textbf{Crockford Base32.} Douglas Crockford's Base32 alphabet (\code{0--9} then \code{A--Z} minus \code{I/L/O/U}). Case-insensitive on decode, with I/L→1 and O→0 confusables canonicalized. ASCII-sort-preserving.
+
+\textbf{CSPRNG.} Cryptographically Secure Pseudo-Random Number Generator. The OS source PQID generators draw from: \code{getrandom(2)} on Linux, \code{arc4random\_buf(3)} on macOS/BSD, \code{BCryptGenRandom} on Windows.
+
+\textbf{Drift bound.} The maximum amount by which an HLC's logical time may exceed local physical time before generation is rejected. PQID default: 60{,}000 ms.
+
+\textbf{Grover's algorithm.} A 1996 quantum search algorithm that reduces unstructured search from $O(N)$ to $O(\sqrt{N})$. Reduces second-preimage cost on an $n$-bit field from $2^n$ to $2^{n/2}$.
+
+\textbf{HLC (Hybrid Logical Clock).} A clock combining physical time with a logical counter, preserving causal ordering across nodes that exchange clock values. PQID's variant 0x02. \citet{kulkarni2014hlc}.
+
+\textbf{KSUID.} K-Sortable Globally Unique ID. 20-byte time-sortable identifier, 32-bit second timestamp + 128-bit random tail. Segment, 2017.
+
+\textbf{ML-DSA, ML-KEM.} NIST's 2024 post-quantum cryptographic standards (FIPS 204 / FIPS 203). Reference points for PQID's 128-bit security target.
+
+\textbf{Post-Quantum Security.} The cryptographic security level retained against quantum-equipped adversaries. For an $n$-bit random field: $n/2$ bits against second-preimage (Grover); $n/3$ against collision (BHT).
+
+\textbf{Second Preimage.} The cost of finding a specific value in a random space (vs any colliding pair). The relevant threat model for identifier formats.
+
+\textbf{Snowflake.} Twitter's 2010 64-bit identifier: 41-bit ms timestamp + 10-bit machine ID + 12-bit sequence. Requires coordinated machine-ID assignment.
+
+\textbf{ULID.} Universally Unique Lexicographically Sortable Identifier. 16-byte time-sortable identifier, 48-bit ms timestamp + 80-bit random tail. Feerasta, 2016.
+
+\textbf{UUIDv4.} Random Universally Unique Identifier (RFC 4122). 122 random bits, no ordering, no time component.
+
+\textbf{UUIDv7.} Time-sortable UUID variant (RFC 9562, 2024). 48-bit ms timestamp + 74 random bits + version + variant marker. Sortable between milliseconds; intra-millisecond ordering is implementation-defined.
+
+\textbf{Variant byte.} Byte at offset 6 of a PQID. \code{0x01} = Standard; \code{0x02} = HLC; other values reserved.

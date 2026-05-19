@@ -1,0 +1,22 @@
+[package]
+name = "pqid"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+getrandom = "0.3"
+base64 = "0.22"
+
+[lib]
+name = "pqid"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bench"
+path = "benches/bench_bin.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+

@@ -1,0 +1,114 @@
+% ============================================================================
+%  Part II: PQID Specification (normative)
+% ============================================================================
+\section{PQID Specification}
+\label{sec:spec}
+
+This part is the normative reference. Implementations that conform to this specification produce and consume identifiers with the byte layout, semantics, and encoding rules described below. Where this document uses RFC 2119 keywords (MUST, SHOULD, MAY), they carry the standard meanings.
+
+\subsection{Wire format}
+
+A PQID is exactly 41 bytes (328 bits), structured as four contiguous fields:
+
+\begin{center}
+\begin{tikzpicture}[
+    field/.style={draw,minimum height=14mm,inner sep=4pt,align=center,font=\small},
+    label/.style={font=\scriptsize\itshape,gray},
+    bytelabel/.style={font=\scriptsize,below=1mm}
+  ]
+  % Field rectangles (widths roughly proportional to bit widths)
+  \node[field, fill=blue!10,    minimum width=24mm] (ts)  at (0,0)    {\textbf{Timestamp}\\48 bits\\6 bytes};
+  \node[field, fill=orange!15,  minimum width=10mm, right=0pt of ts]  (ver) {\textbf{Variant}\\8 bits\\1 byte};
+  \node[field, fill=green!15,   minimum width=14mm, right=0pt of ver] (ctr) {\textbf{Counter}\\16 bits\\2 bytes};
+  \node[field, fill=purple!10,  minimum width=84mm, right=0pt of ctr] (rnd) {\textbf{Random tail}\\256 bits\\32 bytes};
+
+  % Byte offset markers
+  \node[bytelabel] at (ts.south west) {0};
+  \node[bytelabel] at (ts.south east) {6};
+  \node[bytelabel] at (ver.south east) {7};
+  \node[bytelabel] at (ctr.south east) {9};
+  \node[bytelabel] at (rnd.south east) {41};
+
+  % Total span brace
+  \draw[decorate,decoration={brace,amplitude=4pt}, gray]
+    ($(ts.north west)+(0,2mm)$) -- ($(rnd.north east)+(0,2mm)$)
+    node[midway,above=4pt,font=\small\itshape] {41 bytes total --- 55 chars in Base64URL --- 66 chars in Crockford Base32};
+\end{tikzpicture}
+\end{center}
+
+\textbf{Field semantics}:
+\begin{description}
+  \item[Timestamp (offsets 0--5).] Big-endian unsigned 48-bit integer, milliseconds since the Unix epoch (1970-01-01T00:00:00Z). The 48-bit field provides $2^{48}$ ms $\approx$ 8{,}919 years of forward range, sufficient through the year 10889.
+  \item[Variant (offset 6).] Single byte. \code{0x01} = Standard (wall-clock); \code{0x02} = HLC. Other values are reserved and MUST be rejected by conformant decoders.
+  \item[Counter (offsets 7--8).] Big-endian unsigned 16-bit integer. For Standard, the counter is incremented within a single millisecond by a small random step (1--16); for HLC, it is the HLC logical counter.
+  \item[Random tail (offsets 9--40).] 32 bytes from a cryptographically-strong random source. The full 256 bits provide $2^{128}$ effective post-quantum security against second-preimage attacks.
+\end{description}
+
+\subsection{Standard variant generation (variant \code{0x01})}
+
+The Standard generation algorithm assumes a wall-clock time source that returns milliseconds since the Unix epoch. It maintains two pieces of per-generator state: \code{last\_ts} (initially 0) and \code{counter} (initially 0).
+
+\begin{lstlisting}[language=Pseudocode,caption={Standard PQID generation},label={lst:gen-std}]
+procedure new_standard():
+    rnd[0..32]  <-  csprng()           # 33 bytes total
+    ts          <-  now_ms()
+    if ts < last_ts:                   # clamp on regression
+        ts  <-  last_ts
+    if ts == last_ts:                  # same ms as previous ID
+        step    <-  1 + (rnd[0] & 0x0F)    # random step in [1, 16]
+        next    <-  counter + step
+        if next > 0xFFFF:              # counter exhausted, spin
+            while now_ms() <= last_ts: pass
+            ts       <-  now_ms()
+            counter  <-  rnd[0]        # reseed at small value
+        else:
+            counter  <-  next
+    else:                              # new ms
+        counter  <-  rnd[0]            # randomized initial offset
+    last_ts <-  ts
+    return  be48(ts) || 0x01 || be16(counter) || rnd[1..32]
+\end{lstlisting}
+
+The random step (rather than a fixed +1 increment) is a deliberate choice. It provides modest unlinkability of consecutive IDs from a single generator while preserving strict monotonicity (the step is always at least 1, so consecutive IDs always increase).
+
+\subsection{HLC variant generation (variant \code{0x02})}
+
+The HLC generator maintains \code{l} (logical time, ms-grained) and \code{c} (logical counter). On every generation, it consults both the local physical clock and any peer HLC observation. Conformant generators MUST reject observations that would push logical time more than 60{,}000 ms ($\Delta_{\max}$) ahead of the local physical clock; this drift bound is configurable but the default is normative.
+
+\begin{lstlisting}[language=Pseudocode,caption={HLC PQID generation (with optional peer observation)},label={lst:gen-hlc}]
+procedure new_hlc(observe = none):
+    rnd[0..31] <- csprng()             # 32 bytes
+    pt         <- now_ms()             # physical time
+    l_old, c_old <- l, c
+    if observe is not none:
+        l_msg, c_msg <- observe
+        if (l_msg > pt) and ((l_msg - pt) > MAX_DRIFT_MS):
+            error  HLC_drift_exceeded
+        l_new <- max(l_old, l_msg, pt)
+        case:
+            l_new == l_old == l_msg:  c_new <- max(c_old, c_msg) + 1
+            l_new == l_old:           c_new <- c_old + 1
+            l_new == l_msg:           c_new <- c_msg + 1
+            default:                  c_new <- 0
+    else:
+        l_new <- max(l_old, pt)
+        c_new <- (c_old + 1) when l_new == l_old, else 0
+    if c_new > 0xFFFF: l_new += 1; c_new <- 0
+    l, c <- l_new, c_new
+    return  be48(l_new) || 0x02 || be16(c_new) || rnd
+\end{lstlisting}
+
+\subsection{Text encodings}
+
+PQID defines two text encodings. Both round-trip cleanly to the same 41-byte binary form and neither uses padding. They differ in their behavior under string sort: Crockford Base32 \citep{crockford} is ASCII-sort-preserving (sorting the strings as text gives generation-time order), while canonical Base64URL is sort-preserving only when its bytes are compared, not when its text is compared as ASCII. The reason is that the RFC 4648 §5 alphabet \citep{rfc4648} (\code{A--Z}, \code{a--z}, \code{0--9}, \code{-}, \code{\_}) maps alphabet values 0..63 to ASCII codepoints that are not monotonic --- \code{A--Z} (65..90), \code{a--z} (97..122), \code{0--9} (48..57), \code{-} (45), \code{\_} (95) interleave, so a string-level ASCII sort produces an order different from the underlying byte order. Crockford's alphabet (\code{0--9} then \code{A--Z} minus \code{I/L/O/U}) is monotonic in ASCII and so its strings sort identically to their decoded bytes. Choose accordingly: machine-to-machine paths use Base64URL and sort the bytes (or simply preserve insertion order); human-facing or text-sorted columns use Crockford.
+
+\subsubsection{Canonical: Base64URL (55 characters)}
+
+RFC 4648 Section 5 (``Base 64 Encoding with URL and Filename Safe Alphabet''), no padding. Encoding 41 bytes produces $\lceil 41 \cdot 8 / 6 \rceil = 55$ characters; the final character carries 4 bits of value plus 2 bits of zero padding. The alphabet is \code{A-Z}, \code{a-z}, \code{0-9}, \code{-}, \code{\_}. Decoders MUST reject inputs whose final character carries non-zero padding bits.
+
+\subsubsection{Human-typable: Crockford Base32 (66 characters)}
+
+Crockford's alphabet (\code{0123456789ABCDEFGHJKMNPQRSTVWXYZ}) and its case-insensitive decoding (with the I/L→1 and O→0 confusables canonicalized) make this encoding suitable for human transcription. Encoding 41 bytes produces $\lceil 41 \cdot 8 / 5 \rceil = 66$ characters; the final character carries 3 bits of value plus 2 bits of zero padding.
+
+The Crockford form is intended for use cases where humans handle the identifier directly: pasted into chat messages, read aloud over phones, written on paper, or appearing in CLI tools where mixed-case is hostile. The Base64URL form is intended for everything else.
+

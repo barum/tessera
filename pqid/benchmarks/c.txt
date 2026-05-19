@@ -1,0 +1,9 @@
+PQID C benchmarks (gcc -O3, single thread)
+------------------------------------------
+
+  Standard generation                      2298592 ops/sec   (   435 ns/op)
+  HLC generation (no observe)              3337763 ops/sec   (   300 ns/op)
+  encode Base64URL                        41932164 ops/sec   (    24 ns/op)
+  encode Crockford Base32                 34122696 ops/sec   (    29 ns/op)
+  decode Base64URL                        44439608 ops/sec   (    23 ns/op)
+  decode Crockford Base32                 34843558 ops/sec   (    29 ns/op)

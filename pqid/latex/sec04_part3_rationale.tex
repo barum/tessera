@@ -1,0 +1,52 @@
+% ============================================================================
+%  Part III: Why Each Choice
+% ============================================================================
+\section{Why Each Choice}
+\label{sec:rationale}
+
+This part walks through every numeric and structural choice in the PQID specification and explains why the choice was made. The intent is to make the reasoning transparent enough that a reader can disagree on first principles rather than wondering whether a number came out of a hat.
+
+\subsection{Why 256 random bits?}
+
+The 256-bit random tail is the largest single design choice in PQID. It is the reason PQID is 41 bytes rather than 16, 20, or 24. The alternative --- 128 random bits, fitting comfortably inside a 24-byte identifier --- gives 64-bit post-quantum security against birthday-bound collisions, which is plenty for almost every classical use case but uncomfortable as a long-term margin in the regime where quantum search is a credible threat. The 256-bit choice is calibrated to give 128 bits of effective post-quantum security against a targeted second-preimage attack, matching the level NIST has designated as adequate for symmetric primitives through 2030 and beyond. Part \ref{sec:security} carries the full Grover/BHT/birthday-bound derivation.
+
+The cost is sixteen extra bytes per identifier --- the same level the cryptographic community has converged on for symmetric primitives like AES-256 \citep{fips197} and SHA-256-based \citep{fips180} hashes. In an era where average HTTP responses are kilobytes and average database row sizes are hundreds of bytes, sixteen bytes is unremarkable.
+
+\subsection{Why a 48-bit millisecond timestamp?}
+
+Forty-eight bits of milliseconds gives roughly 8{,}919 years of forward range. We chose this over 32 bits (which gives 49 days from epoch and would have wrapped already) and 64 bits (which gives 584 million years and would be wasteful). Forty-eight bits is the same width Snowflake \citep{snowflake} uses for its timestamp, the same width UUIDv7 \citep{rfc9562} uses, and the same width ULID \citep{ulid} uses. The cross-format consistency is convenient.
+
+Millisecond granularity is a compromise. Microseconds (or nanoseconds) would let two consecutive IDs from a single generator fall into different timestamp buckets without needing a counter, but cross-machine clock skew is typically larger than a microsecond, so the apparent gain is illusory. Seconds would mean every server in a cluster could collide with every other server every second, and the counter would have to be much larger to recover order. Milliseconds split the difference: per-millisecond collisions across nodes are common but recoverable from the random tail; per-millisecond collisions within a single node are eliminated by the counter.
+
+If you genuinely need finer ordering across nodes --- closer to single-microsecond --- the right tool is the HLC variant, which captures causal ordering through message exchange rather than relying on synchronized clocks. The Standard variant accepts that wall-clock granularity below a millisecond is a fiction and stops there.
+
+\subsection{Why a single-byte variant byte rather than two formats?}
+
+Two design choices were considered for the relationship between Standard and HLC PQIDs: separate identifier formats with separate names, or a single format with a discriminator byte. The variant-byte approach won on three grounds.
+
+\textbf{Wire-format compatibility.} Both variants are 41 bytes, both encode and decode identically, and both are lexicographically sortable. A consumer that has no opinion about whether an identifier was generated against a wall clock or an HLC can treat all PQIDs as opaque sortable bytes; only consumers that care about the timestamp's semantics need to read the variant byte. This minimizes the surface area producers and consumers must agree on.
+
+\textbf{Storage compatibility.} A single column type (\code{CHAR(55)}, \code{BYTEA(41)}, or whatever) holds both variants. Mixing variants in the same table is permitted and the rows still sort correctly across variants --- though we caution users against doing this in practice (see Part \ref{sec:distributed} for why mixing HLC and Standard PQIDs in the same ordered stream introduces some subtle gotchas).
+
+\textbf{Future evolution.} The variant byte gives us a 254-value space for additional generation strategies without changing the wire format. A future signed variant (Part \ref{sec:future}) would be a straightforward \code{0x03}, with the identifier itself unchanged in length and shape.
+
+The cost is one byte per identifier --- a price we are happy to pay for the option value of future evolution and the immediate value of letting Standard and HLC coexist in a single deployable format.
+
+\subsection{Why HLC as a co-equal variant, not an optional extension?}
+
+Hybrid Logical Clocks \citep{kulkarni2014hlc} are not a new idea, but they are conspicuously absent from existing identifier formats. ULID, KSUID, and UUIDv7 all use wall-clock timestamps with no logical-clock layer. A few production systems (CockroachDB \citep{cockroachdb_hlc}, MongoDB cluster time, FoundationDB) have built HLCs internally but not exposed them in their identifier formats.
+
+PQID elevates HLC to a co-equal variant rather than an extension because we believe distributed-systems use cases are common enough --- and HLC's semantic value clear enough --- that the format should make HLC a first-class option. The Standard variant remains the default for the 95\% of cases where wall-clock semantics are what users actually want; the HLC variant is there for the 5\% where causal ordering across nodes is a real requirement.
+
+A subtle but important property of this design: a system can start with Standard PQIDs and upgrade individual generators or services to HLC without rewriting consumers. The wire format is unchanged, the encoding is unchanged, and lexicographic ordering still works. Consumers that want to take advantage of HLC's causal ordering can read the variant byte; consumers that don't can ignore it.
+
+\subsection{Why both Base64URL and Crockford Base32?}
+
+Crockford Base32 exists for two related use cases. The first is human transcription. The Base64URL alphabet contains characters that are visually ambiguous in many fonts (lowercase \code{l} vs uppercase \code{I}, lowercase \code{o} vs digit \code{0}) and is case-sensitive. A user who reads a PQID from a sticker, a paper printout, or a printed receipt and types it back in is significantly more error-prone with Base64URL than with Crockford Base32. Crockford's alphabet drops the ambiguous letters entirely and treats case as insignificant; the I/L/O/0 confusables are explicitly canonicalized by the decoder.
+
+The second use case is text-level lexicographic sort. Crockford's alphabet (\code{0--9} then \code{A--Z} minus \code{I/L/O/U}) is monotonic in ASCII, so sorting Crockford strings as text yields the same order as sorting their decoded bytes. The Base64URL alphabet does not have that property, so a database column whose contents are sorted as text rather than as bytes will not produce time-ordered results from canonical Base64URL strings.
+
+The cost of Crockford is 11 extra characters per identifier (66 vs 55), which we consider acceptable for the use cases that need either property.
+
+Implementations SHOULD support both. Systems that never expose identifiers to humans MAY choose to skip the Crockford encoder; systems that do expose identifiers to humans SHOULD prefer Crockford for those interfaces while continuing to use Base64URL for machine-to-machine transport.
+
