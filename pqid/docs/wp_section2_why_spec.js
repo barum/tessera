@@ -77,6 +77,46 @@ function buildWhy() {
     tx(" at offset 6. Variant 0x01 (Standard) is wall-clock; variant 0x02 (HLC) is hybrid logical clock. The wire format is identical otherwise, so consumers can ignore the variant byte and treat all PQIDs as opaque sortable identifiers. Producers that need causal ordering across nodes opt into HLC; producers that don't get the simpler, lock-free Standard generator."),
   ]));
 
+  out.push(h2("Threat model and what PQID is not"));
+
+  out.push(p([
+    bold("PQID is an identifier, not a cryptographic hash, not a MAC, and not a content fingerprint."),
+    tx(" The post-quantum security claim is narrow, and conflating it with hash-function properties leads to misuse. The math is in Part VI; this section pins down the boundary."),
+  ]));
+
+  out.push(p([
+    bold("Targeted second-preimage is the right threat."),
+    tx(" An attacker who knows a specific target PQID and wants to produce a different generator output equal to it must brute-force the 256-bit random tail. Under Grover that costs Θ(2"),
+    new TextRun({ text: "128", size: 22, superScript: true }),
+    tx(") quantum operations. This is the "),
+    it("only"),
+    tx(" security claim PQID makes for its random field, and it is the one that matters for identifier use cases such as opaque references, audit-log row keys, and capability tokens."),
+  ]));
+
+  out.push(p([
+    bold("Collision resistance is statistical, not cryptographic."),
+    tx(" Two PQIDs colliding (any two, not a specific one) is the BHT regime: Θ(2"),
+    new TextRun({ text: "n/3", size: 22, superScript: true }),
+    tx(") = 2"),
+    new TextRun({ text: "85", size: 22, superScript: true }),
+    tx(" for n=256. UUIDv7's equivalent is 2"),
+    new TextRun({ text: "25", size: 22, superScript: true }),
+    tx("; ULID's is 2"),
+    new TextRun({ text: "27", size: 22, superScript: true }),
+    tx("; KSUID's is 2"),
+    new TextRun({ text: "43", size: 22, superScript: true }),
+    tx(". PQID's 2"),
+    new TextRun({ text: "85", size: 22, superScript: true }),
+    tx(" is large enough that a deployment producing 10⁹ IDs/s would run for 10¹⁸ years before the expected collision count reached 1. But it is not the second-preimage number, and it is not what the headline claim is about."),
+  ]));
+
+  out.push(p([
+    bold("Do not use PQID where you would use a hash."),
+    tx(" PQID is not a SHA-2, SHA-3, BLAKE3, or KMAC substitute. The random tail has no relation to any input the generator has seen; PQID cannot be used to fingerprint content, prove possession of a preimage, derive a key, or authenticate a message. The 128-bit number applies "),
+    it("only"),
+    tx(" to the brute-force-the-random-tail game, not to any of the cryptographic-hash games. If a system needs second-preimage resistance against an adversary who controls the input, use a hash function. If it needs message authentication, use a MAC. If it needs an identifier whose post-quantum brute-force cost is at parity with AES-128, PQID is the right tool."),
+  ]));
+
   out.push(h2("What PQID is Not"));
 
   out.push(p([
