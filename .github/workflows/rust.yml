@@ -29,3 +29,11 @@ jobs:
           for f in ../conformance/vectors/*.json; do
             ./target/release/conformance_runner "$f"
           done
+      - name: Fuzz smoke (60s)
+        working-directory: pqid/rust
+        run: |
+          cargo build --release --bin fuzz_decode
+          timeout 60 ./target/release/fuzz_decode 5000000 || ec=$?
+          if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
+            exit "$ec"
+          fi

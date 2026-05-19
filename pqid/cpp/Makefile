@@ -15,6 +15,12 @@ bench_pqid: bench_pqid.cpp pqid.hpp
 conformance_runner: conformance_runner.cpp pqid.hpp
 	$(CXX) $(CXXFLAGS) conformance_runner.cpp -o conformance_runner $(LDFLAGS)
 
+fuzz_decode: fuzz/fuzz_decode.cpp pqid.hpp
+	$(CXX) $(CXXFLAGS) fuzz/fuzz_decode.cpp -o fuzz_decode $(LDFLAGS)
+
+fuzz: fuzz_decode
+	./fuzz_decode
+
 test: test_pqid
 	./test_pqid
 
@@ -22,6 +28,6 @@ bench: bench_pqid
 	./bench_pqid
 
 clean:
-	rm -f test_pqid bench_pqid conformance_runner
+	rm -f test_pqid bench_pqid conformance_runner fuzz_decode
 
-.PHONY: all test bench clean
+.PHONY: all test bench clean fuzz

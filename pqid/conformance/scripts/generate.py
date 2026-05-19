@@ -221,6 +221,20 @@ def build_invalid_vectors() -> list:
             "input_str": "!" + valid_b64[1:],
             "expected_error": "InvalidEncoding",
         },
+        # Base64URL: non-zero pad bits in the final character.
+        # The encoder writes pad bits = 0, so the final char encodes only
+        # bits [4..0] of (low 4 bits of byte 40, then 2 zero pads). Any
+        # final char with bit 0 or bit 1 set is non-canonical and decoders
+        # MUST reject it. We craft a vector by swapping the final char of
+        # a known-good string for one whose value has bit 0 set.
+        {
+            "name": "b64_nonzero_pad_bits",
+            "op": "validate_invalid",
+            "input_kind": "b64",
+            # Replace the last char with "B" (b64 value 1, bit 0 set).
+            "input_str": valid_b64[:54] + "B",
+            "expected_error": "InvalidEncoding",
+        },
         # Crockford: wrong length.
         {
             "name": "crockford_short",

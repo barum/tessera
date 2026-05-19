@@ -33,3 +33,10 @@ jobs:
           for f in ../conformance/vectors/*.json; do
             python3 conformance_runner.py "$f"
           done
+      - name: Fuzz smoke (60s)
+        working-directory: pqid/cpython
+        run: |
+          timeout 60 python3 fuzz/fuzz_decode.py 1000000 || ec=$?
+          if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
+            exit "$ec"
+          fi

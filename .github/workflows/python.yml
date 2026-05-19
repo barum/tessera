@@ -28,3 +28,11 @@ jobs:
           for f in pqid/conformance/vectors/*.json; do
             python3 pqid/conformance/runners/python_runner.py "$f"
           done
+      - name: Fuzz smoke (60s)
+        run: |
+          cd pqid/python
+          timeout 60 python3 fuzz/fuzz_decode.py 1000000 || ec=$?
+          # exit 124 is the timeout signal — treat as success.
+          if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
+            exit "$ec"
+          fi

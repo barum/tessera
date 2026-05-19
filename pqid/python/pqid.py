@@ -307,10 +307,15 @@ def encode_b64(raw: bytes) -> str:
 
 
 def decode_b64(s: str) -> bytes:
-    """Decode a 55-character Base64URL PQID string."""
+    """Decode a 55-character Base64URL PQID string.
+
+    Enforces canonical form: the final character carries 4 bits of value
+    plus 2 bits of zero padding. Inputs whose pad bits are non-zero are
+    rejected (matching the C reference and spec sec03). Implemented as a
+    re-encode-and-compare check on the stdlib decoder.
+    """
     if len(s) != 55:
         raise InvalidEncoding(f"Base64URL PQID must be 55 chars, got {len(s)}")
-    # Pad back to multiple of 4 for stdlib decoder.
     padded = s + "=" * (-len(s) % 4)
     try:
         raw = base64.urlsafe_b64decode(padded.encode("ascii"))
@@ -318,6 +323,9 @@ def decode_b64(s: str) -> bytes:
         raise InvalidEncoding(f"Base64URL decode failed: {e}") from e
     if len(raw) != PQID_SIZE_BYTES:
         raise InvalidEncoding(f"decoded length {len(raw)} != {PQID_SIZE_BYTES}")
+    # Enforce bijection: non-canonical pad bits mean the input is invalid.
+    if encode_b64(raw) != s:
+        raise InvalidEncoding("non-canonical Base64URL (pad bits non-zero)")
     return raw
 
 

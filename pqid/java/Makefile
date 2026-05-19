@@ -25,7 +25,8 @@ build:
 		$(SRC_MAIN)/StandardGenerator.java \
 		$(SRC_MAIN)/HLCGenerator.java \
 		$(SRC_MAIN)/Bench.java \
-		$(SRC_MAIN)/ConformanceRunner.java
+		$(SRC_MAIN)/ConformanceRunner.java \
+		$(SRC_MAIN)/FuzzDecode.java
 	$(JAVAC) -d $(BUILD) -cp $(BUILD) -implicit:none \
 		$(SRC_TEST)/PqidTest.java
 
@@ -34,6 +35,9 @@ test: build
 
 bench: build
 	$(JAVA) -cp $(BUILD) com.pqid.Bench
+
+fuzz: build
+	$(JAVA) -cp $(BUILD) com.pqid.FuzzDecode
 
 clean:
 	rm -rf $(BUILD)

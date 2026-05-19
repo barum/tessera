@@ -33,3 +33,11 @@ jobs:
           for f in pqid/conformance/vectors/*.json; do
             pqid/c/conformance_runner "$f"
           done
+      - name: Fuzz smoke (60s)
+        run: |
+          cd pqid/c
+          make fuzz_decode
+          timeout 60 ./fuzz_decode 5000000 || ec=$?
+          if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
+            exit "$ec"
+          fi

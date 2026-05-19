@@ -303,7 +303,10 @@ func EncodeBase64URL(raw [SizeBytes]byte) string {
 	return b64enc.EncodeToString(raw[:])
 }
 
-// DecodeBase64URL parses a 55-character Base64URL string.
+// DecodeBase64URL parses a 55-character Base64URL string. The final
+// character carries 4 bits of value plus 2 bits of zero padding; we
+// MUST reject inputs whose pad bits are non-zero (matching the C and
+// Python references and the spec sec03).
 func DecodeBase64URL(s string) ([SizeBytes]byte, error) {
 	var out [SizeBytes]byte
 	if len(s) != EncodedLengthB64 {
@@ -318,6 +321,12 @@ func DecodeBase64URL(s string) ([SizeBytes]byte, error) {
 		return out, fmt.Errorf("%w: decoded %d bytes", ErrInvalidEncoding, len(b))
 	}
 	copy(out[:], b)
+	// Enforce bijection: the encoder produces deterministic output,
+	// and any non-zero pad bits in the final character mean the input
+	// was non-canonical. Re-encode and compare; mismatch => reject.
+	if b64enc.EncodeToString(out[:]) != s {
+		return out, fmt.Errorf("%w: non-canonical Base64URL (pad bits non-zero)", ErrInvalidEncoding)
+	}
 	return out, nil
 }
 

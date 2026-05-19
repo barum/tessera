@@ -29,3 +29,9 @@ jobs:
           for f in ../conformance/vectors/*.json; do
             /tmp/pqid_go_runner "$f"
           done
+      - name: Fuzz smoke (20s each, 3 targets)
+        working-directory: pqid/go
+        run: |
+          go test -run='^$' -fuzz='^FuzzDecode$' -fuzztime=20s .
+          go test -run='^$' -fuzz='^FuzzDecodeBase64URL$' -fuzztime=20s .
+          go test -run='^$' -fuzz='^FuzzDecodeCrockford$' -fuzztime=20s .

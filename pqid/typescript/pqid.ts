@@ -351,6 +351,12 @@ export function decodeBase64URL(s: string): Uint8Array {
   if (bytes.length !== SIZE_BYTES) {
     throw new InvalidEncodingError(`decoded length ${bytes.length} != ${SIZE_BYTES}`);
   }
+  // Enforce canonical form: the final character carries 4 bits of value
+  // plus 2 bits of zero padding. Inputs whose pad bits are non-zero are
+  // rejected (matching the C reference and spec sec03).
+  if (base64url.encode(bytes) !== s) {
+    throw new InvalidEncodingError("non-canonical Base64URL (pad bits non-zero)");
+  }
   return bytes;
 }
 

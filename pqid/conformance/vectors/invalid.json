@@ -56,6 +56,13 @@
     "expected_error": "InvalidEncoding"
   },
   {
+    "name": "b64_nonzero_pad_bits",
+    "op": "validate_invalid",
+    "input_kind": "b64",
+    "input_str": "AYvP5WgAAQABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB",
+    "expected_error": "InvalidEncoding"
+  },
+  {
     "name": "crockford_short",
     "op": "validate_invalid",
     "input_kind": "crockford",

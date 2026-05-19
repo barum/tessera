@@ -22,6 +22,10 @@ path = "benches/bench_bin.rs"
 name = "conformance_runner"
 path = "src/bin/conformance_runner.rs"
 
+[[bin]]
+name = "fuzz_decode"
+path = "src/bin/fuzz_decode.rs"
+
 [profile.release]
 opt-level = 3
 lto = true
