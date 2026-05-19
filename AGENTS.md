@@ -11,7 +11,7 @@ Start with [pqid/README.md](pqid/README.md) for the language tree, then use the 
 
 ## What To Preserve
 - Wire format is fixed at 41 bytes.
-- Variant bytes are `0x01` for Standard and `0x02` for HLC.
+- Variant bytes: `0x01` (Standard), `0x02` (HLC). `0x00` and `0xFF` are **permanently reserved** — MUST be rejected, MUST NOT be assigned. `0x03`–`0xFE` are reserved-future and MUST also be rejected by current decoders.
 - Canonical encodings are Base64URL (55 chars) and Crockford Base32 (66 chars).
 - StandardGenerator is intentionally not internally locked; HLCGenerator must be internally locked.
 - HLC drift handling is part of the contract and must stay bounded at 60 seconds.

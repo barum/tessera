@@ -229,14 +229,15 @@ function buildSpec() {
     [
       ["0x01", "Standard",      "Wall-clock timestamp, ms-scoped monotonic counter. Lock-free per-thread generation."],
       ["0x02", "HLC",           "Hybrid Logical Clock: logical time + counter that captures causality across nodes."],
-      ["0x00, 0x03–0x7F", "Reserved", "Reserved for future PQID variants. Decoders MUST reject these as unknown until a future revision defines them."],
-      ["0x80–0xFF",       "Vendor",   "Reserved for vendor or experimental extensions. Decoders SHOULD reject by default but MAY accept under explicit opt-in."],
+      ["0x00",            "Permanently reserved", "MUST be rejected by decoders. Reserved defensively so zero-filled buffers cannot be confused with valid PQIDs. MUST NOT be assigned in any future revision."],
+      ["0xFF",            "Permanently reserved", "MUST be rejected by decoders. Reserved defensively so all-ones uninitialized memory cannot be confused with valid PQIDs. MUST NOT be assigned in any future revision."],
+      ["0x03–0xFE",       "Reserved for future variants", "MUST be rejected by decoders until a future revision of this specification assigns them."],
     ],
     [1100, 1500, 6760],
   ));
 
   out.push(p([
-    tx("The variant byte is mandatory. Decoders MUST verify the variant before interpreting the rest of the identifier — an unknown variant indicates either corruption or a future format the decoder does not understand, and in either case the safe behavior is to reject."),
+    tx("The variant byte is mandatory. Decoders MUST verify the variant before interpreting the rest of the identifier — an unknown variant indicates either corruption or a future format the decoder does not understand, and in either case the safe behavior is to reject. The permanent reservation of 0x00 and 0xFF gives PQID a small but free defensive property: a 41-byte buffer of all zeroes or all ones cannot accidentally pass validation."),
   ]));
 
   out.push(h3("COUNTER field (16 bits)"));

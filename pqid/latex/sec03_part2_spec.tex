@@ -39,7 +39,13 @@ A PQID is exactly 41 bytes (328 bits), structured as four contiguous fields:
 \textbf{Field semantics}:
 \begin{description}
   \item[Timestamp (offsets 0--5).] Big-endian unsigned 48-bit integer, milliseconds since the Unix epoch (1970-01-01T00:00:00Z). The 48-bit field provides $2^{48}$ ms $\approx$ 8{,}919 years of forward range, sufficient through the year 10889.
-  \item[Variant (offset 6).] Single byte. \code{0x01} = Standard (wall-clock); \code{0x02} = HLC. Other values are reserved and MUST be rejected by conformant decoders.
+  \item[Variant (offset 6).] Single byte.
+    \begin{itemize}
+      \item \code{0x01} = Standard (wall-clock).
+      \item \code{0x02} = HLC (Hybrid Logical Clock).
+      \item \code{0x00} and \code{0xFF} are \textbf{permanently reserved}: they MUST be rejected by conformant decoders and MUST NOT be assigned in any future revision of this specification. These two values are reserved defensively so that PQID buffers cannot be confused with zero-filled or all-ones uninitialized memory.
+      \item \code{0x03}--\code{0xFE} are reserved for future variants. Conformant decoders MUST reject them with an unknown-variant error until they are assigned by a future revision of this specification.
+    \end{itemize}
   \item[Counter (offsets 7--8).] Big-endian unsigned 16-bit integer. For Standard, the counter is incremented within a single millisecond by a small random step (1--16); for HLC, it is the HLC logical counter.
   \item[Random tail (offsets 9--40).] 32 bytes from a cryptographically-strong random source. The full 256 bits provide $2^{128}$ effective post-quantum security against second-preimage attacks.
 \end{description}
