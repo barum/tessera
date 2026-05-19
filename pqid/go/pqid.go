@@ -169,7 +169,9 @@ func (g *HLCGenerator) New(observe *[SizeBytes]byte) ([SizeBytes]byte, error) {
 	lOld, cOld := g.l, g.c
 
 	var lNew int64
-	var cNew uint16
+	// Stage in uint32 so we can detect MAX_COUNTER overflow with an
+	// unconditional post-check (matches the Python and C reference).
+	var cWide uint32
 
 	if observe != nil {
 		lMsg := readTimestamp(observe[:])
@@ -183,31 +185,36 @@ func (g *HLCGenerator) New(observe *[SizeBytes]byte) ([SizeBytes]byte, error) {
 		switch {
 		case lNew == lOld && lNew == lMsg:
 			if cOld > cMsg {
-				cNew = cOld + 1
+				cWide = uint32(cOld) + 1
 			} else {
-				cNew = cMsg + 1
+				cWide = uint32(cMsg) + 1
 			}
 		case lNew == lOld:
-			cNew = cOld + 1
+			cWide = uint32(cOld) + 1
 		case lNew == lMsg:
-			cNew = cMsg + 1
+			cWide = uint32(cMsg) + 1
 		default:
-			cNew = 0
+			cWide = 0
 		}
 	} else {
-		if lOld > pt {
+		// l_new = max(l_old, pt); c_new = c_old+1 iff l_new == l_old else 0.
+		if lOld >= pt {
 			lNew = lOld
-			cNew = cOld + 1
+			cWide = uint32(cOld) + 1
 		} else {
 			lNew = pt
-			cNew = 0
+			cWide = 0
 		}
 	}
 
-	if cNew == 0 && lNew == lOld && cOld == maxCounter {
-		// Edge: counter overflowed. Bump l to make room.
+	// Counter overflow: bump l to make room. Unconditional check (matches
+	// the Python and C reference implementations and the spec pseudocode
+	// in sec03 of the whitepaper).
+	if cWide > uint32(maxCounter) {
 		lNew++
+		cWide = 0
 	}
+	cNew := uint16(cWide)
 
 	g.l, g.c = lNew, cNew
 

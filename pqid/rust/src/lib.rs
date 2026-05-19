@@ -356,7 +356,10 @@ impl HlcGenerator {
         let l_old = self.l;
         let c_old = self.c;
 
-        let (mut l_new, c_new) = if let Some(peer) = observe {
+        // Stage counter in u32 so we can detect MAX_COUNTER overflow with
+        // an unconditional post-check. Matches the Python and C reference
+        // implementations and the spec pseudocode in sec03 of the whitepaper.
+        let (mut l_new, mut c_wide): (i64, u32) = if let Some(peer) = observe {
             let l_msg = read_timestamp(&peer.0);
             let c_msg = peer.counter();
 
@@ -365,26 +368,29 @@ impl HlcGenerator {
             }
 
             let l_new = l_old.max(l_msg).max(pt);
-            let c_new = if l_new == l_old && l_new == l_msg {
-                c_old.max(c_msg).wrapping_add(1)
+            let c_wide: u32 = if l_new == l_old && l_new == l_msg {
+                u32::from(c_old.max(c_msg)) + 1
             } else if l_new == l_old {
-                c_old.wrapping_add(1)
+                u32::from(c_old) + 1
             } else if l_new == l_msg {
-                c_msg.wrapping_add(1)
+                u32::from(c_msg) + 1
             } else {
                 0
             };
-            (l_new, c_new)
-        } else if l_old > pt {
-            (l_old, c_old.wrapping_add(1))
+            (l_new, c_wide)
+        } else if l_old >= pt {
+            // Includes equality: same logical tick as previous event.
+            (l_old, u32::from(c_old) + 1)
         } else {
             (pt, 0)
         };
 
-        // Counter overflow: bump l by 1 ms.
-        if c_new == 0 && l_new == l_old && c_old == MAX_COUNTER {
+        // Counter overflow: bump l to make room.
+        if c_wide > u32::from(MAX_COUNTER) {
             l_new += 1;
+            c_wide = 0;
         }
+        let c_new: u16 = c_wide as u16;
 
         self.l = l_new;
         self.c = c_new;
