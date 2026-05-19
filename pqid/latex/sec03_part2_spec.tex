@@ -77,6 +77,20 @@ procedure new_standard():
 
 The random step (rather than a fixed +1 increment) is a deliberate choice. It provides modest unlinkability of consecutive IDs from a single generator while preserving strict monotonicity (the step is always at least 1, so consecutive IDs always increase).
 
+\subsection{CSPRNG requirements}
+\label{sec:csprng}
+
+The 256-bit random tail is the only field carrying the post-quantum security claim. Conformant implementations MUST therefore use an operating-system-provided cryptographically-strong pseudorandom number generator. The following normative rules apply:
+
+\begin{description}
+  \item[Source.] Generators MUST draw the random tail from one of: \code{getrandom(2)} on Linux 3.17+, \code{arc4random\_buf} or \code{getentropy(3)} on the BSDs and macOS, \code{BCryptGenRandom} on Windows, the language-level wrappers around these (\code{os.urandom}, \code{crypto/rand.Read}, \code{getrandom::fill}, \code{crypto.getRandomValues}, \code{SecureRandom}), or — as a last-resort portable fallback — \code{/dev/urandom}. Generators MUST NOT use a non-cryptographic userspace PRNG (Mersenne Twister, Xoshiro, \code{rand}, etc.) under any circumstance.
+  \item[Failure.] If the CSPRNG returns an error or refuses to produce 32 bytes, the generator MUST surface the error to the caller and MUST NOT emit a PQID. There is no fallback path.
+  \item[Partial reads.] Partial reads (an underlying \code{read()} or \code{getrandom()} returning fewer than 32 bytes) MUST be retried until either 32 bytes are obtained or an unrecoverable error is returned.
+  \item[Independence.] Each PQID's random tail MUST be drawn independently. A generator MAY combine the 32-byte tail with a small additional read (1--2 bytes) used for the counter step in the same syscall as an optimization; this is unrelated to the cryptographic claim and does not weaken it because the OS CSPRNG output is uniform.
+\end{description}
+
+\noindent A test vector cannot directly verify entropy quality, but conformance reviewers SHOULD spot-check each implementation's call site against this list. The current implementations call: \code{os.urandom} (Python), \code{getrandom}/\code{getentropy} (C/C++), \code{crypto/rand.Read} (Go), \code{getrandom::fill} (Rust), \code{crypto.getRandomValues}/\code{randomFillSync} (TypeScript), \code{SecureRandom} (Java), and the underlying C reference (CPython extension).
+
 \subsection{HLC variant generation (variant \code{0x02})}
 
 The HLC generator maintains \code{l} (logical time, ms-grained) and \code{c} (logical counter). On every generation, it consults both the local physical clock and any peer HLC observation. Conformant generators MUST reject observations that would push logical time more than 60{,}000 ms ($\Delta_{\max}$) ahead of the local physical clock; this drift bound is configurable but the default is normative.

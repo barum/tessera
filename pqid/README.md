@@ -109,6 +109,22 @@ cd cpython && python bench_pqid_ext.py
 cd latex && make
 ```
 
+## CSPRNG call sites
+
+Every implementation draws the 32-byte random tail from the OS CSPRNG —
+no userspace PRNG fallback is permitted (see normative §3 in the whitepaper).
+
+| Language    | Call                                                    |
+|-------------|---------------------------------------------------------|
+| Python      | [`os.urandom`](python/pqid.py)                          |
+| C           | `getrandom(2)` on Linux, `getentropy(3)` on Apple/BSD, `/dev/urandom` fallback |
+| C++         | `getrandom(2)` on Linux, `getentropy(3)` on Apple       |
+| Go          | [`crypto/rand.Read`](go/pqid.go)                        |
+| Rust        | [`getrandom::fill`](rust/src/lib.rs)                    |
+| TypeScript  | `node:crypto.randomFillSync` / `crypto.getRandomValues` |
+| Java        | `java.security.SecureRandom`                            |
+| CPython ext | Same as C (links to the C reference)                    |
+
 ## Invariants that hold across every implementation
 
 - **41-byte** layout, big-endian, with the field offsets fixed by [`c/pqid.h`](c/pqid.h).

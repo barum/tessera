@@ -15,6 +15,7 @@ Start with [pqid/README.md](pqid/README.md) for the language tree, then use the 
 - Canonical encodings are Base64URL (55 chars) and Crockford Base32 (66 chars).
 - StandardGenerator is intentionally not internally locked; HLCGenerator must be internally locked.
 - HLC drift handling is part of the contract and must stay bounded at 60 seconds.
+- The 32-byte random tail MUST come from an OS CSPRNG (getrandom / getentropy / BCryptGenRandom / os.urandom / SecureRandom / crypto.getRandomValues / `/dev/urandom`). NO userspace PRNG fallback is permitted. CSPRNG failure surfaces an error and produces no PQID. See `pqid/latex/sec03_part2_spec.tex` §3 CSPRNG requirements.
 
 ## Work Style
 - Use the reference implementations to confirm behavior before changing any other language.

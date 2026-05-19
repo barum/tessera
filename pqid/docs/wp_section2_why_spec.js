@@ -260,8 +260,32 @@ function buildSpec() {
 
   out.push(p([
     tx("Thirty-two bytes drawn from a "),
-    bold("cryptographically-secure pseudorandom number generator"),
-    tx(". On Linux, /dev/urandom or the getrandom(2) syscall. On macOS, SecRandomCopyBytes or arc4random. On Windows, BCryptGenRandom. In Node.js, crypto.randomFillSync. In browsers, crypto.getRandomValues. Implementations MUST NOT use Math.random, rand(), or any non-cryptographic PRNG. Implementations MUST handle CSPRNG failure as a fatal condition — generating a PQID with predictable randomness destroys the entire security argument of the format."),
+    bold("cryptographically-secure pseudorandom number generator (CSPRNG)"),
+    tx(". This is the only field carrying the post-quantum security claim, so the requirements are normative:"),
+  ]));
+
+  out.push(bullet([
+    bold("Source. "),
+    tx("Implementations MUST draw the random tail from one of: getrandom(2) (Linux 3.17+), getentropy(3) or arc4random_buf (BSDs and macOS), BCryptGenRandom (Windows), the language wrappers around these (os.urandom, crypto/rand.Read, getrandom::fill, crypto.getRandomValues, SecureRandom), or — as a last-resort portable fallback — /dev/urandom. Implementations MUST NOT use a non-cryptographic userspace PRNG (Math.random, rand(), Mersenne Twister, Xoshiro, etc.) under any circumstance."),
+  ]));
+
+  out.push(bullet([
+    bold("Failure. "),
+    tx("If the CSPRNG returns an error or refuses to produce 32 bytes, the generator MUST surface the error to the caller and MUST NOT emit a PQID. There is no fallback path."),
+  ]));
+
+  out.push(bullet([
+    bold("Partial reads. "),
+    tx("A read that returns fewer than 32 bytes MUST be retried until either 32 bytes are obtained or an unrecoverable error is returned."),
+  ]));
+
+  out.push(bullet([
+    bold("Independence. "),
+    tx("Each PQID's random tail MUST be drawn independently. A generator MAY combine the 32-byte tail with a small additional read (1–2 bytes) used for the counter step in the same syscall as an optimization; this is unrelated to the cryptographic claim and does not weaken it because the OS CSPRNG output is uniform."),
+  ]));
+
+  out.push(p([
+    tx("The current implementations call: os.urandom (Python), getrandom / getentropy (C and C++), crypto/rand.Read (Go), getrandom::fill (Rust), crypto.getRandomValues / randomFillSync (TypeScript), SecureRandom (Java), and the underlying C reference (CPython extension). A test vector cannot directly verify entropy quality, but conformance reviewers SHOULD spot-check each implementation's call site against the rules above."),
   ]));
 
   out.push(p([
