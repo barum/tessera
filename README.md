@@ -92,7 +92,9 @@ cd pqid/typescript && npm install && npm test
 ```
 
 The full per-language command matrix (including C, C++, Java, CPython extension,
-and how to run a single test) is in [CLAUDE.md](CLAUDE.md).
+and how to run a single test) is in [CLAUDE.md](CLAUDE.md). For benchmark
+methodology and reproduction commands, see
+[pqid/benchmarks/methodology.md](pqid/benchmarks/methodology.md).
 
 ## Contributing
 

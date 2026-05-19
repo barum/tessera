@@ -38,7 +38,7 @@ rust/        no_std-friendly core, `cargo test --release`
 typescript/  Node 18+ / browser, tsc + node test runner
 java/        Plain make-driven build
 cpython/     CPython C extension; mirrors pqid_fast.py's API, not pqid.py's
-benchmarks/  Checked-in bench output, one file per language
+benchmarks/  Checked-in bench output, one file per language (see benchmarks/methodology.md)
 docs/        Whitepaper DOCX-generation pipeline (build_whitepaper.js + wp_* modules)
 latex/       LaTeX source for the typeset whitepaper PDF
 ```
