@@ -344,17 +344,13 @@ func EncodeCrockford(raw [SizeBytes]byte) string {
 			idx++
 		}
 	}
-	// Final partial nibble (3 bits remain after 41*8=328; 328 % 5 = 3).
+	// 41 bytes × 8 = 328 bits → 66 chars × 5 = 330 bits; the final char
+	// carries 3 real bits left-shifted by 2 (low 2 bits are zero padding).
+	// MSB-first throughout, matching the spec (sec03) and conformance vectors.
 	if bits > 0 {
 		out[idx] = crockfordAlphabet[(buf<<(5-uint(bits)))&0x1F]
 		idx++
 	}
-	// We laid bits MSB-first into idx 0..65; the final char encodes the
-	// LOW-order 3 bits left-shifted by 2. To match the Python encoder
-	// (which builds LSB-first then reverses), we need MSB-first throughout.
-	// The loop above already does MSB-first, so out[0..66] is correct
-	// EXCEPT it fills idx 0..65 = 66 chars for 330 bits but we only have 328.
-	// The final char's low 2 bits are zero by construction.
 	return string(out[:EncodedLengthB32])
 }
 

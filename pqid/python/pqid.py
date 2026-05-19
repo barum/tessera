@@ -115,9 +115,13 @@ class StandardGenerator:
             ts = self._last_ts
 
         if ts == self._last_ts:
-            # Same millisecond as previous ID → bump counter with a small
-            # random step so the counter itself isn't predictable from
-            # observed external IDs.
+            # Same millisecond as previous ID: advance by a random step in
+            # {1..16}. The +1 is the monotonicity guarantee; the random
+            # component is a defense-in-depth flourish (it spreads the
+            # counter overflow point over the ms more uniformly than +1
+            # would), but it is NOT the source of unlinkability — that's
+            # the randomized initial offset on each new ms (below) and,
+            # more importantly, the 256-bit random tail.
             step = 1 + (os.urandom(1)[0] & 0x0F)
             self._counter += step
             if self._counter > MAX_COUNTER:
@@ -127,8 +131,11 @@ class StandardGenerator:
                 ts = _now_ms()
                 self._counter = os.urandom(1)[0]
         else:
-            # New ms — randomize the starting offset to make counter values
-            # opaque to outside observers.
+            # New ms — randomize the starting offset (0..255). This avoids
+            # an observable "counter resets to 0 at every ms boundary"
+            # pattern; combined with the 256-bit random tail, it makes
+            # consecutive IDs from one generator unlinkable to anyone who
+            # doesn't already have insider state.
             self._counter = os.urandom(1)[0]
 
         self._last_ts = ts
