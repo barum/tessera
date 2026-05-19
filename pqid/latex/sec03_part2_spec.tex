@@ -93,7 +93,16 @@ The 256-bit random tail is the only field carrying the post-quantum security cla
 
 \subsection{HLC variant generation (variant \code{0x02})}
 
-The HLC generator maintains \code{l} (logical time, ms-grained) and \code{c} (logical counter). On every generation, it consults both the local physical clock and any peer HLC observation. Conformant generators MUST reject observations that would push logical time more than 60{,}000 ms ($\Delta_{\max}$) ahead of the local physical clock; this drift bound is configurable but the default is normative.
+The HLC generator maintains \code{l} (logical time, ms-grained) and \code{c} (logical counter). On every generation, it consults both the local physical clock and any peer HLC observation.
+
+The contract uses two thresholds, distinct in purpose:
+
+\begin{description}
+  \item[Hard outer bound $\Delta_{\max} = 60{,}000$ ms (normative).] Conformant generators MUST reject observations whose logical time exceeds the local physical clock by more than $\Delta_{\max}$. Implementations MUST expose this constant under the name \code{HLC\_MAX\_DRIFT\_MS} (or the language's idiomatic equivalent). $\Delta_{\max}$ is part of the wire contract: a 60-second peer-ahead-of-local observation that one implementation accepts and another rejects is an interoperability bug.
+  \item[Soft alarm threshold $\Delta_{\text{alarm}}$ (configurable, default 1{,}000 ms).] Implementations SHOULD emit a log, metric, or alarm when an observation exceeds $\Delta_{\text{alarm}}$, even if it is still below $\Delta_{\max}$. The default of 1 second captures the operational reality that well-disciplined hosts (NTP, chrony, AWS Time Sync, GCP) maintain sub-100~ms drift; a peer 1~s ahead almost certainly indicates a clock-discipline or NTP-outage problem that an operator should know about, even though the wire format still accepts it. $\Delta_{\text{alarm}}$ is NOT part of the wire contract.
+\end{description}
+
+\noindent The rationale for $\Delta_{\max} = 60$~s: large enough to absorb a brief NTP outage, container time injection, or VM live-migration without breaking valid traffic; small enough that a maliciously advanced peer cannot stamp identifiers a year into the future. The HLC literature (Kulkarni et al.~2014, \S3) explicitly leaves the bound to operators; the CockroachDB and kronos operational practice in production is approximately 500~ms to 1~s. We pick 60~s for the hard bound because the wire-format invariant should tolerate the worst plausible operational event without changing, and we pick 1~s as the default alarm because that's where well-run systems already live.
 
 \begin{lstlisting}[language=Pseudocode,caption={HLC PQID generation (with optional peer observation)},label={lst:gen-hlc}]
 procedure new_hlc(observe = none):

@@ -35,7 +35,11 @@ const (
 	VariantHLC      byte = 0x02
 
 	maxCounter      uint16 = 0xFFFF
-	hlcMaxDriftMS   int64  = 60_000
+	// HLCMaxDriftMS is the normative outer drift bound for HLC observations.
+	// An observation whose logical time exceeds the local physical clock by
+	// more than this is rejected. Spec sec03 / sec:csprng.
+	HLCMaxDriftMS   int64  = 60_000
+	hlcMaxDriftMS          = HLCMaxDriftMS // back-compat alias for internal callers
 
 	// Base64URL canonical encoded length (no padding).
 	EncodedLengthB64 = 55

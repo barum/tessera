@@ -126,8 +126,12 @@ function buildHow() {
   ]));
 
   out.push(p([
-    bold("Drift bound. "),
-    tx("The HLC_MAX_DRIFT_MS constant is the maximum offset by which an observed HLC may exceed the physical clock before the implementation rejects it. The reference implementations use 60,000ms (60 seconds). Without a drift bound, a malicious or buggy peer that sends an HLC value far in the future would force the local HLC to follow, and the local HLC would never recover. With a drift bound, observations beyond the bound are simply rejected, with the assumption that something has gone wrong upstream."),
+    bold("Drift bound (two thresholds). "),
+    tx("The HLC contract uses two thresholds, distinct in purpose. The "),
+    bold("hard outer bound HLC_MAX_DRIFT_MS = 60,000 ms"),
+    tx(" is normative: conformant generators MUST reject observations whose logical time exceeds the local physical clock by more than this. It is part of the wire format — every implementation exposes the same named constant, and a 60-second peer-ahead-of-local observation that one implementation accepts and another rejects is an interoperability bug. The "),
+    bold("soft alarm threshold (default 1,000 ms)"),
+    tx(" is configurable and operator-facing: implementations SHOULD log/alert when an observation exceeds it, even if still below the hard bound. 60 s is large enough to absorb a brief NTP outage or VM migration; 1 s is where well-disciplined hosts (NTP, chrony, AWS Time Sync) already live, so a peer 1 s ahead almost certainly means clock discipline broke upstream. The CockroachDB and kronos operational practice in production is approximately 500 ms to 1 s, consistent with this default."),
   ]));
 
   out.push(p([
