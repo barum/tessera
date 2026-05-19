@@ -1,0 +1,31 @@
+name: rust
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        toolchain: [stable, beta]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - name: cargo test
+        working-directory: pqid/rust
+        run: cargo test --release
+      - name: Build and run conformance runner
+        working-directory: pqid/rust
+        run: |
+          cargo build --release --bin conformance_runner
+          for f in ../conformance/vectors/*.json; do
+            ./target/release/conformance_runner "$f"
+          done

@@ -1,0 +1,34 @@
+name: cpp
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        cxx: [g++, clang++]
+        exclude:
+          - os: macos-latest
+            cxx: g++
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test
+        env:
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cd pqid/cpp
+          make clean
+          make all
+          ./test_pqid
+      - name: Run conformance vectors against C++ runner
+        run: |
+          for f in pqid/conformance/vectors/*.json; do
+            pqid/cpp/conformance_runner "$f"
+          done

@@ -1,0 +1,30 @@
+name: python
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run Python reference tests
+        run: |
+          cd pqid/python
+          python3 test_pqid.py
+      - name: Run Python conformance runner
+        run: |
+          for f in pqid/conformance/vectors/*.json; do
+            python3 pqid/conformance/runners/python_runner.py "$f"
+          done

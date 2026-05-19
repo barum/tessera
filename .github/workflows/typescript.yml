@@ -1,0 +1,32 @@
+name: typescript
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install and test
+        working-directory: pqid/typescript
+        run: |
+          npm install
+          npm test
+      - name: Run conformance runner
+        working-directory: pqid/typescript
+        run: |
+          for f in ../conformance/vectors/*.json; do
+            node dist/conformance_runner.js "$f"
+          done

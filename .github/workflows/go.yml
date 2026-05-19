@@ -1,0 +1,31 @@
+name: go
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go: ["1.22", "1.23"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - name: go test
+        working-directory: pqid/go
+        run: go test ./...
+      - name: Build and run conformance runner
+        working-directory: pqid/go
+        run: |
+          go build -o /tmp/pqid_go_runner ./cmd/conformance_runner
+          for f in ../conformance/vectors/*.json; do
+            /tmp/pqid_go_runner "$f"
+          done
