@@ -1,0 +1,62 @@
+[
+  {
+    "name": "std_zero_ts",
+    "op": "encode_crockford",
+    "input_hex": "0000000000000100000000000000000000000000000000000000000000000000000000000000000000",
+    "expected_str": "00000000000G000000000000000000000000000000000000000000000000000000"
+  },
+  {
+    "name": "std_epoch_2020",
+    "op": "encode_crockford",
+    "input_hex": "016f5e66e800010001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "expected_str": "05QNWSQ8000G00DANANANANANANANANANANANANANANANANANANANANANANANANAN8"
+  },
+  {
+    "name": "std_recent",
+    "op": "encode_crockford",
+    "input_hex": "018bcfe5680001002a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+    "expected_str": "065WZSB8000G0AJTB9D5MPJTB9D5MPJTB9D5MPJTB9D5MPJTB9D5MPJTB9D5MPJTB8"
+  },
+  {
+    "name": "std_max_ts",
+    "op": "encode_crockford",
+    "input_hex": "ffffffffffff01ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "expected_str": "ZZZZZZZZZW0ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZW"
+  },
+  {
+    "name": "std_mid_counter",
+    "op": "encode_crockford",
+    "input_hex": "018bcfe568010180004242424242424242424242424242424242424242424242424242424242424242",
+    "expected_str": "065WZSB8040R002289144GJ289144GJ289144GJ289144GJ289144GJ289144GJ288"
+  },
+  {
+    "name": "hlc_zero_ts",
+    "op": "encode_crockford",
+    "input_hex": "0000000000000200000000000000000000000000000000000000000000000000000000000000000000",
+    "expected_str": "000000000010000000000000000000000000000000000000000000000000000000"
+  },
+  {
+    "name": "hlc_recent",
+    "op": "encode_crockford",
+    "input_hex": "018bcfe56800020007cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "expected_str": "065WZSB8001001YCSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSG"
+  },
+  {
+    "name": "hlc_max_counter",
+    "op": "encode_crockford",
+    "input_hex": "018bcfe569f402ffff3333333333333333333333333333333333333333333333333333333333333333",
+    "expected_str": "065WZSB9YG1FZZSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6C"
+  },
+  {
+    "name": "hlc_max_ts",
+    "op": "encode_crockford",
+    "input_hex": "ffffffffffff020001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "expected_str": "ZZZZZZZZZW1000FEXVQEXVQEXVQEXVQEXVQEXVQEXVQEXVQEXVQEXVQEXVQEXVQEXR"
+  },
+  {
+    "name": "hlc_typical",
+    "op": "encode_crockford",
+    "input_hex": "018bcfe5687b0200649999999999999999999999999999999999999999999999999999999999999999",
+    "expected_str": "065WZSB8FC100S4SK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK6CSK4"
+  }
+]

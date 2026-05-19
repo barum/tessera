@@ -80,15 +80,44 @@ inline void getrandom(std::uint8_t* buf, std::size_t n) {
         }
         off += static_cast<std::size_t>(r);
     }
+#elif defined(__APPLE__) || defined(__OpenBSD__)
+    // getentropy reads at most 256 bytes per call.
+    std::size_t off = 0;
+    while (off < n) {
+        std::size_t chunk = std::min<std::size_t>(n - off, 256);
+        if (::getentropy(buf + off, chunk) != 0) {
+            if (errno == EINTR) continue;
+            throw PqidError("getentropy failed");
+        }
+        off += chunk;
+    }
 #else
 #error "Platform CSPRNG not implemented; add /dev/urandom fallback or BCryptGenRandom."
 #endif
 }
 
+// Test-only clock override. UINT64_MAX means "use real clock".
+// Set via pqid::set_now_ms_for_testing in tests.
+inline std::uint64_t& test_now_ms_override() noexcept {
+    static std::uint64_t v = UINT64_MAX;
+    return v;
+}
+
 inline std::uint64_t now_ms() noexcept {
+    auto override_v = test_now_ms_override();
+    if (override_v != UINT64_MAX) return override_v;
     using namespace std::chrono;
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
+
+} // namespace detail
+
+// Test-only: override the clock source. Pass UINT64_MAX to restore.
+inline void set_now_ms_for_testing(std::uint64_t value_ms) noexcept {
+    detail::test_now_ms_override() = value_ms;
+}
+
+namespace detail {
 
 inline void put_be48(std::uint8_t* p, std::uint64_t v) noexcept {
     p[0] = static_cast<std::uint8_t>(v >> 40);
@@ -160,6 +189,11 @@ class HLCGenerator {
     mutable std::mutex m_;
 public:
     void set_max_drift_ms(std::uint64_t d) noexcept { max_drift_ms_ = d; }
+    // Test-only: force internal (l, c) state.
+    void set_state_for_testing(std::uint64_t l, std::uint16_t c) {
+        std::lock_guard guard(m_);
+        l_ = l; c_ = c;
+    }
 
     [[nodiscard]] Pqid next(const HLCObservation* observe = nullptr) {
         std::uint8_t rnd[kRandomBytes];

@@ -1,0 +1,112 @@
+[
+  {
+    "name": "std_zero_ts",
+    "op": "decode",
+    "input_hex": "0000000000000100000000000000000000000000000000000000000000000000000000000000000000",
+    "expected": {
+      "variant": 1,
+      "timestamp_ms": 0,
+      "counter": 0,
+      "random_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "name": "std_epoch_2020",
+    "op": "decode",
+    "input_hex": "016f5e66e800010001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "expected": {
+      "variant": 1,
+      "timestamp_ms": 1577836800000,
+      "counter": 1,
+      "random_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "std_recent",
+    "op": "decode",
+    "input_hex": "018bcfe5680001002a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+    "expected": {
+      "variant": 1,
+      "timestamp_ms": 1700000000000,
+      "counter": 42,
+      "random_hex": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+    }
+  },
+  {
+    "name": "std_max_ts",
+    "op": "decode",
+    "input_hex": "ffffffffffff01ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "expected": {
+      "variant": 1,
+      "timestamp_ms": 281474976710655,
+      "counter": 65535,
+      "random_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  },
+  {
+    "name": "std_mid_counter",
+    "op": "decode",
+    "input_hex": "018bcfe568010180004242424242424242424242424242424242424242424242424242424242424242",
+    "expected": {
+      "variant": 1,
+      "timestamp_ms": 1700000000001,
+      "counter": 32768,
+      "random_hex": "4242424242424242424242424242424242424242424242424242424242424242"
+    }
+  },
+  {
+    "name": "hlc_zero_ts",
+    "op": "decode",
+    "input_hex": "0000000000000200000000000000000000000000000000000000000000000000000000000000000000",
+    "expected": {
+      "variant": 2,
+      "timestamp_ms": 0,
+      "counter": 0,
+      "random_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "name": "hlc_recent",
+    "op": "decode",
+    "input_hex": "018bcfe56800020007cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "expected": {
+      "variant": 2,
+      "timestamp_ms": 1700000000000,
+      "counter": 7,
+      "random_hex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  },
+  {
+    "name": "hlc_max_counter",
+    "op": "decode",
+    "input_hex": "018bcfe569f402ffff3333333333333333333333333333333333333333333333333333333333333333",
+    "expected": {
+      "variant": 2,
+      "timestamp_ms": 1700000000500,
+      "counter": 65535,
+      "random_hex": "3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  },
+  {
+    "name": "hlc_max_ts",
+    "op": "decode",
+    "input_hex": "ffffffffffff020001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "expected": {
+      "variant": 2,
+      "timestamp_ms": 281474976710655,
+      "counter": 1,
+      "random_hex": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  },
+  {
+    "name": "hlc_typical",
+    "op": "decode",
+    "input_hex": "018bcfe5687b0200649999999999999999999999999999999999999999999999999999999999999999",
+    "expected": {
+      "variant": 2,
+      "timestamp_ms": 1700000000123,
+      "counter": 100,
+      "random_hex": "9999999999999999999999999999999999999999999999999999999999999999"
+    }
+  }
+]

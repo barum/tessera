@@ -259,8 +259,24 @@ fn write_header(out: &mut [u8], ts: i64, variant: u8, counter: u16) {
     out[8] = counter as u8;
 }
 
+use std::sync::atomic::{AtomicI64, Ordering};
+
+/// Test-only clock override. When `OVERRIDE_NOW_MS` is non-negative,
+/// `now_ms()` returns its value; otherwise it returns the real wall clock.
+/// Conformance tests use this to drive HLC overflow scenarios.
+static OVERRIDE_NOW_MS: AtomicI64 = AtomicI64::new(-1);
+
+/// Override the clock source. Test-only. Pass `-1` to restore the real clock.
+pub fn set_now_ms_for_testing(value_ms: i64) {
+    OVERRIDE_NOW_MS.store(value_ms, Ordering::SeqCst);
+}
+
 #[inline]
 fn now_ms() -> i64 {
+    let override_val = OVERRIDE_NOW_MS.load(Ordering::SeqCst);
+    if override_val >= 0 {
+        return override_val;
+    }
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -322,6 +338,13 @@ pub struct HlcGenerator {
 impl HlcGenerator {
     pub const fn new() -> Self {
         HlcGenerator { l: 0, c: 0 }
+    }
+
+    /// Test-only: force the internal (l, c) state. Production code should
+    /// never need this.
+    pub fn set_state_for_testing(&mut self, l: i64, c: u16) {
+        self.l = l;
+        self.c = c;
     }
 
     pub fn new_id(&mut self, observe: Option<&Pqid>) -> Result<Pqid, Error> {

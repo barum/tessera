@@ -93,9 +93,15 @@ export class UnknownVariantError extends PQIDError {
 // Time helpers
 // ---------------------------------------------------------------------------
 
+// Test-only clock override. Set via setNowMsForTesting; pass null to restore.
+let nowMsOverride: number | null = null;
+export function setNowMsForTesting(value: number | null): void {
+  nowMsOverride = value;
+}
+
 // 48-bit ms timestamp uses two halves to avoid JS BigInt cost on hot path.
 // JS Number is safe for integers up to 2^53; 2^48 - 1 fits comfortably.
-const nowMs = (): number => Date.now();
+const nowMs = (): number => nowMsOverride !== null ? nowMsOverride : Date.now();
 
 function writeHeader(
   out: Uint8Array,
@@ -175,6 +181,12 @@ export class StandardGenerator {
 export class HLCGenerator {
   private l = 0;
   private c = 0;
+
+  // Test-only: force internal (l, c) state.
+  setStateForTesting(l: number, c: number): void {
+    this.l = l;
+    this.c = c;
+  }
 
   newId(observe?: Uint8Array): Uint8Array {
     const out = new Uint8Array(SIZE_BYTES);

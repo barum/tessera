@@ -311,29 +311,58 @@ def decode_b64(s: str) -> bytes:
 # ---------------------------------------------------------------------------
 
 def encode_b32(raw: bytes) -> str:
-    """Encode a 41-byte PQID as Crockford Base32 (66 chars, uppercase)."""
+    """Encode a 41-byte PQID as Crockford Base32 (66 chars, uppercase).
+
+    Encoding is MSB-first byte-by-byte, with the trailing 3 bits of the last
+    byte placed in the high 3 bits of the final character (low 2 bits are
+    zero padding). This matches the C, Go, and Rust reference implementations
+    and the normative spec in sec03 of the whitepaper.
+    """
     if len(raw) != PQID_SIZE_BYTES:
         raise InvalidEncoding(f"PQID must be {PQID_SIZE_BYTES} bytes")
-    n = int.from_bytes(raw, "big")
-    # 41 bytes = 328 bits → 66 base32 chars (covers 330 bits)
-    chars = []
-    for _ in range(66):
-        chars.append(_CROCKFORD_ALPHABET[n & 0x1F])
-        n >>= 5
-    return "".join(reversed(chars))
+    out = bytearray(66)
+    buf = 0
+    bits = 0
+    idx = 0
+    for b in raw:
+        buf = (buf << 8) | b
+        bits += 8
+        while bits >= 5:
+            bits -= 5
+            out[idx] = ord(_CROCKFORD_ALPHABET[(buf >> bits) & 0x1F])
+            idx += 1
+    if bits > 0:
+        # 41*8 = 328 bits; 328 % 5 = 3 trailing bits. Pad with 2 zero bits.
+        out[idx] = ord(_CROCKFORD_ALPHABET[(buf << (5 - bits)) & 0x1F])
+        idx += 1
+    return out.decode("ascii")
 
 
 def decode_b32(s: str) -> bytes:
-    """Decode a 66-character Crockford Base32 PQID string."""
+    """Decode a 66-character Crockford Base32 PQID string.
+
+    Inverse of encode_b32: MSB-first, with the final character's low 2 bits
+    required to be zero (the encoder's padding).
+    """
     if len(s) != 66:
         raise InvalidEncoding(f"Crockford Base32 PQID must be 66 chars, got {len(s)}")
-    n = 0
+    out = bytearray(PQID_SIZE_BYTES)
+    buf = 0
+    bits = 0
+    idx = 0
     for ch in s.upper():
         v = _CROCKFORD_DECODE.get(ch)
         if v is None:
             raise InvalidEncoding(f"invalid Crockford char: {ch!r}")
-        n = (n << 5) | v
-    # Top 2 bits of the 330-bit value must be zero.
-    if n >> 328:
-        raise InvalidEncoding("Crockford Base32 string overflows 41 bytes")
-    return n.to_bytes(PQID_SIZE_BYTES, "big")
+        buf = (buf << 5) | v
+        bits += 5
+        if bits >= 8:
+            bits -= 8
+            out[idx] = (buf >> bits) & 0xFF
+            idx += 1
+    # 66 chars = 330 bits; 328 emitted, 2 trailing bits must be zero padding.
+    if bits > 0 and (buf & ((1 << bits) - 1)) != 0:
+        raise InvalidEncoding("Crockford Base32 string has non-zero padding bits")
+    if idx != PQID_SIZE_BYTES:
+        raise InvalidEncoding(f"decoded length {idx} != {PQID_SIZE_BYTES}")
+    return bytes(out)

@@ -55,6 +55,24 @@ var (
 // Indirected through a variable for testability.
 var nowMS = func() int64 { return time.Now().UnixMilli() }
 
+// SetNowMSForTesting overrides the clock source. Returns the previous source
+// so callers can restore it. Conformance tests use this to drive HLC overflow
+// scenarios deterministically.
+func SetNowMSForTesting(fn func() int64) func() int64 {
+	prev := nowMS
+	nowMS = fn
+	return prev
+}
+
+// SetHLCStateForTesting forces the HLC generator's internal (l, c) state.
+// Test-only; production code should never need this.
+func (g *HLCGenerator) SetHLCStateForTesting(l int64, c uint16) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.l = l
+	g.c = c
+}
+
 // ---------------------------------------------------------------------------
 // Standard generator
 // ---------------------------------------------------------------------------

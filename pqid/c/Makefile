@@ -4,7 +4,7 @@ CC      ?= gcc
 CFLAGS  ?= -O3 -Wall -Wextra -Wpedantic -Wshadow -std=c11 -fno-plt -DNDEBUG
 LDFLAGS ?=
 
-all: test_pqid bench_pqid
+all: test_pqid bench_pqid conformance_runner
 
 pqid.o: pqid.c pqid.h
 	$(CC) $(CFLAGS) -c pqid.c -o pqid.o
@@ -15,6 +15,9 @@ test_pqid: test_pqid.c pqid.o
 bench_pqid: bench_pqid.c pqid.o
 	$(CC) $(CFLAGS) bench_pqid.c pqid.o -o bench_pqid $(LDFLAGS)
 
+conformance_runner: conformance_runner.c pqid.o
+	$(CC) $(CFLAGS) conformance_runner.c pqid.o -o conformance_runner $(LDFLAGS)
+
 test: test_pqid
 	./test_pqid
 
@@ -22,6 +25,6 @@ bench: bench_pqid
 	./bench_pqid
 
 clean:
-	rm -f *.o test_pqid bench_pqid
+	rm -f *.o test_pqid bench_pqid conformance_runner
 
 .PHONY: all test bench clean

@@ -1,0 +1,55 @@
+[
+  {
+    "name": "doc",
+    "op": "hlc_overflow",
+    "doc": "Counter is at MAX_COUNTER (0xFFFF) and the merge logic would compute c_new = MAX_COUNTER + 1. Conformant implementations MUST detect this overflow and bump l_new += 1, c_new = 0. Silent wrapping to 0 without bumping l_new is a bug. The vector lists three starting states; each maps to an expected (l_new, c_new)."
+  },
+  {
+    "name": "no_observe_same_ms_max",
+    "op": "hlc_overflow",
+    "start": {
+      "l_old": 1700000000000,
+      "c_old": 65535
+    },
+    "physical_time_ms": 1700000000000,
+    "observe": null,
+    "expected": {
+      "l_new": 1700000000001,
+      "c_new": 0
+    }
+  },
+  {
+    "name": "observe_same_l_max_c_old_eq_msg",
+    "op": "hlc_overflow",
+    "start": {
+      "l_old": 1700000000000,
+      "c_old": 65535
+    },
+    "physical_time_ms": 1700000000000,
+    "observe": {
+      "l_msg": 1700000000000,
+      "c_msg": 65535
+    },
+    "expected": {
+      "l_new": 1700000000001,
+      "c_new": 0
+    }
+  },
+  {
+    "name": "observe_l_msg_eq_l_new_c_msg_max",
+    "op": "hlc_overflow",
+    "start": {
+      "l_old": 1700000000000,
+      "c_old": 5
+    },
+    "physical_time_ms": 1700000000000,
+    "observe": {
+      "l_msg": 1700000000500,
+      "c_msg": 65535
+    },
+    "expected": {
+      "l_new": 1700000000501,
+      "c_new": 0
+    }
+  }
+]

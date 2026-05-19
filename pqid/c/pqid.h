@@ -94,6 +94,11 @@ uint16_t pqid_counter(const uint8_t in[PQID_SIZE_BYTES]);
 /* Validates: variant byte is 0x01 or 0x02. */
 pqid_status_t pqid_validate(const uint8_t in[PQID_SIZE_BYTES]);
 
+/* Test-only: override the clock source used by the HLC generator.
+ * Pass UINT64_MAX to restore the real clock. Conformance tests use
+ * this to drive HLC overflow scenarios deterministically. */
+void pqid_set_now_ms_for_testing(uint64_t value_ms);
+
 #ifdef __cplusplus
 }
 #endif

@@ -15,6 +15,21 @@ import java.security.SecureRandom;
 public class HLCGenerator {
     public static final long DEFAULT_MAX_DRIFT_MS = 60_000L;
 
+    /**
+     * Test-only clock override. Long.MIN_VALUE means "use real clock".
+     * Conformance tests set this to drive HLC overflow scenarios deterministically.
+     */
+    public static volatile long nowMsOverride = Long.MIN_VALUE;
+
+    public static void setNowMsForTesting(long valueMs) {
+        nowMsOverride = valueMs;
+    }
+
+    private static long currentMillis() {
+        long o = nowMsOverride;
+        return o != Long.MIN_VALUE ? o : System.currentTimeMillis();
+    }
+
     private final SecureRandom rng;
     private final long maxDriftMs;
     private long l = 0L;   // logical time, ms-grained
@@ -27,6 +42,12 @@ public class HLCGenerator {
     public HLCGenerator(SecureRandom rng, long maxDriftMs) {
         this.rng = rng;
         this.maxDriftMs = maxDriftMs;
+    }
+
+    /** Test-only: force internal (l, c) state. */
+    public synchronized void setStateForTesting(long lNew, int cNew) {
+        this.l = lNew;
+        this.c = cNew;
     }
 
     /** Generate a new HLC PQID without peer observation. */
@@ -48,7 +69,7 @@ public class HLCGenerator {
         byte[] rnd = new byte[32];
         rng.nextBytes(rnd);
 
-        long pt = System.currentTimeMillis();
+        long pt = currentMillis();
         long lOld = l;
         int  cOld = c;
 

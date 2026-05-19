@@ -8,23 +8,47 @@
  * No dynamic allocation. Standard variant is lock-free per generator;
  * HLC variant requires external serialization or single-threaded use.
  */
-#define _POSIX_C_SOURCE 200809L
-#define _DEFAULT_SOURCE
+#if !defined(_POSIX_C_SOURCE)
+#  define _POSIX_C_SOURCE 200809L
+#endif
+#if !defined(_DEFAULT_SOURCE)
+#  define _DEFAULT_SOURCE
+#endif
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#  define _DARWIN_C_SOURCE
+#endif
 #include "pqid.h"
 
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
-#include <sys/random.h>
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
+#if defined(__linux__) || defined(__GLIBC__)
+#  include <sys/random.h>
+#  define PQID_HAVE_GETRANDOM 1
+#elif defined(__APPLE__)
+#  include <sys/random.h>  /* macOS exposes getentropy here */
+#  define PQID_HAVE_GETENTROPY 1
+#elif defined(__FreeBSD__) || defined(__OpenBSD__)
+#  include <unistd.h>
+#  define PQID_HAVE_GETENTROPY 1
+#endif
+
 /* ---------- CSPRNG ----------
- * getrandom(2) is the kernel-level interface on Linux 3.17+.
- * Fallback to /dev/urandom for portability.
+ * Normative requirement (PQID-00008): MUST use an OS-provided CSPRNG and
+ * MUST NOT fall back to a non-cryptographic source. The order below is:
+ *   1. getrandom(2)   (Linux ≥ 3.17)
+ *   2. getentropy(3)  (macOS, BSDs, glibc ≥ 2.25)
+ *   3. /dev/urandom   (last-resort portable POSIX)
+ *
+ * Partial reads are retried; any unrecoverable error returns -1 and the
+ * caller surfaces PQID_E_RNG.
  */
 static int pqid_getrandom(uint8_t *buf, size_t len) {
+#if defined(PQID_HAVE_GETRANDOM)
     size_t off = 0;
     while (off < len) {
         ssize_t n = getrandom(buf + off, len - off, 0);
@@ -35,10 +59,55 @@ static int pqid_getrandom(uint8_t *buf, size_t len) {
         off += (size_t)n;
     }
     return 0;
+#elif defined(PQID_HAVE_GETENTROPY)
+    /* getentropy() reads at most 256 bytes per call. Loop for safety. */
+    size_t off = 0;
+    while (off < len) {
+        size_t chunk = len - off;
+        if (chunk > 256) chunk = 256;
+        if (getentropy(buf + off, chunk) != 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        off += chunk;
+    }
+    return 0;
+#else
+    /* Portable fallback. Still a CSPRNG on every conformant POSIX system. */
+    int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    size_t off = 0;
+    while (off < len) {
+        ssize_t n = read(fd, buf + off, len - off);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            close(fd);
+            return -1;
+        }
+        if (n == 0) { close(fd); return -1; }
+        off += (size_t)n;
+    }
+    close(fd);
+    return 0;
+#endif
 }
 
-/* ---------- Time ---------- */
+/* ---------- Time ----------
+ * Production: real wall clock via clock_gettime(CLOCK_REALTIME).
+ * Test override: pqid_set_now_ms_for_testing(value). Pass UINT64_MAX
+ * to restore the real clock. Conformance tests use this to drive HLC
+ * scenarios deterministically.
+ */
+static uint64_t pqid_test_now_ms_override = UINT64_MAX;
+
+void pqid_set_now_ms_for_testing(uint64_t value_ms) {
+    pqid_test_now_ms_override = value_ms;
+}
+
 static uint64_t pqid_now_ms(void) {
+    if (pqid_test_now_ms_override != UINT64_MAX) {
+        return pqid_test_now_ms_override;
+    }
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
