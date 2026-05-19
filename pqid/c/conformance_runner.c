@@ -328,6 +328,26 @@ static int op_validate_invalid(const char *rec, char *err) {
     return 0;
 }
 
+static int op_validate_min_timestamp(const char *rec, char *err) {
+    char hex[128];
+    if (!get_str(rec, "input_hex", hex, sizeof(hex))) { snprintf(err, 256, "no input_hex"); return 0; }
+    uint8_t raw[PQID_SIZE_BYTES];
+    if (hex_to_bytes(hex, raw, PQID_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
+    int got = pqid_validate_min_timestamp(raw);
+    /* Expected is a bare boolean — look for "expected": true|false */
+    const char *p = find_key(rec, "expected");
+    if (!p) { snprintf(err, 256, "no expected"); return 0; }
+    int want;
+    if (strncmp(p, "true", 4) == 0) want = 1;
+    else if (strncmp(p, "false", 5) == 0) want = 0;
+    else { snprintf(err, 256, "expected not bool"); return 0; }
+    if (got != want) {
+        snprintf(err, 256, "got=%d want=%d", got, want);
+        return 0;
+    }
+    return 1;
+}
+
 /* HLC overflow needs to set internal state; C exposes the generator struct
  * directly so we can mutate fields without a special hook. */
 static int op_hlc_overflow(const char *rec, char *err) {
@@ -418,6 +438,7 @@ int main(int argc, char **argv) {
         else if (strcmp(op, "decode_crockford") == 0)  ok = op_decode_crockford(rec, err);
         else if (strcmp(op, "validate_invalid") == 0)  ok = op_validate_invalid(rec, err);
         else if (strcmp(op, "hlc_overflow") == 0)      ok = op_hlc_overflow(rec, err);
+        else if (strcmp(op, "validate_min_timestamp") == 0) ok = op_validate_min_timestamp(rec, err);
         else { snprintf(err, sizeof(err), "unknown op %s", op); ok = 0; }
 
         if (ok) printf("PASS %s\n", name);

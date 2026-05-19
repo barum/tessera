@@ -29,6 +29,11 @@ export const VARIANT_HLC = 0x02 as const;
 const MAX_COUNTER = 0xffff;
 const HLC_MAX_DRIFT_MS = 60_000;
 
+/** Project epoch — optional, non-normative defensive bound. The standard
+ *  decoder accepts all timestamps; validateMinTimestamp() returns true
+ *  only for PQIDs at or after this. */
+export const MIN_TIMESTAMP_MS = 1_700_000_000_000 as const;
+
 export const ENCODED_LEN_B64 = 55 as const;
 export const ENCODED_LEN_B32 = 66 as const;
 
@@ -375,6 +380,14 @@ export function encodeCrockford(raw: Uint8Array): string {
     out[idx++] = CROCKFORD_ALPHABET[(buf << (5 - bits)) & 0x1f];
   }
   return out.join("");
+}
+
+/** Non-normative defensive helper. Returns true iff the PQID's timestamp
+ *  is at or after MIN_TIMESTAMP_MS. The standard decoder accepts all
+ *  values; callers MAY opt into this check. */
+export function validateMinTimestamp(raw: Uint8Array): boolean {
+  if (raw.length !== SIZE_BYTES) return false;
+  return readTimestamp(raw) >= MIN_TIMESTAMP_MS;
 }
 
 export function decodeCrockford(s: string): Uint8Array {

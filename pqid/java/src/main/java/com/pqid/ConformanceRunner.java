@@ -189,6 +189,19 @@ public final class ConformanceRunner {
         return new Result(false, "unknown kind " + kind);
     }
 
+    static Result opValidateMinTimestamp(String rec) {
+        byte[] raw = hexToBytes(getStr(rec, "input_hex"));
+        Pqid p = new Pqid(raw);
+        boolean got = p.validateMinTimestamp();
+        // "expected" is a bare boolean.
+        Pattern p2 = Pattern.compile("\"expected\"\\s*:\\s*(true|false)");
+        Matcher m = p2.matcher(rec);
+        if (!m.find()) return new Result(false, "no expected bool");
+        boolean want = Boolean.parseBoolean(m.group(1));
+        if (got != want) return new Result(false, "got=" + got + " want=" + want);
+        return new Result(true, "");
+    }
+
     static Result opHlcOverflow(String rec) {
         String startBody = getNested(rec, "start", "");
         if (startBody == null) return new Result(false, "no start");
@@ -252,6 +265,7 @@ public final class ConformanceRunner {
                     case "decode_crockford": r = opDecodeCrockford(rec); break;
                     case "validate_invalid": r = opValidateInvalid(rec); break;
                     case "hlc_overflow": r = opHlcOverflow(rec); break;
+                    case "validate_min_timestamp": r = opValidateMinTimestamp(rec); break;
                     default: r = new Result(false, "unknown op " + op);
                 }
             } catch (Exception ex) {

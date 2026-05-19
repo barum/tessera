@@ -138,6 +138,18 @@ fn run_validate_invalid(r: &Record) -> Result<(), String> {
     }
 }
 
+fn run_validate_min_timestamp(r: &Record) -> Result<(), String> {
+    let arr = hex_to_arr(r.input_hex.as_ref().unwrap())?;
+    let p = pqid::Pqid(arr);
+    let got = p.validate_min_timestamp();
+    let want = r.expected.as_ref().and_then(|v| v.as_bool())
+        .ok_or_else(|| "no expected bool".to_string())?;
+    if got != want {
+        return Err(format!("got={} want={}", got, want));
+    }
+    Ok(())
+}
+
 fn run_hlc_overflow(r: &Record) -> Result<(), String> {
     if r.name == "doc" {
         return Ok(());
@@ -201,6 +213,7 @@ fn dispatch(r: &Record) -> Result<(), String> {
         "decode_crockford" => run_decode_crockford(r),
         "validate_invalid" => run_validate_invalid(r),
         "hlc_overflow" => run_hlc_overflow(r),
+        "validate_min_timestamp" => run_validate_min_timestamp(r),
         other => Err(format!("unknown op {:?}", other)),
     }
 }

@@ -108,6 +108,15 @@ def run_hlc_overflow(rec):
     return True, "(skipped — covered by C reference)"
 
 
+def run_validate_min_timestamp(rec):
+    raw = bytes.fromhex(rec["input_hex"])
+    got = pqid_ext.validate_min_timestamp(raw)
+    want = rec["expected"]
+    if got != want:
+        return False, f"got={got} want={want}"
+    return True, ""
+
+
 DISPATCH = {
     "decode": run_decode,
     "encode_b64": run_encode_b64,
@@ -116,6 +125,7 @@ DISPATCH = {
     "decode_crockford": run_decode_crockford,
     "validate_invalid": run_validate_invalid,
     "hlc_overflow": run_hlc_overflow,
+    "validate_min_timestamp": run_validate_min_timestamp,
 }
 
 

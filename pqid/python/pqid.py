@@ -47,6 +47,14 @@ COUNTER_BYTES: Final[int] = 2        # 16 bits
 MAX_TIMESTAMP_MS: Final[int] = (1 << 48) - 1
 MAX_COUNTER: Final[int] = (1 << 16) - 1
 
+# Project epoch — the earliest plausible PQID timestamp. Any decoded
+# timestamp below this is presumed malformed (zero-fill, mis-parse, or
+# corruption). NON-NORMATIVE: standard decoders still accept all values
+# in [0, MAX_TIMESTAMP_MS]; this is an opt-in defensive check via
+# validate_min_timestamp() / validate_min_timestamp_raw().
+# 1_700_000_000_000 ms ≈ 2023-11-14T22:13:20Z, the project's chosen epoch.
+MIN_TIMESTAMP_MS: Final[int] = 1_700_000_000_000
+
 # HLC drift bound: reject incoming HLC values more than this far in the future.
 # 60s is a generous bound that protects against clock-skewed or hostile peers
 # while permitting normal NTP error and brief network partitions.
@@ -343,6 +351,18 @@ def encode_b32(raw: bytes) -> str:
         out[idx] = ord(_CROCKFORD_ALPHABET[(buf << (5 - bits)) & 0x1F])
         idx += 1
     return out.decode("ascii")
+
+
+def validate_min_timestamp(raw: bytes) -> bool:
+    """Optional defensive check: returns True iff the decoded PQID has a
+    timestamp at or after MIN_TIMESTAMP_MS. NON-NORMATIVE — the standard
+    decoder accepts smaller timestamps. Callers MAY use this to reject
+    PQIDs that almost certainly came from zeroed memory or a mis-parse.
+    """
+    if len(raw) != PQID_SIZE_BYTES:
+        return False
+    ts = int.from_bytes(raw[0:TIMESTAMP_BYTES], "big")
+    return ts >= MIN_TIMESTAMP_MS
 
 
 def decode_b32(s: str) -> bytes:

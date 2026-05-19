@@ -35,6 +35,12 @@ const (
 	VariantHLC      byte = 0x02
 
 	maxCounter      uint16 = 0xFFFF
+	// MinTimestampMS is the project epoch for the optional, non-normative
+	// validate_min_timestamp helper. Any decoded PQID with a timestamp below
+	// this is presumed malformed. The standard decoder accepts everything in
+	// [0, MaxTimestampMS]; callers may opt into ValidateMinTimestamp.
+	MinTimestampMS int64 = 1_700_000_000_000
+
 	// HLCMaxDriftMS is the normative outer drift bound for HLC observations.
 	// An observation whose logical time exceeds the local physical clock by
 	// more than this is rejected. Spec sec03 / sec:csprng.
@@ -273,6 +279,17 @@ func Decode(raw []byte) (Decoded, error) {
 	d.Counter = binary.BigEndian.Uint16(raw[7:9])
 	copy(d.Random[:], raw[9:])
 	return d, nil
+}
+
+// ValidateMinTimestamp is a non-normative defensive helper. It returns true
+// iff the PQID's timestamp is at or after MinTimestampMS. The standard
+// decoder accepts all values; callers MAY use this to reject PQIDs that
+// almost certainly came from zeroed memory or a mis-parse.
+func ValidateMinTimestamp(raw []byte) bool {
+	if len(raw) != SizeBytes {
+		return false
+	}
+	return readTimestamp(raw) >= MinTimestampMS
 }
 
 // ---------------------------------------------------------------------------

@@ -19,11 +19,33 @@ type Record struct {
 	ExpectedHex    string                 `json:"expected_hex,omitempty"`
 	ExpectedStr    string                 `json:"expected_str,omitempty"`
 	ExpectedError  string                 `json:"expected_error,omitempty"`
-	Expected       map[string]interface{} `json:"expected,omitempty"`
+	Expected       json.RawMessage        `json:"expected,omitempty"`
 	Start          map[string]int64       `json:"start,omitempty"`
 	PhysicalTimeMs int64                  `json:"physical_time_ms,omitempty"`
 	Observe        map[string]int64       `json:"observe,omitempty"`
 	Doc            string                 `json:"doc,omitempty"`
+}
+
+func (r Record) expectedAsMap() map[string]interface{} {
+	if len(r.Expected) == 0 {
+		return nil
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(r.Expected, &m); err != nil {
+		return nil
+	}
+	return m
+}
+
+func (r Record) expectedAsBool() (bool, bool) {
+	if len(r.Expected) == 0 {
+		return false, false
+	}
+	var b bool
+	if err := json.Unmarshal(r.Expected, &b); err != nil {
+		return false, false
+	}
+	return b, true
 }
 
 func hexToArr(s string) ([pqid.SizeBytes]byte, error) {
@@ -48,7 +70,10 @@ func runDecode(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("Decode error: %v", err)
 	}
-	exp := r.Expected
+	exp := r.expectedAsMap()
+	if exp == nil {
+		return false, "no expected object"
+	}
 	if int64(d.Variant) != int64(exp["variant"].(float64)) {
 		return false, fmt.Sprintf("variant got=%d want=%v", d.Variant, exp["variant"])
 	}
@@ -61,6 +86,22 @@ func runDecode(r Record) (bool, string) {
 	gotRand := hex.EncodeToString(d.Random[:])
 	if gotRand != exp["random_hex"].(string) {
 		return false, fmt.Sprintf("random got=%s want=%s", gotRand, exp["random_hex"])
+	}
+	return true, ""
+}
+
+func runValidateMinTimestamp(r Record) (bool, string) {
+	raw, err := hex.DecodeString(r.InputHex)
+	if err != nil {
+		return false, fmt.Sprintf("bad hex: %v", err)
+	}
+	got := pqid.ValidateMinTimestamp(raw)
+	want, ok := r.expectedAsBool()
+	if !ok {
+		return false, "no expected bool"
+	}
+	if got != want {
+		return false, fmt.Sprintf("got=%v want=%v", got, want)
 	}
 	return true, ""
 }
@@ -174,8 +215,12 @@ func runHLCOverflow(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("decode error: %v", err)
 	}
-	expL := int64(r.Expected["l_new"].(float64))
-	expC := uint16(r.Expected["c_new"].(float64))
+	exp := r.expectedAsMap()
+	if exp == nil {
+		return false, "no expected object"
+	}
+	expL := int64(exp["l_new"].(float64))
+	expC := uint16(exp["c_new"].(float64))
 	if d.TimestampMS != expL || d.Counter != expC {
 		return false, fmt.Sprintf("got=(l=%d, c=%d) want=(l=%d, c=%d)",
 			d.TimestampMS, d.Counter, expL, expC)
@@ -199,6 +244,8 @@ func dispatch(r Record) (bool, string) {
 		return runValidateInvalid(r)
 	case "hlc_overflow":
 		return runHLCOverflow(r)
+	case "validate_min_timestamp":
+		return runValidateMinTimestamp(r)
 	}
 	return false, fmt.Sprintf("unknown op %q", r.Op)
 }

@@ -40,6 +40,11 @@ inline constexpr std::size_t kEncodedLenCrockford = 66;
 
 inline constexpr std::uint64_t kHLCDefaultDriftMs = 60'000;
 
+// Project epoch — optional, non-normative defensive bound. The standard
+// decoder accepts all timestamps; validate_min_timestamp() returns true
+// only for PQIDs at or after this epoch.
+inline constexpr std::uint64_t kMinTimestampMs = 1'700'000'000'000ULL;
+
 // --- Error type --------------------------------------------------------
 class PqidError : public std::runtime_error {
 public:
@@ -390,6 +395,12 @@ inline const std::array<std::uint8_t, 256>& crockford_table() {
     if (v != kVariantStandard && v != kVariantHLC)
         throw PqidError("unknown PQID variant");
     return p;
+}
+
+// Non-normative defensive helper. Returns true iff p.bytes[0..6] decodes
+// to a timestamp at or after kMinTimestampMs.
+[[nodiscard]] inline bool validate_min_timestamp(const Pqid& p) noexcept {
+    return detail::get_be48(p.bytes.data()) >= kMinTimestampMs;
 }
 
 } // namespace pqid

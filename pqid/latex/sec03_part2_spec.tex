@@ -77,6 +77,13 @@ procedure new_standard():
 
 The random step (rather than a fixed +1 increment) is a deliberate choice. It provides modest unlinkability of consecutive IDs from a single generator while preserving strict monotonicity (the step is always at least 1, so consecutive IDs always increase).
 
+\subsection{Optional defensive helper: \code{validate\_min\_timestamp}}
+\label{sec:min-timestamp}
+
+Implementations SHOULD expose a non-normative helper that returns true iff a decoded PQID's timestamp is at or after a project epoch \code{MIN\_TIMESTAMP\_MS}. The reference value is \code{1{,}700{,}000{,}000{,}000} ms ($\approx$ 2023-11-14), chosen as the earliest plausible timestamp any PQID-aware deployment will ever emit.
+
+This helper is \textbf{not part of the wire contract}. Standard decoders MUST continue to accept all timestamps in $[0, 2^{48} - 1]$ as required by the field semantics in §\ref{sec:why}. The helper exists for callers who want to cheaply reject obvious mis-parses — a 41-byte buffer that decodes to timestamp~0 has either come from zeroed memory, a wrong-offset read, or a buggy producer. Rejecting such inputs at boundary entry points is a defense-in-depth measure, not a conformance requirement.
+
 \subsection{CSPRNG requirements}
 \label{sec:csprng}
 

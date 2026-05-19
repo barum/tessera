@@ -6,6 +6,7 @@ import {
   encodeCrockford, decodeCrockford,
   decode, HLCGenerator,
   setNowMsForTesting,
+  validateMinTimestamp,
 } from "./pqid.js";
 
 interface Record {
@@ -145,6 +146,14 @@ function runHLCOverflow(r: Record): Result {
   return { ok: true };
 }
 
+function runValidateMinTimestamp(r: Record): Result {
+  const raw = hexToBytes(r.input_hex!);
+  const got = validateMinTimestamp(raw);
+  const want = (r as any).expected as boolean;
+  if (got !== want) return { ok: false, detail: `got=${got} want=${want}` };
+  return { ok: true };
+}
+
 function dispatch(r: Record): Result {
   switch (r.op) {
     case "decode": return runDecode(r);
@@ -154,6 +163,7 @@ function dispatch(r: Record): Result {
     case "decode_crockford": return runDecodeCrockford(r);
     case "validate_invalid": return runValidateInvalid(r);
     case "hlc_overflow": return runHLCOverflow(r);
+    case "validate_min_timestamp": return runValidateMinTimestamp(r);
   }
   return { ok: false, detail: `unknown op ${r.op}` };
 }

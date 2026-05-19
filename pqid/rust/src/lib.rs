@@ -35,6 +35,10 @@ pub const VARIANT_HLC: u8 = 0x02;
 const MAX_COUNTER: u16 = u16::MAX;
 const HLC_MAX_DRIFT_MS: i64 = 60_000;
 
+/// Project epoch for the optional, non-normative validate_min_timestamp
+/// helper. The standard decoder accepts all timestamps.
+pub const MIN_TIMESTAMP_MS: i64 = 1_700_000_000_000;
+
 /// Canonical Base64URL encoded length (no padding).
 pub const ENCODED_LEN_B64: usize = 55;
 /// Crockford Base32 encoded length.
@@ -108,6 +112,12 @@ impl Pqid {
         <&[u8; RANDOM_FIELD_BYTES]>::try_from(&self.0[9..]).unwrap()
     }
     #[inline] pub fn as_bytes(&self) -> &[u8; SIZE_BYTES] { &self.0 }
+
+    /// Non-normative defensive helper. Returns true iff timestamp_ms() >=
+    /// MIN_TIMESTAMP_MS. The standard decoder accepts all timestamps.
+    #[inline] pub fn validate_min_timestamp(&self) -> bool {
+        self.timestamp_ms() >= MIN_TIMESTAMP_MS
+    }
 
     /// Parse a 41-byte slice; validates the variant byte.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {

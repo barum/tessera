@@ -304,6 +304,57 @@ def build_hlc_overflow_vectors() -> list:
     ]
 
 
+def build_min_timestamp_vectors() -> list:
+    """KATs for the optional validate_min_timestamp helper. The helper is
+    non-normative — the standard decoder accepts all timestamps — so these
+    vectors test ONLY the helper's return value, not decoder behavior."""
+    out = [
+        {
+            "name": "doc",
+            "op": "validate_min_timestamp",
+            "doc": (
+                "validate_min_timestamp(raw) returns true iff "
+                "decoded_timestamp_ms >= MIN_TIMESTAMP_MS (1700000000000, "
+                "≈ 2023-11-14). The standard decoder accepts all "
+                "timestamps in [0, MAX_TIMESTAMP_MS]; this helper is "
+                "non-normative defense-in-depth for callers who want to "
+                "reject obviously-malformed (e.g. zero-filled) buffers."
+            ),
+        },
+        {
+            "name": "below_epoch_zero",
+            "op": "validate_min_timestamp",
+            "input_hex": hex_of(make_pqid(0, 0x01, 0, 0x00)),
+            "expected": False,
+        },
+        {
+            "name": "below_epoch_2020",
+            "op": "validate_min_timestamp",
+            "input_hex": hex_of(make_pqid(1_577_836_800_000, 0x01, 0, 0x00)),
+            "expected": False,
+        },
+        {
+            "name": "exactly_at_epoch",
+            "op": "validate_min_timestamp",
+            "input_hex": hex_of(make_pqid(1_700_000_000_000, 0x01, 0, 0x00)),
+            "expected": True,
+        },
+        {
+            "name": "above_epoch_recent",
+            "op": "validate_min_timestamp",
+            "input_hex": hex_of(make_pqid(1_700_000_000_001, 0x02, 1, 0x42)),
+            "expected": True,
+        },
+        {
+            "name": "above_epoch_max",
+            "op": "validate_min_timestamp",
+            "input_hex": hex_of(make_pqid((1 << 48) - 1, 0x01, 0, 0xFF)),
+            "expected": True,
+        },
+    ]
+    return out
+
+
 def write_json(path: Path, data: list) -> None:
     with path.open("w") as f:
         json.dump(data, f, indent=2)
@@ -319,6 +370,7 @@ def main() -> None:
     write_json(VECTORS_DIR / "decode_crockford.json", build_decode_crockford_vectors())
     write_json(VECTORS_DIR / "invalid.json", build_invalid_vectors())
     write_json(VECTORS_DIR / "hlc_overflow.json", build_hlc_overflow_vectors())
+    write_json(VECTORS_DIR / "min_timestamp.json", build_min_timestamp_vectors())
 
 
 if __name__ == "__main__":

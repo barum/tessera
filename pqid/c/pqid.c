@@ -390,6 +390,10 @@ uint16_t pqid_counter(const uint8_t in[PQID_SIZE_BYTES]) {
     return get_be16(in + PQID_COUNTER_OFFSET);
 }
 
+int pqid_validate_min_timestamp(const uint8_t in[PQID_SIZE_BYTES]) {
+    return get_be48(in) >= PQID_MIN_TIMESTAMP_MS ? 1 : 0;
+}
+
 pqid_status_t pqid_validate(const uint8_t in[PQID_SIZE_BYTES]) {
     uint8_t v = in[PQID_VARIANT_OFFSET];
     if (v != PQID_VARIANT_STANDARD && v != PQID_VARIANT_HLC) {

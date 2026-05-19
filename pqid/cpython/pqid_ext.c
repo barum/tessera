@@ -191,6 +191,16 @@ static PyObject *py_counter(PyObject *self, PyObject *arg) {
     return PyLong_FromLong(c);
 }
 
+static PyObject *py_validate_min_timestamp(PyObject *self, PyObject *arg) {
+    (void)self;
+    Py_buffer buf;
+    if (get_pqid_bytes(arg, &buf) < 0) return NULL;
+    int ok = pqid_validate_min_timestamp((const uint8_t *)buf.buf);
+    PyBuffer_Release(&buf);
+    if (ok) Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
 /* Method table ----------------------------------------------------------- */
 static PyMethodDef Methods[] = {
     {"new",          py_new,                              METH_NOARGS,  "Generate a Standard PQID (41 bytes)."},
@@ -203,6 +213,7 @@ static PyMethodDef Methods[] = {
     {"timestamp_ms", py_timestamp_ms,                     METH_O,       "Extract 48-bit timestamp (ms) from a PQID."},
     {"variant",      py_variant,                          METH_O,       "Extract variant byte (0x01 or 0x02)."},
     {"counter",      py_counter,                          METH_O,       "Extract 16-bit counter."},
+    {"validate_min_timestamp", py_validate_min_timestamp, METH_O,       "Non-normative defensive helper: returns True iff timestamp_ms >= MIN_TIMESTAMP_MS."},
     {NULL, NULL, 0, NULL}
 };
 
@@ -225,5 +236,11 @@ PyMODINIT_FUNC PyInit_pqid_ext(void) {
     PyModule_AddIntConstant(m, "VARIANT_HLC",      PQID_VARIANT_HLC);
     PyModule_AddIntConstant(m, "ENCODED_LEN_B64",  PQID_ENCODED_LEN_B64);
     PyModule_AddIntConstant(m, "ENCODED_LEN_B32",  PQID_ENCODED_LEN_B32);
+    {
+        PyObject *min_ts = PyLong_FromUnsignedLongLong((unsigned long long)PQID_MIN_TIMESTAMP_MS);
+        if (min_ts) {
+            PyModule_AddObject(m, "MIN_TIMESTAMP_MS", min_ts);
+        }
+    }
     return m;
 }

@@ -209,6 +209,20 @@ static Result op_validate_invalid(const std::string& rec) {
     return {false, "unknown input_kind " + kind};
 }
 
+static Result op_validate_min_timestamp(const std::string& rec) {
+    auto hex = get_str(rec, "input_hex");
+    if (!hex) return {false, "no input_hex"};
+    auto raw = hex_to_bytes(*hex);
+    Pqid p; std::memcpy(p.bytes.data(), raw.data(), kSize);
+    bool got = validate_min_timestamp(p);
+    std::regex re("\"expected\"\\s*:\\s*(true|false)");
+    std::smatch m;
+    if (!std::regex_search(rec, m, re)) return {false, "no expected"};
+    bool want = (m[1] == "true");
+    if (got != want) return {false, "got=" + std::to_string(got) + " want=" + std::to_string(want)};
+    return {true, ""};
+}
+
 static Result op_hlc_overflow(const std::string& rec) {
     auto l_old = get_nested_int(rec, "start", "l_old");
     auto c_old = get_nested_int(rec, "start", "c_old");
@@ -278,6 +292,7 @@ int main(int argc, char** argv) {
         else if (op == "decode_crockford")  r = op_decode_crockford(rec);
         else if (op == "validate_invalid")  r = op_validate_invalid(rec);
         else if (op == "hlc_overflow")      r = op_hlc_overflow(rec);
+        else if (op == "validate_min_timestamp") r = op_validate_min_timestamp(rec);
 
         if (r.ok) std::printf("PASS %s\n", name.c_str());
         else { std::printf("FAIL %s %s\n", name.c_str(), r.detail.c_str()); ++failures; }
