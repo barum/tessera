@@ -2,7 +2,7 @@
 """
 Generate PQHash conformance vectors from the Python reference.
 
-Vectors land in pqid/conformance/vectors/pqhash_*.json. They are deterministic
+Vectors land in pqhash/conformance/vectors/pqhash_*.json. They are deterministic
 given a fixed reference. Re-running this script with unchanged sources
 produces byte-identical JSON.
 """
@@ -13,8 +13,8 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent.parent  # pqid/
-sys.path.insert(0, str(ROOT / "python"))
+PROJECT_ROOT = HERE.parent.parent  # pqhash/
+sys.path.insert(0, str(PROJECT_ROOT / "python"))
 
 import pqhash  # noqa: E402
 
@@ -324,7 +324,7 @@ def write_json(path: Path, data: list) -> None:
     with path.open("w") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
-    print(f"wrote {path.relative_to(ROOT.parent)} ({len(data)} records)")
+    print(f"wrote {path.relative_to(PROJECT_ROOT.parent)} ({len(data)} records)")
 
 
 def main() -> None:

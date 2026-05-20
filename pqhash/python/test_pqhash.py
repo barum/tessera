@@ -9,7 +9,9 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.normpath(os.path.join(_HERE, "..", "..", "pqid", "python")))
 
 import pqhash
 import pqid  # to verify PQHash and PQID don't accidentally cross-decode
