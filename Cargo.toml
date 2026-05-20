@@ -1,0 +1,13 @@
+# Cargo workspace for the pq-toolkit monorepo.
+#
+# Each project under pqid/ and pqhash/ is an independent crate;
+# tools/conformance/rust/ is a binary that depends on both. The workspace
+# unifies builds so a single `cargo build` from the root compiles everything.
+
+[workspace]
+resolver = "3"
+members = [
+    "pqid/rust",
+    "pqhash/rust",
+    "tools/conformance/rust",
+]

@@ -7,7 +7,7 @@ use std::process::ExitCode;
 use pqid::{
     set_now_ms_for_testing, HlcGenerator, Pqid, VARIANT_HLC, SIZE_BYTES,
 };
-use pqid::pqhash::{self, Pqhash, PQHASH_SIZE_BYTES};
+use pqhash::{self, Pqhash, PQHASH_SIZE_BYTES};
 use serde::Deserialize;
 use serde_json::Value;
 

@@ -36,9 +36,15 @@ pqid/java/build/
 
 # Cargo lockfile (library — committing is optional; keep untracked for now)
 pqid/rust/Cargo.lock
+pqhash/rust/Cargo.lock
+tools/conformance/rust/Cargo.lock
+Cargo.lock
 
-# Cargo target dir (already covered above but make explicit)
+# Cargo target dirs (workspace target/ now lives at repo root)
+target/
 pqid/rust/target/
+pqhash/rust/target/
+tools/conformance/rust/target/
 
 # Node / TypeScript
 node_modules/
