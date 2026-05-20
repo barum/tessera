@@ -202,6 +202,116 @@ public final class ConformanceRunner {
         return new Result(true, "");
     }
 
+    // ---- PQHash ops ----
+
+    static Result opPqhashHashOnly(String rec) {
+        byte[] content = hexToBytes(getStr(rec, "input_hex"));
+        byte[] tail = PQHash.hashOnly(content);
+        String got = bytesToHex(tail);
+        String want = getStr(rec, "expected_tail_hex");
+        if (!got.equals(want)) return new Result(false, "got=" + got + " want=" + want);
+        return new Result(true, "");
+    }
+
+    static Result opPqhashDecode(String rec) {
+        byte[] raw = hexToBytes(getStr(rec, "input_hex"));
+        try {
+            PQHash p = new PQHash(raw);
+            Pattern exp = Pattern.compile("\"expected\"\\s*:\\s*\\{(.*?)\\}", Pattern.DOTALL);
+            Matcher m = exp.matcher(rec);
+            if (!m.find()) return new Result(false, "no expected");
+            String e = m.group(1);
+            long wantVariant = getInt(e, "variant");
+            long wantTs = getInt(e, "timestamp_ms");
+            long wantCtr = getInt(e, "counter");
+            String wantTail = getStr(e, "tail_hex");
+            if ((p.variant() & 0xFF) != wantVariant) return new Result(false, "variant");
+            if (p.timestampMs() != wantTs) return new Result(false, "ts");
+            if (p.counter() != wantCtr) return new Result(false, "counter");
+            String gotTail = bytesToHex(p.tail());
+            if (!gotTail.equals(wantTail)) return new Result(false, "tail got=" + gotTail + " want=" + wantTail);
+            return new Result(true, "");
+        } catch (Exception ex) {
+            return new Result(false, "exception: " + ex.getMessage());
+        }
+    }
+
+    static Result opPqhashEncodeB64(String rec) {
+        byte[] raw = hexToBytes(getStr(rec, "input_hex"));
+        PQHash p = new PQHash(raw);
+        String got = PQHashCodec.encodeBase64Url(p);
+        String want = getStr(rec, "expected_str");
+        if (!got.equals(want)) return new Result(false, "got=" + got + " want=" + want);
+        return new Result(true, "");
+    }
+
+    static Result opPqhashDecodeB64(String rec) {
+        try {
+            PQHash p = PQHashCodec.decodeBase64Url(getStr(rec, "input_str"));
+            String got = bytesToHex(p.bytesNoCopy());
+            String want = getStr(rec, "expected_hex");
+            if (!got.equals(want)) return new Result(false, "got=" + got + " want=" + want);
+            return new Result(true, "");
+        } catch (Exception ex) {
+            return new Result(false, "exception: " + ex.getMessage());
+        }
+    }
+
+    static Result opPqhashEncodeCrockford(String rec) {
+        byte[] raw = hexToBytes(getStr(rec, "input_hex"));
+        PQHash p = new PQHash(raw);
+        String got = PQHashCodec.encodeCrockford(p);
+        String want = getStr(rec, "expected_str");
+        if (!got.equals(want)) return new Result(false, "got=" + got + " want=" + want);
+        return new Result(true, "");
+    }
+
+    static Result opPqhashDecodeCrockford(String rec) {
+        try {
+            PQHash p = PQHashCodec.decodeCrockford(getStr(rec, "input_str"));
+            String got = bytesToHex(p.bytesNoCopy());
+            String want = getStr(rec, "expected_hex");
+            if (!got.equals(want)) return new Result(false, "got=" + got + " want=" + want);
+            return new Result(true, "");
+        } catch (Exception ex) {
+            return new Result(false, "exception: " + ex.getMessage());
+        }
+    }
+
+    static Result opPqhashValidateInvalid(String rec) {
+        String kind = getStr(rec, "input_kind");
+        try {
+            if ("binary_hex".equals(kind)) {
+                String h = getStr(rec, "input_hex");
+                if (h.length() != 2 * PQHash.SIZE_BYTES) return new Result(true, "");
+                new PQHash(hexToBytes(h));
+                return new Result(false, "expected error, got success");
+            } else if ("b64".equals(kind)) {
+                PQHashCodec.decodeBase64Url(getStr(rec, "input_str"));
+                return new Result(false, "expected error, got success");
+            } else if ("crockford".equals(kind)) {
+                PQHashCodec.decodeCrockford(getStr(rec, "input_str"));
+                return new Result(false, "expected error, got success");
+            }
+        } catch (Exception ex) {
+            return new Result(true, "");
+        }
+        return new Result(false, "unknown kind " + kind);
+    }
+
+    static Result opPqhashVerify(String rec) {
+        byte[] raw = hexToBytes(getStr(rec, "input_hex"));
+        byte[] content = hexToBytes(getStr(rec, "content_hex"));
+        PQHash p = new PQHash(raw);
+        boolean got = p.verify(content);
+        Pattern boolPat = Pattern.compile("\"expected\"\\s*:\\s*(true|false)");
+        Matcher m = boolPat.matcher(rec);
+        if (!m.find()) return new Result(false, "no expected bool");
+        boolean want = Boolean.parseBoolean(m.group(1));
+        if (got != want) return new Result(false, "got=" + got + " want=" + want);
+        return new Result(true, "");
+    }
+
     static Result opHlcOverflow(String rec) {
         String startBody = getNested(rec, "start", "");
         if (startBody == null) return new Result(false, "no start");
@@ -266,6 +376,14 @@ public final class ConformanceRunner {
                     case "validate_invalid": r = opValidateInvalid(rec); break;
                     case "hlc_overflow": r = opHlcOverflow(rec); break;
                     case "validate_min_timestamp": r = opValidateMinTimestamp(rec); break;
+                    case "pqhash_hash_only":       r = opPqhashHashOnly(rec); break;
+                    case "pqhash_decode":          r = opPqhashDecode(rec); break;
+                    case "pqhash_encode_b64":      r = opPqhashEncodeB64(rec); break;
+                    case "pqhash_decode_b64":      r = opPqhashDecodeB64(rec); break;
+                    case "pqhash_encode_crockford": r = opPqhashEncodeCrockford(rec); break;
+                    case "pqhash_decode_crockford": r = opPqhashDecodeCrockford(rec); break;
+                    case "pqhash_validate_invalid": r = opPqhashValidateInvalid(rec); break;
+                    case "pqhash_verify":          r = opPqhashVerify(rec); break;
                     default: r = new Result(false, "unknown op " + op);
                 }
             } catch (Exception ex) {
