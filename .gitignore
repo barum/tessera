@@ -17,15 +17,17 @@ build/
 *.class
 pqid/c/test_pqid
 pqid/c/bench_pqid
-pqid/c/conformance_runner
-pqid/c/test_pqhash
 pqid/c/fuzz_decode
+pqhash/c/test_pqhash
+tools/conformance/c/conformance_runner
 
 # macOS debug bundles
 *.dSYM/
 pqid/cpp/test_pqid
 pqid/cpp/bench_pqid
 pqid/cpp/conformance_runner
+pqhash/cpp/test_pqhash
+tools/conformance/cpp/conformance_runner
 pqid/java/build/
 
 # Cargo lockfile (library — committing is optional; keep untracked for now)

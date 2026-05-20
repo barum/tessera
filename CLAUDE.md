@@ -8,7 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working in the 
 
 - **[pqid/](pqid/)** — a 41-byte sortable identifier format (Standard + HLC variants). See [pqid/CLAUDE.md](pqid/CLAUDE.md).
 - **[pqhash/](pqhash/)** — a SHAKE-256-based content hash format. See [pqhash/CLAUDE.md](pqhash/CLAUDE.md).
-- **[common/](common/)** — shared primitives used by more than one project (e.g., Keccak/SHAKE-256). See [common/README.md](common/README.md).
+- **[common/](common/)** — shared *library* primitives used by more than one project (e.g., Keccak/SHAKE-256). See [common/README.md](common/README.md).
+- **[tools/](tools/)** — cross-project test infrastructure (conformance runners that exercise both projects from a single binary per language). Not part of any project's normative surface.
 
 When working inside a project, treat its `CLAUDE.md` as authoritative for that project's invariants. This umbrella file only covers things that span projects.
 
