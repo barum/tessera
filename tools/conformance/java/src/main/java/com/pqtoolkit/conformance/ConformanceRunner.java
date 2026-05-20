@@ -1,4 +1,10 @@
-package com.pqid;
+package com.pqtoolkit.conformance;
+
+import com.pqid.Pqid;
+import com.pqid.Codec;
+import com.pqid.HLCGenerator;
+import com.pqhash.PQHash;
+import com.pqhash.PQHashCodec;
 
 import java.io.IOException;
 import java.nio.file.Files;

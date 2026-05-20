@@ -15,7 +15,7 @@ BUILD    := build
 
 JFLAGS_BUILD := -d $(BUILD) -implicit:none
 
-.PHONY: build test bench clean
+.PHONY: build test bench fuzz clean
 
 build:
 	@mkdir -p $(BUILD)
@@ -25,10 +25,6 @@ build:
 		$(SRC_MAIN)/StandardGenerator.java \
 		$(SRC_MAIN)/HLCGenerator.java \
 		$(SRC_MAIN)/Bench.java \
-		$(SRC_MAIN)/Keccak.java \
-		$(SRC_MAIN)/PQHash.java \
-		$(SRC_MAIN)/PQHashCodec.java \
-		$(SRC_MAIN)/ConformanceRunner.java \
 		$(SRC_MAIN)/FuzzDecode.java
 	$(JAVAC) -d $(BUILD) -cp $(BUILD) -implicit:none \
 		$(SRC_TEST)/PqidTest.java

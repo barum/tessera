@@ -31,7 +31,7 @@ public final class Pqid implements Comparable<Pqid> {
 
     private final byte[] bytes; // length 41, defensively copied at construction
 
-    Pqid(byte[] bytes) {
+    public Pqid(byte[] bytes) {
         if (bytes == null || bytes.length != SIZE_BYTES) {
             throw new IllegalArgumentException("PQID must be exactly 41 bytes");
         }
@@ -47,8 +47,8 @@ public final class Pqid implements Comparable<Pqid> {
         return Arrays.copyOf(bytes, SIZE_BYTES);
     }
 
-    /** Internal accessor used by the codec to avoid repeated copies. Length 41, do not mutate. */
-    byte[] bytesNoCopy() {
+    /** Internal accessor used by the codec and conformance tooling to avoid repeated copies. Length 41, do not mutate. */
+    public byte[] bytesNoCopy() {
         return bytes;
     }
 

@@ -1,4 +1,6 @@
-package com.pqid;
+package com.pqhash;
+
+import com.pqtoolkit.common.Keccak;
 
 import java.util.Arrays;
 
@@ -20,7 +22,7 @@ public final class PQHash implements Comparable<PQHash> {
 
     private final byte[] bytes;
 
-    PQHash(byte[] bytes) {
+    public PQHash(byte[] bytes) {
         if (bytes == null || bytes.length != SIZE_BYTES) {
             throw new IllegalArgumentException("PQHash must be exactly 73 bytes");
         }
@@ -64,7 +66,8 @@ public final class PQHash implements Comparable<PQHash> {
         return Arrays.copyOf(bytes, SIZE_BYTES);
     }
 
-    byte[] bytesNoCopy() {
+    /** Internal accessor used by the codec and conformance tooling to avoid repeated copies. Length 73, do not mutate. */
+    public byte[] bytesNoCopy() {
         return bytes;
     }
 

@@ -33,6 +33,9 @@ pqid/cpp/conformance_runner
 pqhash/cpp/test_pqhash
 tools/conformance/cpp/conformance_runner
 pqid/java/build/
+pqhash/java/build/
+pqhash/java/build-common/
+tools/conformance/java/build/
 
 # Cargo lockfile (library — committing is optional; keep untracked for now)
 pqid/rust/Cargo.lock

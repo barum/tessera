@@ -1,4 +1,4 @@
-package com.pqid;
+package com.pqtoolkit.common;
 
 /**
  * Vendored minimal Keccak-f[1600] + SHAKE-256.

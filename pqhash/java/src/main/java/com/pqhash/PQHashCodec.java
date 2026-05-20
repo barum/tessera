@@ -1,4 +1,4 @@
-package com.pqid;
+package com.pqhash;
 
 /**
  * Codec for PQHash text encodings (Base64URL and Crockford Base32).
