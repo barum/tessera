@@ -15,8 +15,9 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-PY = HERE.parent.parent / "python"
-sys.path.insert(0, str(PY))
+REPO_ROOT = HERE.parent.parent.parent  # tools/conformance/python/ → repo root
+sys.path.insert(0, str(REPO_ROOT / "pqid" / "python"))
+sys.path.insert(0, str(REPO_ROOT / "pqhash" / "python"))
 
 import pqid  # noqa: E402
 import pqhash  # noqa: E402

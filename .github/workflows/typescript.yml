@@ -19,18 +19,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - name: Install and test
+      - name: PQID TypeScript test
         working-directory: pqid/typescript
         run: |
           npm install
           npm test
-      - name: Run conformance runner
-        working-directory: pqid/typescript
+      - name: PQHash TypeScript build
+        working-directory: pqhash/typescript
         run: |
-          for f in ../conformance/vectors/*.json; do
-            node dist/conformance_runner.js "$f"
+          npm install
+          npm run build
+      - name: Build and run conformance runner
+        run: |
+          cd tools/conformance/typescript
+          npm install
+          npm run build
+          cd ../../..
+          for f in pqid/conformance/vectors/*.json pqhash/conformance/vectors/*.json; do
+            node tools/conformance/typescript/dist/conformance_runner.js "$f"
           done
-      - name: Fuzz smoke (60s)
+      - name: PQID fuzz smoke (60s)
         working-directory: pqid/typescript
         run: |
           timeout 60 node dist/fuzz/fuzz_decode.js 1000000 || ec=$?

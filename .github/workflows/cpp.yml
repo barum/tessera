@@ -19,7 +19,7 @@ jobs:
             cxx: g++
     steps:
       - uses: actions/checkout@v4
-      - name: Build and test
+      - name: PQID C++ build and test
         env:
           CXX: ${{ matrix.cxx }}
         run: |
@@ -27,12 +27,27 @@ jobs:
           make clean
           make all
           ./test_pqid
+      - name: PQHash C++ build and test
+        env:
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cd pqhash/cpp
+          make clean
+          make test
+      - name: Build conformance runner
+        env:
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cd tools/conformance/cpp
+          make
       - name: Run conformance vectors against C++ runner
         run: |
-          for f in pqid/conformance/vectors/*.json; do
-            pqid/cpp/conformance_runner "$f"
+          for f in pqid/conformance/vectors/*.json pqhash/conformance/vectors/*.json; do
+            tools/conformance/cpp/conformance_runner "$f"
           done
-      - name: Fuzz smoke (60s)
+      - name: PQID fuzz smoke (60s)
+        env:
+          CXX: ${{ matrix.cxx }}
         run: |
           cd pqid/cpp
           make fuzz_decode
