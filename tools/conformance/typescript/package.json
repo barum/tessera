@@ -1,0 +1,17 @@
+{
+  "name": "conformance_runner",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "run": "node dist/conformance_runner.js"
+  },
+  "dependencies": {
+    "pqid":   "file:../../../pqid/typescript",
+    "pqhash": "file:../../../pqhash/typescript"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

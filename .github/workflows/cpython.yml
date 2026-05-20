@@ -27,11 +27,10 @@ jobs:
       - name: Run extension tests
         working-directory: pqid/cpython
         run: python3 test_pqid_ext.py
-      - name: Run conformance runner
-        working-directory: pqid/cpython
+      - name: Run conformance runner against all vectors
         run: |
-          for f in ../conformance/vectors/*.json; do
-            python3 conformance_runner.py "$f"
+          for f in pqid/conformance/vectors/*.json pqhash/conformance/vectors/*.json; do
+            python3 tools/conformance/cpython/conformance_runner.py "$f"
           done
       - name: Fuzz smoke (60s)
         working-directory: pqid/cpython

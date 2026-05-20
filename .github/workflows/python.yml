@@ -19,20 +19,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Run Python reference tests
+      - name: Run PQID Python tests
         run: |
           cd pqid/python
           python3 test_pqid.py
-      - name: Run Python conformance runner
+      - name: Run PQHash Python tests
         run: |
-          for f in pqid/conformance/vectors/*.json; do
-            python3 pqid/conformance/runners/python_runner.py "$f"
+          cd pqhash/python
+          python3 test_pqhash.py
+      - name: Run Python conformance runner against all vectors
+        run: |
+          for f in pqid/conformance/vectors/*.json pqhash/conformance/vectors/*.json; do
+            python3 tools/conformance/python/python_runner.py "$f"
           done
-      - name: Fuzz smoke (60s)
+      - name: PQID fuzz smoke (60s)
         run: |
           cd pqid/python
           timeout 60 python3 fuzz/fuzz_decode.py 1000000 || ec=$?
-          # exit 124 is the timeout signal — treat as success.
           if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
             exit "$ec"
           fi

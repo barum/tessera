@@ -7,9 +7,10 @@ on:
     branches: [main]
 
 # Cross-language conformance gate: builds every implementation on a single
-# runner and runs the harness end-to-end. This is the single check branch
-# protection should require — the per-language workflows (python.yml, c.yml,
-# go.yml, …) cover per-OS and per-toolchain variants independently.
+# runner and runs the harness end-to-end against vectors from BOTH pqid/
+# and pqhash/. This is the single check branch protection should require —
+# the per-language workflows (python.yml, c.yml, …) cover per-OS and
+# per-toolchain variants independently.
 jobs:
   cross-language:
     runs-on: ubuntu-latest
@@ -37,4 +38,4 @@ jobs:
           java-version: "21"
 
       - name: Run cross-language conformance harness
-        run: bash pqid/conformance/run.sh
+        run: bash tools/conformance/run.sh

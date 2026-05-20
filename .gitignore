@@ -17,22 +17,37 @@ build/
 *.class
 pqid/c/test_pqid
 pqid/c/bench_pqid
-pqid/c/conformance_runner
-pqid/c/test_pqhash
 pqid/c/fuzz_decode
+pqhash/c/test_pqhash
+tools/conformance/c/conformance_runner
+tools/conformance/go/conformance_runner
+
+# Go workspace lockfile
+go.work.sum
 
 # macOS debug bundles
 *.dSYM/
 pqid/cpp/test_pqid
 pqid/cpp/bench_pqid
 pqid/cpp/conformance_runner
+pqhash/cpp/test_pqhash
+tools/conformance/cpp/conformance_runner
 pqid/java/build/
+pqhash/java/build/
+pqhash/java/build-common/
+tools/conformance/java/build/
 
 # Cargo lockfile (library — committing is optional; keep untracked for now)
 pqid/rust/Cargo.lock
+pqhash/rust/Cargo.lock
+tools/conformance/rust/Cargo.lock
+Cargo.lock
 
-# Cargo target dir (already covered above but make explicit)
+# Cargo target dirs (workspace target/ now lives at repo root)
+target/
 pqid/rust/target/
+pqhash/rust/target/
+tools/conformance/rust/target/
 
 # Node / TypeScript
 node_modules/

@@ -7,8 +7,16 @@ from setuptools import Extension, setup
 
 ext = Extension(
     name="pqid_ext",
-    sources=["pqid_ext.c", "../c/pqid.c", "../c/pqhash.c", "../c/keccak.c"],
-    include_dirs=["../c"],
+    # The current pqid_ext exposes BOTH PQID and PQHash bindings from a single
+    # extension. Splitting into two extensions (pqid_ext + pqhash_ext) is a
+    # tracked follow-up; for now we pull sources from all three C trees.
+    sources=[
+        "pqid_ext.c",
+        "../c/pqid.c",
+        "../../pqhash/c/pqhash.c",
+        "../../common/c/keccak.c",
+    ],
+    include_dirs=["../c", "../../pqhash/c", "../../common/c"],
     extra_compile_args=[
         "-O3",
         "-Wall",

@@ -1,0 +1,14 @@
+{
+  "name": "pqhash",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/pqhash.js",
+  "types": "./dist/pqhash.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

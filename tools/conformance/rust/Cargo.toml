@@ -1,0 +1,20 @@
+[package]
+name = "conformance_runner"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+pqid   = { path = "../../../pqid/rust" }
+pqhash = { path = "../../../pqhash/rust" }
+serde  = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex    = "0.4"
+
+[[bin]]
+name = "conformance_runner"
+path = "src/bin/conformance_runner.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

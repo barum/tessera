@@ -20,18 +20,23 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
-      - name: Build and test
+      - name: PQID Java build and test
         working-directory: pqid/java
         run: |
           make build
           make test
+      - name: PQHash Java build
+        working-directory: pqhash/java
+        run: make build
+      - name: Build conformance runner
+        working-directory: tools/conformance/java
+        run: make build
       - name: Run conformance runner
-        working-directory: pqid/java
         run: |
-          for f in ../conformance/vectors/*.json; do
-            java -cp build com.pqid.ConformanceRunner "$f"
+          for f in pqid/conformance/vectors/*.json pqhash/conformance/vectors/*.json; do
+            java -cp tools/conformance/java/build com.pqtoolkit.conformance.ConformanceRunner "$f"
           done
-      - name: Fuzz smoke (60s)
+      - name: PQID fuzz smoke (60s)
         working-directory: pqid/java
         run: |
           timeout 60 java -cp build com.pqid.FuzzDecode 1000000 || ec=$?
