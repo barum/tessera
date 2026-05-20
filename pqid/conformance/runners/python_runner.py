@@ -19,6 +19,7 @@ PY = HERE.parent.parent / "python"
 sys.path.insert(0, str(PY))
 
 import pqid  # noqa: E402
+import pqhash  # noqa: E402
 
 
 def run_decode(rec: dict) -> tuple[bool, str]:
@@ -146,6 +147,101 @@ def run_validate_min_timestamp(rec):
     return True, ""
 
 
+# ---------------------------------------------------------------------------
+# PQHash ops
+# ---------------------------------------------------------------------------
+
+def run_pqhash_hash_only(rec):
+    content = bytes.fromhex(rec["input_hex"])
+    got = pqhash.hash_only(content)
+    if got.hex() != rec["expected_tail_hex"]:
+        return False, f"tail mismatch"
+    return True, ""
+
+
+def run_pqhash_decode(rec):
+    raw = bytes.fromhex(rec["input_hex"])
+    try:
+        d = pqhash.decode(raw)
+    except Exception as e:
+        return False, f"raised {type(e).__name__}: {e}"
+    exp = rec["expected"]
+    got = {
+        "variant": d.variant,
+        "timestamp_ms": d.timestamp_ms,
+        "counter": d.counter,
+        "tail_hex": d.tail.hex(),
+    }
+    if got != exp:
+        return False, f"got={got} want={exp}"
+    return True, ""
+
+
+def run_pqhash_encode_b64(rec):
+    raw = bytes.fromhex(rec["input_hex"])
+    s = pqhash.encode_b64(raw)
+    if s != rec["expected_str"]:
+        return False, f"got={s!r} want={rec['expected_str']!r}"
+    return True, ""
+
+
+def run_pqhash_decode_b64(rec):
+    try:
+        raw = pqhash.decode_b64(rec["input_str"])
+    except Exception as e:
+        return False, f"raised {type(e).__name__}: {e}"
+    if raw.hex() != rec["expected_hex"]:
+        return False, f"got={raw.hex()} want={rec['expected_hex']}"
+    return True, ""
+
+
+def run_pqhash_encode_crockford(rec):
+    raw = bytes.fromhex(rec["input_hex"])
+    s = pqhash.encode_b32(raw)
+    if s != rec["expected_str"]:
+        return False, f"got={s!r} want={rec['expected_str']!r}"
+    return True, ""
+
+
+def run_pqhash_decode_crockford(rec):
+    try:
+        raw = pqhash.decode_b32(rec["input_str"])
+    except Exception as e:
+        return False, f"raised {type(e).__name__}: {e}"
+    if raw.hex() != rec["expected_hex"]:
+        return False, f"got={raw.hex()} want={rec['expected_hex']}"
+    return True, ""
+
+
+def run_pqhash_validate_invalid(rec):
+    kind = rec["input_kind"]
+    try:
+        if kind == "binary_hex":
+            pqhash.decode(bytes.fromhex(rec["input_hex"]))
+        elif kind == "b64":
+            raw = pqhash.decode_b64(rec["input_str"])
+            pqhash.decode(raw)
+        elif kind == "crockford":
+            raw = pqhash.decode_b32(rec["input_str"])
+            pqhash.decode(raw)
+        else:
+            return False, f"unknown input_kind {kind!r}"
+    except pqhash.PQHashError:
+        return True, ""
+    except Exception as e:
+        return False, f"non-PQHashError: {type(e).__name__}: {e}"
+    return False, "expected error, got success"
+
+
+def run_pqhash_verify(rec):
+    raw = bytes.fromhex(rec["input_hex"])
+    content = bytes.fromhex(rec["content_hex"])
+    got = pqhash.verify(raw, content)
+    if got != rec["expected"]:
+        return False, f"got={got} want={rec['expected']}"
+    return True, ""
+
+
 DISPATCH = {
     "decode": run_decode,
     "encode_b64": run_encode_b64,
@@ -155,6 +251,14 @@ DISPATCH = {
     "validate_invalid": run_validate_invalid,
     "hlc_overflow": run_hlc_overflow,
     "validate_min_timestamp": run_validate_min_timestamp,
+    "pqhash_hash_only": run_pqhash_hash_only,
+    "pqhash_decode": run_pqhash_decode,
+    "pqhash_encode_b64": run_pqhash_encode_b64,
+    "pqhash_decode_b64": run_pqhash_decode_b64,
+    "pqhash_encode_crockford": run_pqhash_encode_crockford,
+    "pqhash_decode_crockford": run_pqhash_decode_crockford,
+    "pqhash_validate_invalid": run_pqhash_validate_invalid,
+    "pqhash_verify": run_pqhash_verify,
 }
 
 
