@@ -11,19 +11,21 @@ import (
 )
 
 type Record struct {
-	Name           string                 `json:"name"`
-	Op             string                 `json:"op"`
-	InputHex       string                 `json:"input_hex,omitempty"`
-	InputStr       string                 `json:"input_str,omitempty"`
-	InputKind      string                 `json:"input_kind,omitempty"`
-	ExpectedHex    string                 `json:"expected_hex,omitempty"`
-	ExpectedStr    string                 `json:"expected_str,omitempty"`
-	ExpectedError  string                 `json:"expected_error,omitempty"`
-	Expected       json.RawMessage        `json:"expected,omitempty"`
-	Start          map[string]int64       `json:"start,omitempty"`
-	PhysicalTimeMs int64                  `json:"physical_time_ms,omitempty"`
-	Observe        map[string]int64       `json:"observe,omitempty"`
-	Doc            string                 `json:"doc,omitempty"`
+	Name            string           `json:"name"`
+	Op              string           `json:"op"`
+	InputHex        string           `json:"input_hex,omitempty"`
+	InputStr        string           `json:"input_str,omitempty"`
+	InputKind       string           `json:"input_kind,omitempty"`
+	ExpectedHex     string           `json:"expected_hex,omitempty"`
+	ExpectedStr     string           `json:"expected_str,omitempty"`
+	ExpectedError   string           `json:"expected_error,omitempty"`
+	Expected        json.RawMessage  `json:"expected,omitempty"`
+	Start           map[string]int64 `json:"start,omitempty"`
+	PhysicalTimeMs  int64            `json:"physical_time_ms,omitempty"`
+	Observe         map[string]int64 `json:"observe,omitempty"`
+	Doc             string           `json:"doc,omitempty"`
+	ExpectedTailHex string           `json:"expected_tail_hex,omitempty"`
+	ContentHex      string           `json:"content_hex,omitempty"`
 }
 
 func (r Record) expectedAsMap() map[string]interface{} {
@@ -179,6 +181,145 @@ func runValidateInvalid(r Record) (bool, string) {
 	return false, fmt.Sprintf("unknown input_kind %q", r.InputKind)
 }
 
+func runPQHashHashOnly(r Record) (bool, string) {
+	content, err := hex.DecodeString(r.InputHex)
+	if err != nil {
+		return false, fmt.Sprintf("bad hex: %v", err)
+	}
+	tail := pqid.PQHashHashOnly(content)
+	got := hex.EncodeToString(tail[:])
+	if got != r.ExpectedTailHex {
+		return false, fmt.Sprintf("got=%s want=%s", got, r.ExpectedTailHex)
+	}
+	return true, ""
+}
+
+func runPQHashDecode(r Record) (bool, string) {
+	raw, err := hex.DecodeString(r.InputHex)
+	if err != nil {
+		return false, fmt.Sprintf("bad hex: %v", err)
+	}
+	d, err := pqid.PQHashDecode(raw)
+	if err != nil {
+		return false, fmt.Sprintf("decode: %v", err)
+	}
+	exp := r.expectedAsMap()
+	if exp == nil {
+		return false, "no expected object"
+	}
+	if int64(d.Variant) != int64(exp["variant"].(float64)) {
+		return false, fmt.Sprintf("variant got=%d want=%v", d.Variant, exp["variant"])
+	}
+	if d.TimestampMS != int64(exp["timestamp_ms"].(float64)) {
+		return false, fmt.Sprintf("ts got=%d want=%v", d.TimestampMS, exp["timestamp_ms"])
+	}
+	if int64(d.Counter) != int64(exp["counter"].(float64)) {
+		return false, fmt.Sprintf("counter got=%d want=%v", d.Counter, exp["counter"])
+	}
+	gotTail := hex.EncodeToString(d.Tail[:])
+	if gotTail != exp["tail_hex"].(string) {
+		return false, fmt.Sprintf("tail got=%s want=%s", gotTail, exp["tail_hex"])
+	}
+	return true, ""
+}
+
+func runPQHashEncodeB64(r Record) (bool, string) {
+	raw, err := hex.DecodeString(r.InputHex)
+	if err != nil {
+		return false, fmt.Sprintf("bad hex: %v", err)
+	}
+	var arr [pqid.PQHashSizeBytes]byte
+	copy(arr[:], raw)
+	got := pqid.PQHashEncodeBase64URL(arr)
+	if got != r.ExpectedStr {
+		return false, fmt.Sprintf("got=%q want=%q", got, r.ExpectedStr)
+	}
+	return true, ""
+}
+
+func runPQHashDecodeB64(r Record) (bool, string) {
+	arr, err := pqid.PQHashDecodeBase64URL(r.InputStr)
+	if err != nil {
+		return false, fmt.Sprintf("decode: %v", err)
+	}
+	got := hex.EncodeToString(arr[:])
+	if got != r.ExpectedHex {
+		return false, fmt.Sprintf("got=%s want=%s", got, r.ExpectedHex)
+	}
+	return true, ""
+}
+
+func runPQHashEncodeCrockford(r Record) (bool, string) {
+	raw, err := hex.DecodeString(r.InputHex)
+	if err != nil {
+		return false, fmt.Sprintf("bad hex: %v", err)
+	}
+	var arr [pqid.PQHashSizeBytes]byte
+	copy(arr[:], raw)
+	got := pqid.PQHashEncodeCrockford(arr)
+	if got != r.ExpectedStr {
+		return false, fmt.Sprintf("got=%q want=%q", got, r.ExpectedStr)
+	}
+	return true, ""
+}
+
+func runPQHashDecodeCrockford(r Record) (bool, string) {
+	arr, err := pqid.PQHashDecodeCrockford(r.InputStr)
+	if err != nil {
+		return false, fmt.Sprintf("decode: %v", err)
+	}
+	got := hex.EncodeToString(arr[:])
+	if got != r.ExpectedHex {
+		return false, fmt.Sprintf("got=%s want=%s", got, r.ExpectedHex)
+	}
+	return true, ""
+}
+
+func runPQHashValidateInvalid(r Record) (bool, string) {
+	switch r.InputKind {
+	case "binary_hex":
+		raw, err := hex.DecodeString(r.InputHex)
+		if err != nil {
+			return true, ""
+		}
+		if _, err := pqid.PQHashDecode(raw); err != nil {
+			return true, ""
+		}
+		return false, "expected error, got success"
+	case "b64":
+		if _, err := pqid.PQHashDecodeBase64URL(r.InputStr); err != nil {
+			return true, ""
+		}
+		return false, "expected error, got success"
+	case "crockford":
+		if _, err := pqid.PQHashDecodeCrockford(r.InputStr); err != nil {
+			return true, ""
+		}
+		return false, "expected error, got success"
+	}
+	return false, fmt.Sprintf("unknown input_kind %q", r.InputKind)
+}
+
+func runPQHashVerify(r Record) (bool, string) {
+	raw, err := hex.DecodeString(r.InputHex)
+	if err != nil {
+		return false, fmt.Sprintf("bad hex: %v", err)
+	}
+	content, err := hex.DecodeString(r.ContentHex)
+	if err != nil {
+		return false, fmt.Sprintf("bad content_hex: %v", err)
+	}
+	got := pqid.PQHashVerify(raw, content)
+	var want bool
+	if err := json.Unmarshal(r.Expected, &want); err != nil {
+		return false, "no expected bool"
+	}
+	if got != want {
+		return false, fmt.Sprintf("got=%v want=%v", got, want)
+	}
+	return true, ""
+}
+
 func runHLCOverflow(r Record) (bool, string) {
 	if r.Name == "doc" {
 		return true, ""
@@ -246,6 +387,22 @@ func dispatch(r Record) (bool, string) {
 		return runHLCOverflow(r)
 	case "validate_min_timestamp":
 		return runValidateMinTimestamp(r)
+	case "pqhash_hash_only":
+		return runPQHashHashOnly(r)
+	case "pqhash_decode":
+		return runPQHashDecode(r)
+	case "pqhash_encode_b64":
+		return runPQHashEncodeB64(r)
+	case "pqhash_decode_b64":
+		return runPQHashDecodeB64(r)
+	case "pqhash_encode_crockford":
+		return runPQHashEncodeCrockford(r)
+	case "pqhash_decode_crockford":
+		return runPQHashDecodeCrockford(r)
+	case "pqhash_validate_invalid":
+		return runPQHashValidateInvalid(r)
+	case "pqhash_verify":
+		return runPQHashVerify(r)
 	}
 	return false, fmt.Sprintf("unknown op %q", r.Op)
 }
