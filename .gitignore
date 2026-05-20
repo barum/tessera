@@ -18,6 +18,11 @@ build/
 pqid/c/test_pqid
 pqid/c/bench_pqid
 pqid/c/conformance_runner
+pqid/c/test_pqhash
+pqid/c/fuzz_decode
+
+# macOS debug bundles
+*.dSYM/
 pqid/cpp/test_pqid
 pqid/cpp/bench_pqid
 pqid/cpp/conformance_runner

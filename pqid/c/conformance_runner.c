@@ -10,6 +10,7 @@
  */
 #define _POSIX_C_SOURCE 200809L
 #include "pqid.h"
+#include "pqhash.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -402,6 +403,235 @@ static int op_hlc_overflow(const char *rec, char *err) {
     return 1;
 }
 
+/* ---------- PQHash ops ---------- */
+
+/* Read a JSON string into a heap-allocated buffer. Returns NUL-terminated
+ * string or NULL on missing/error. Caller must free. */
+static char *get_str_dyn(const char *rec, const char *key) {
+    const char *p = find_key(rec, key);
+    if (!p || *p != '"') return NULL;
+    p++;  /* past opening quote */
+    /* Find closing quote, counting escapes. */
+    const char *end = p;
+    while (*end) {
+        if (*end == '\\' && end[1]) { end += 2; continue; }
+        if (*end == '"') break;
+        end++;
+    }
+    if (*end != '"') return NULL;
+    size_t len = (size_t)(end - p);
+    char *out = malloc(len + 1);
+    if (!out) return NULL;
+    /* Copy with minimal escape handling (we only generate plain hex/ascii). */
+    size_t j = 0;
+    for (size_t i = 0; i < len; ++i) {
+        if (p[i] == '\\' && i + 1 < len) {
+            out[j++] = p[i + 1];
+            i++;
+        } else {
+            out[j++] = p[i];
+        }
+    }
+    out[j] = '\0';
+    return out;
+}
+
+static uint8_t *hex_to_alloc(const char *hex, size_t *out_len) {
+    size_t hl = strlen(hex);
+    if (hl % 2 != 0) return NULL;
+    *out_len = hl / 2;
+    uint8_t *buf = malloc(*out_len > 0 ? *out_len : 1);
+    if (!buf) return NULL;
+    for (size_t i = 0; i < *out_len; ++i) {
+        char c1 = hex[2*i], c2 = hex[2*i+1];
+        int h = (c1 >= '0' && c1 <= '9') ? c1 - '0'
+              : (c1 >= 'a' && c1 <= 'f') ? c1 - 'a' + 10
+              : (c1 >= 'A' && c1 <= 'F') ? c1 - 'A' + 10 : -1;
+        int l = (c2 >= '0' && c2 <= '9') ? c2 - '0'
+              : (c2 >= 'a' && c2 <= 'f') ? c2 - 'a' + 10
+              : (c2 >= 'A' && c2 <= 'F') ? c2 - 'A' + 10 : -1;
+        if (h < 0 || l < 0) { free(buf); return NULL; }
+        buf[i] = (uint8_t)((h << 4) | l);
+    }
+    return buf;
+}
+
+static int op_pqhash_hash_only(const char *rec, char *err) {
+    char *hex = get_str_dyn(rec, "input_hex");
+    if (!hex) { snprintf(err, 256, "no input_hex"); return 0; }
+    size_t content_len;
+    uint8_t *content = hex_to_alloc(hex, &content_len);
+    free(hex);
+    if (!content) { snprintf(err, 256, "bad input_hex"); return 0; }
+
+    uint8_t tail[64];
+    pqhash_hash_only(content, content_len, tail);
+    free(content);
+
+    char *want = get_str_dyn(rec, "expected_tail_hex");
+    if (!want) { snprintf(err, 256, "no expected_tail_hex"); return 0; }
+    size_t want_len;
+    uint8_t *want_bytes = hex_to_alloc(want, &want_len);
+    free(want);
+    if (!want_bytes || want_len != 64) {
+        free(want_bytes); snprintf(err, 256, "expected_tail_hex wrong size"); return 0;
+    }
+    int ok = memcmp(tail, want_bytes, 64) == 0;
+    free(want_bytes);
+    if (!ok) snprintf(err, 256, "tail mismatch");
+    return ok;
+}
+
+static int op_pqhash_decode(const char *rec, char *err) {
+    char input_hex[160];  /* 73 bytes = 146 hex chars */
+    if (!get_str(rec, "input_hex", input_hex, sizeof(input_hex))) {
+        snprintf(err, 256, "no input_hex"); return 0;
+    }
+    uint8_t raw[PQHASH_SIZE_BYTES];
+    if (hex_to_bytes(input_hex, raw, PQHASH_SIZE_BYTES) != 0) {
+        snprintf(err, 256, "bad hex"); return 0;
+    }
+    if (pqhash_validate(raw) != PQHASH_OK) {
+        snprintf(err, 256, "validate failed"); return 0;
+    }
+    int64_t want_v, want_t, want_c;
+    if (!get_nested_int(rec, "expected", "variant", &want_v)
+     || !get_nested_int(rec, "expected", "timestamp_ms", &want_t)
+     || !get_nested_int(rec, "expected", "counter", &want_c)) {
+        snprintf(err, 256, "missing expected fields"); return 0;
+    }
+    if (pqhash_variant(raw) != (uint8_t)want_v) { snprintf(err, 256, "variant"); return 0; }
+    if ((int64_t)pqhash_timestamp_ms(raw) != want_t) { snprintf(err, 256, "ts"); return 0; }
+    if ((int64_t)pqhash_counter(raw) != want_c) { snprintf(err, 256, "counter"); return 0; }
+
+    const char *exp = find_key(rec, "expected");
+    if (exp && *exp == '{') {
+        const char *th = find_key(exp, "tail_hex");
+        if (th && *th == '"') {
+            char want_hex[160];
+            read_string(th, want_hex, sizeof(want_hex));
+            char got_hex[160];
+            bytes_to_hex(raw + PQHASH_TAIL_OFFSET, PQHASH_TAIL_BYTES, got_hex);
+            if (strcmp(want_hex, got_hex) != 0) {
+                snprintf(err, 256, "tail got=%s want=%s", got_hex, want_hex);
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static int op_pqhash_encode_b64(const char *rec, char *err) {
+    char input_hex[160], want[128];
+    if (!get_str(rec, "input_hex", input_hex, sizeof(input_hex))) { snprintf(err, 256, "no input_hex"); return 0; }
+    if (!get_str(rec, "expected_str", want, sizeof(want))) { snprintf(err, 256, "no expected_str"); return 0; }
+    uint8_t raw[PQHASH_SIZE_BYTES];
+    if (hex_to_bytes(input_hex, raw, PQHASH_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
+    char out[PQHASH_ENCODED_LEN_B64 + 1] = {0};
+    pqhash_encode_b64url(raw, out);
+    out[PQHASH_ENCODED_LEN_B64] = '\0';
+    if (strcmp(out, want) != 0) { snprintf(err, 256, "got=%s want=%s", out, want); return 0; }
+    return 1;
+}
+
+static int op_pqhash_decode_b64(const char *rec, char *err) {
+    char input[128], want_hex[160];
+    if (!get_str(rec, "input_str", input, sizeof(input))) { snprintf(err, 256, "no input_str"); return 0; }
+    if (!get_str(rec, "expected_hex", want_hex, sizeof(want_hex))) { snprintf(err, 256, "no expected_hex"); return 0; }
+    if (strlen(input) != PQHASH_ENCODED_LEN_B64) { snprintf(err, 256, "input len %zu", strlen(input)); return 0; }
+    uint8_t raw[PQHASH_SIZE_BYTES];
+    if (pqhash_decode_b64url(input, raw) != PQHASH_OK) { snprintf(err, 256, "decode error"); return 0; }
+    char got[160];
+    bytes_to_hex(raw, PQHASH_SIZE_BYTES, got);
+    if (strcmp(got, want_hex) != 0) { snprintf(err, 256, "got=%s want=%s", got, want_hex); return 0; }
+    return 1;
+}
+
+static int op_pqhash_encode_crockford(const char *rec, char *err) {
+    char input_hex[160], want[160];
+    if (!get_str(rec, "input_hex", input_hex, sizeof(input_hex))) { snprintf(err, 256, "no input_hex"); return 0; }
+    if (!get_str(rec, "expected_str", want, sizeof(want))) { snprintf(err, 256, "no expected_str"); return 0; }
+    uint8_t raw[PQHASH_SIZE_BYTES];
+    if (hex_to_bytes(input_hex, raw, PQHASH_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
+    char out[PQHASH_ENCODED_LEN_B32 + 1] = {0};
+    pqhash_encode_crockford(raw, out);
+    out[PQHASH_ENCODED_LEN_B32] = '\0';
+    if (strcmp(out, want) != 0) { snprintf(err, 256, "got=%s want=%s", out, want); return 0; }
+    return 1;
+}
+
+static int op_pqhash_decode_crockford(const char *rec, char *err) {
+    char input[160], want_hex[160];
+    if (!get_str(rec, "input_str", input, sizeof(input))) { snprintf(err, 256, "no input_str"); return 0; }
+    if (!get_str(rec, "expected_hex", want_hex, sizeof(want_hex))) { snprintf(err, 256, "no expected_hex"); return 0; }
+    if (strlen(input) != PQHASH_ENCODED_LEN_B32) { snprintf(err, 256, "input len %zu", strlen(input)); return 0; }
+    uint8_t raw[PQHASH_SIZE_BYTES];
+    if (pqhash_decode_crockford(input, raw) != PQHASH_OK) { snprintf(err, 256, "decode error"); return 0; }
+    char got[160];
+    bytes_to_hex(raw, PQHASH_SIZE_BYTES, got);
+    if (strcmp(got, want_hex) != 0) { snprintf(err, 256, "got=%s want=%s", got, want_hex); return 0; }
+    return 1;
+}
+
+static int op_pqhash_validate_invalid(const char *rec, char *err) {
+    char kind[32];
+    if (!get_str(rec, "input_kind", kind, sizeof(kind))) { snprintf(err, 256, "no input_kind"); return 0; }
+    if (strcmp(kind, "binary_hex") == 0) {
+        char hex[160];
+        if (!get_str(rec, "input_hex", hex, sizeof(hex))) { snprintf(err, 256, "no input_hex"); return 0; }
+        size_t hl = strlen(hex);
+        if (hl != PQHASH_SIZE_BYTES * 2) return 1;  /* length error counts as reject */
+        uint8_t raw[PQHASH_SIZE_BYTES];
+        if (hex_to_bytes(hex, raw, PQHASH_SIZE_BYTES) != 0) return 1;
+        if (pqhash_validate(raw) != PQHASH_OK) return 1;
+        snprintf(err, 256, "expected error, got success"); return 0;
+    } else if (strcmp(kind, "b64") == 0) {
+        char input[128];
+        if (!get_str(rec, "input_str", input, sizeof(input))) { snprintf(err, 256, "no input_str"); return 0; }
+        if (strlen(input) != PQHASH_ENCODED_LEN_B64) return 1;
+        uint8_t raw[PQHASH_SIZE_BYTES];
+        if (pqhash_decode_b64url(input, raw) != PQHASH_OK) return 1;
+        snprintf(err, 256, "expected error, got success"); return 0;
+    } else if (strcmp(kind, "crockford") == 0) {
+        char input[160];
+        if (!get_str(rec, "input_str", input, sizeof(input))) { snprintf(err, 256, "no input_str"); return 0; }
+        if (strlen(input) != PQHASH_ENCODED_LEN_B32) return 1;
+        uint8_t raw[PQHASH_SIZE_BYTES];
+        if (pqhash_decode_crockford(input, raw) != PQHASH_OK) return 1;
+        snprintf(err, 256, "expected error, got success"); return 0;
+    }
+    snprintf(err, 256, "unknown input_kind %s", kind);
+    return 0;
+}
+
+static int op_pqhash_verify(const char *rec, char *err) {
+    char input_hex[160];
+    if (!get_str(rec, "input_hex", input_hex, sizeof(input_hex))) { snprintf(err, 256, "no input_hex"); return 0; }
+    uint8_t raw[PQHASH_SIZE_BYTES];
+    if (hex_to_bytes(input_hex, raw, PQHASH_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
+
+    char *content_hex = get_str_dyn(rec, "content_hex");
+    if (!content_hex) { snprintf(err, 256, "no content_hex"); return 0; }
+    size_t content_len;
+    uint8_t *content = hex_to_alloc(content_hex, &content_len);
+    free(content_hex);
+    if (!content) { snprintf(err, 256, "bad content_hex"); return 0; }
+
+    int got = pqhash_verify(raw, content, content_len);
+    free(content);
+
+    /* expected is a bare boolean */
+    const char *p = find_key(rec, "expected");
+    int want;
+    if (!p) { snprintf(err, 256, "no expected"); return 0; }
+    if (strncmp(p, "true", 4) == 0) want = 1;
+    else if (strncmp(p, "false", 5) == 0) want = 0;
+    else { snprintf(err, 256, "expected not bool"); return 0; }
+
+    if (got != want) { snprintf(err, 256, "got=%d want=%d", got, want); return 0; }
+    return 1;
+}
+
 int main(int argc, char **argv) {
     if (argc != 2) {
         fprintf(stderr, "usage: conformance_runner <vectors.json>\n");
@@ -439,6 +669,14 @@ int main(int argc, char **argv) {
         else if (strcmp(op, "validate_invalid") == 0)  ok = op_validate_invalid(rec, err);
         else if (strcmp(op, "hlc_overflow") == 0)      ok = op_hlc_overflow(rec, err);
         else if (strcmp(op, "validate_min_timestamp") == 0) ok = op_validate_min_timestamp(rec, err);
+        else if (strcmp(op, "pqhash_hash_only") == 0)       ok = op_pqhash_hash_only(rec, err);
+        else if (strcmp(op, "pqhash_decode") == 0)          ok = op_pqhash_decode(rec, err);
+        else if (strcmp(op, "pqhash_encode_b64") == 0)      ok = op_pqhash_encode_b64(rec, err);
+        else if (strcmp(op, "pqhash_decode_b64") == 0)      ok = op_pqhash_decode_b64(rec, err);
+        else if (strcmp(op, "pqhash_encode_crockford") == 0) ok = op_pqhash_encode_crockford(rec, err);
+        else if (strcmp(op, "pqhash_decode_crockford") == 0) ok = op_pqhash_decode_crockford(rec, err);
+        else if (strcmp(op, "pqhash_validate_invalid") == 0) ok = op_pqhash_validate_invalid(rec, err);
+        else if (strcmp(op, "pqhash_verify") == 0)          ok = op_pqhash_verify(rec, err);
         else { snprintf(err, sizeof(err), "unknown op %s", op); ok = 0; }
 
         if (ok) printf("PASS %s\n", name);
