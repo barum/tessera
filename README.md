@@ -1,4 +1,4 @@
-# PQID — Post-Quantum Identifier
+# pq-toolkit — Post-Quantum Identifier & Hash Toolkit
 
 [![conformance](https://github.com/bahramsamani/pqid/actions/workflows/conformance.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/conformance.yml)
 [![python](https://github.com/bahramsamani/pqid/actions/workflows/python.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/python.yml)
@@ -10,106 +10,99 @@
 [![java](https://github.com/bahramsamani/pqid/actions/workflows/java.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/java.yml)
 [![cpython-extension](https://github.com/bahramsamani/pqid/actions/workflows/cpython.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/cpython.yml)
 
-A 41-byte, time-sortable identifier with a 256-bit random tail, designed to retain
-~128-bit security against Grover-style quantum search while remaining a practical
-drop-in for ULID/UUIDv7-shaped workloads.
+`pq-toolkit` is a specification-first, polyglot monorepo of post-quantum-era data formats.
+Each project under this root is an independent spec with normative wire format, polyglot
+reference implementations, and (where applicable) its own whitepaper.
 
-This repository is **specification-first and polyglot**: the wire format is fixed,
-and every language directory under [pqid/](pqid/) is a reference implementation of
-that single contract.
+## Projects
 
-- Whitepaper (published PDF): [PQID_Whitepaper.pdf](PQID_Whitepaper.pdf)
+### [pqid/](pqid/) — Post-Quantum Identifier
+
+A 41-byte, time-sortable identifier with a 256-bit random tail, designed to retain ~128-bit
+security against Grover-style quantum search while remaining a practical drop-in for
+ULID/UUIDv7-shaped workloads. Two variants share the wire format: Standard (wall-clock +
+monotonic counter) and HLC (Hybrid Logical Clock for distributed causality).
+
+- Whitepaper: [PQID_Whitepaper.pdf](PQID_Whitepaper.pdf)
 - Whitepaper sources: [pqid/latex/](pqid/latex/) (LaTeX) and [pqid/docs/](pqid/docs/) (DOCX pipeline)
-- Implementations index: [pqid/README.md](pqid/README.md)
-- Agent / contributor guide: [AGENTS.md](AGENTS.md)
+- Project README: [pqid/README.md](pqid/README.md)
+- Project CLAUDE.md (invariants + per-language guide): [pqid/CLAUDE.md](pqid/CLAUDE.md)
 
-## Wire format (41 bytes)
+### [pqhash/](pqhash/) — Post-Quantum Content Hash
 
-```
-0       6      7       9                              41
-+-------+------+-------+------------------------------+
-|  TS   | VAR  |  CTR  |          Random              |
-| 48 b  |  8 b | 16 b  |           256 b              |
-+-------+------+-------+------------------------------+
-```
+A 73-byte SHAKE-256-based content identifier with a 512-bit hash tail and provenance
+metadata (timestamp + counter). NOT a hash function, NOT a MAC, NOT a signature — a
+content identifier with hash-derived collision resistance.
 
-- `VARIANT_STANDARD = 0x01` — wall-clock ms + ms-scoped counter
-- `VARIANT_HLC      = 0x02` — Hybrid Logical Clock for distributed causality
+- Project CLAUDE.md: [pqhash/CLAUDE.md](pqhash/CLAUDE.md)
+- Whitepaper: scaffold at [pqhash/latex/](pqhash/latex/) (content pending)
 
-## Encodings
+## Shared infrastructure
 
-| Form              | Length    | Use                                  |
-|-------------------|-----------|--------------------------------------|
-| Base64URL         | 55 chars  | Canonical wire form, no padding      |
-| Crockford Base32  | 66 chars  | Human-typable, case-insensitive      |
+### [common/](common/) — Shared library code
 
-Crockford decode folds the standard confusables (`I`/`L` → `1`, `O` → `0`) and
-rejects inputs whose top 2 bits (of the 330-bit decoded value) are non-zero.
+Code lives here only when more than one project depends on it. Today: Keccak/SHAKE-256
+primitives for C, C++, and Java.
 
-## Variants at a glance
+- Discipline: [common/README.md](common/README.md)
 
-- **Standard (0x01)** — single-node or per-thread generators. Lock-free by design:
-  one generator instance per thread, or wrap externally. Counter starts at a random
-  offset each new millisecond; same-ms collisions bump by a small random step so
-  values stay opaque to outside observers.
-- **HLC (0x02)** — distributed causality. Generator is internally locked because
-  `(l, c)` must be read-modify-written atomically. Observing a peer HLC more than
-  60 s ahead of local physical time is a hard error (`HLCDriftError`), never a
-  silent clamp.
+### [tools/](tools/) — Cross-project test infrastructure
 
-See [pqid/python/pqid.py](pqid/python/pqid.py) for the readable reference, and
-[pqid/c/pqid.h](pqid/c/pqid.h) for the canonical C ABI.
+Conformance runners that exercise both projects from a single binary per language. Test
+harnesses, not library code; not part of either project's normative surface.
 
-## Languages
+- Layout: [tools/README.md](tools/README.md)
+- Cross-language harness: `bash tools/conformance/run.sh`
 
-| Language    | Path                                       | Notes                                       |
-|-------------|--------------------------------------------|---------------------------------------------|
-| Python      | [pqid/python/](pqid/python/)               | Reference impl + `pqid_fast.py` for benches |
-| C           | [pqid/c/](pqid/c/)                         | Canonical C ABI, offsets defined in `pqid.h` |
-| C++         | [pqid/cpp/](pqid/cpp/)                     | Header-only (`pqid.hpp`)                    |
-| Go          | [pqid/go/](pqid/go/)                       | Idiomatic Go, `go test ./...`               |
-| Rust        | [pqid/rust/](pqid/rust/)                   | `no_std`-friendly core                      |
-| TypeScript  | [pqid/typescript/](pqid/typescript/)       | Node 18+ / browser                          |
-| Java        | [pqid/java/](pqid/java/)                   | Plain `make`-driven build                   |
-| CPython ext | [pqid/cpython/](pqid/cpython/)             | C extension mirroring `pqid_fast.py`        |
+## Supported languages
 
-Benchmark snapshots from each language live in [pqid/benchmarks/](pqid/benchmarks/).
+Each project ships reference implementations in 8 languages, all byte-identical for the
+same wire format:
 
-## Quick start
+| Lang | PQID | PQHash | Conformance runner |
+|------|------|--------|---------------------|
+| Python      | [pqid/python/](pqid/python/)         | [pqhash/python/](pqhash/python/)         | [tools/conformance/python/](tools/conformance/python/) |
+| C           | [pqid/c/](pqid/c/)                   | [pqhash/c/](pqhash/c/)                   | [tools/conformance/c/](tools/conformance/c/) |
+| C++         | [pqid/cpp/](pqid/cpp/)               | [pqhash/cpp/](pqhash/cpp/)               | [tools/conformance/cpp/](tools/conformance/cpp/) |
+| Go          | [pqid/go/](pqid/go/)                 | [pqhash/go/](pqhash/go/)                 | [tools/conformance/go/](tools/conformance/go/) |
+| Rust        | [pqid/rust/](pqid/rust/)             | [pqhash/rust/](pqhash/rust/)             | [tools/conformance/rust/](tools/conformance/rust/) |
+| TypeScript  | [pqid/typescript/](pqid/typescript/) | [pqhash/typescript/](pqhash/typescript/) | [tools/conformance/typescript/](tools/conformance/typescript/) |
+| Java        | [pqid/java/](pqid/java/)             | [pqhash/java/](pqhash/java/)             | [tools/conformance/java/](tools/conformance/java/) |
+| CPython ext | [pqid/cpython/](pqid/cpython/) (bundles PQHash) | [pqhash/cpython/](pqhash/cpython/) (placeholder) | [tools/conformance/cpython/](tools/conformance/cpython/) |
+
+The Go workspace is at [go.work](go.work); the Rust workspace is at [Cargo.toml](Cargo.toml).
+
+## Running the conformance gate
 
 ```bash
-# Python reference + tests
-cd pqid/python && python3 -m pytest test_pqid.py -v
+# Full cross-language harness, all projects, all vectors:
+bash tools/conformance/run.sh
 
-# Go
-cd pqid/go && go test ./... && go test -bench=.
+# Subset of languages:
+bash tools/conformance/run.sh python rust go
 
-# Rust (release for accurate benches)
-cd pqid/rust && cargo test --release && cargo bench
-
-# TypeScript
-cd pqid/typescript && npm install && npm test
+# Skip a language (e.g., when its toolchain isn't installed locally):
+PQTK_CONFORMANCE_SKIP="cpython java" bash tools/conformance/run.sh
 ```
 
-The full per-language command matrix (including C, C++, Java, CPython extension,
-and how to run a single test) is in [CLAUDE.md](CLAUDE.md). For benchmark
-methodology and reproduction commands, see
-[pqid/benchmarks/methodology.md](pqid/benchmarks/methodology.md).
+Latest local run: **all 8 languages × 205 conformance records = 1640 records, 0 failures.**
+
+## Per-project test commands
+
+See each project's CLAUDE.md for the canonical command per language:
+
+- [pqid/CLAUDE.md](pqid/CLAUDE.md)
+- [pqhash/CLAUDE.md](pqhash/CLAUDE.md)
 
 ## Contributing
 
-The wire format, variant bytes, encoding lengths, generator locking contract, and
-60 s HLC drift bound are **hard invariants**. Changing any of them is a spec
-change: update the whitepaper sources under [pqid/latex/](pqid/latex/) and
-[pqid/docs/](pqid/docs/), then port the change to **every** language so a PQID
-generated in one decodes identically in all the others.
-
-For optimization or bug-fix work confined to a single language, keep observable
-behavior identical — if a test had to be modified to accept your change, it's a
-spec change, not an implementation change.
-
-See [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md) for the full rules.
+- Repo-wide conventions: [CLAUDE.md](CLAUDE.md)
+- Hard invariants that must not silently break: [AGENTS.md](AGENTS.md)
+- One project per PR. Cross-cutting (e.g., `common/` extraction) PRs explicitly noted in the title.
+- Branch naming: `<type>/<short-description>` (e.g., `feat/pqhash-keccak-vendoring`).
+- Commit messages: `<type>(<TICKET>) - <short description>` where TICKET names the project
+  (`PQID-NNNNN`, `PQHASH-NNNNN`, `PQTK-NNNNN` for umbrella/repo changes).
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+See [LICENSE](LICENSE).
