@@ -7,14 +7,14 @@ import {
   decode, HLCGenerator,
   setNowMsForTesting,
   validateMinTimestamp,
-} from "./pqid.js";
+} from "pqid";
 import {
   PQHASH_SIZE_BYTES,
   pqhashHashOnly,
   pqhashDecode, pqhashVerify,
   pqhashEncodeBase64URL, pqhashDecodeBase64URL,
   pqhashEncodeCrockford, pqhashDecodeCrockford,
-} from "./pqhash.js";
+} from "pqhash";
 
 interface Record {
   name: string;
