@@ -8,6 +8,13 @@ import {
   setNowMsForTesting,
   validateMinTimestamp,
 } from "./pqid.js";
+import {
+  PQHASH_SIZE_BYTES,
+  pqhashHashOnly,
+  pqhashDecode, pqhashVerify,
+  pqhashEncodeBase64URL, pqhashDecodeBase64URL,
+  pqhashEncodeCrockford, pqhashDecodeCrockford,
+} from "./pqhash.js";
 
 interface Record {
   name: string;
@@ -21,6 +28,8 @@ interface Record {
   start?: { l_old: number; c_old: number };
   physical_time_ms?: number;
   observe?: { l_msg: number; c_msg: number } | null;
+  expected_tail_hex?: string;
+  content_hex?: string;
 }
 
 function hexToBytes(h: string): Uint8Array {
@@ -154,6 +163,94 @@ function runValidateMinTimestamp(r: Record): Result {
   return { ok: true };
 }
 
+function runPQHashHashOnly(r: Record): Result {
+  const content = hexToBytes(r.input_hex!);
+  const tail = pqhashHashOnly(content);
+  const got = bytesToHex(tail);
+  if (got !== r.expected_tail_hex) return { ok: false, detail: `got=${got} want=${r.expected_tail_hex}` };
+  return { ok: true };
+}
+
+function runPQHashDecode(r: Record): Result {
+  const raw = hexToBytes(r.input_hex!);
+  try {
+    const d = pqhashDecode(raw);
+    const exp = r.expected;
+    if (d.variant !== exp.variant) return { ok: false, detail: "variant" };
+    if (d.timestampMs !== exp.timestamp_ms) return { ok: false, detail: `ts got=${d.timestampMs} want=${exp.timestamp_ms}` };
+    if (d.counter !== exp.counter) return { ok: false, detail: "counter" };
+    const gotTail = bytesToHex(d.tail);
+    if (gotTail !== exp.tail_hex) return { ok: false, detail: `tail got=${gotTail} want=${exp.tail_hex}` };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, detail: `error: ${(e as Error).message}` };
+  }
+}
+
+function runPQHashEncodeB64(r: Record): Result {
+  const raw = hexToBytes(r.input_hex!);
+  const s = pqhashEncodeBase64URL(raw);
+  if (s !== r.expected_str) return { ok: false, detail: `got=${s} want=${r.expected_str}` };
+  return { ok: true };
+}
+
+function runPQHashDecodeB64(r: Record): Result {
+  try {
+    const raw = pqhashDecodeBase64URL(r.input_str!);
+    const got = bytesToHex(raw);
+    if (got !== r.expected_hex) return { ok: false, detail: `got=${got} want=${r.expected_hex}` };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, detail: `error: ${(e as Error).message}` };
+  }
+}
+
+function runPQHashEncodeCrockford(r: Record): Result {
+  const raw = hexToBytes(r.input_hex!);
+  const s = pqhashEncodeCrockford(raw);
+  if (s !== r.expected_str) return { ok: false, detail: `got=${s} want=${r.expected_str}` };
+  return { ok: true };
+}
+
+function runPQHashDecodeCrockford(r: Record): Result {
+  try {
+    const raw = pqhashDecodeCrockford(r.input_str!);
+    const got = bytesToHex(raw);
+    if (got !== r.expected_hex) return { ok: false, detail: `got=${got} want=${r.expected_hex}` };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, detail: `error: ${(e as Error).message}` };
+  }
+}
+
+function runPQHashValidateInvalid(r: Record): Result {
+  try {
+    if (r.input_kind === "binary_hex") {
+      const h = r.input_hex!;
+      if (h.length !== 2 * PQHASH_SIZE_BYTES) return { ok: true };
+      pqhashDecode(hexToBytes(h));
+    } else if (r.input_kind === "b64") {
+      pqhashDecodeBase64URL(r.input_str!);
+    } else if (r.input_kind === "crockford") {
+      pqhashDecodeCrockford(r.input_str!);
+    } else {
+      return { ok: false, detail: `unknown input_kind ${r.input_kind}` };
+    }
+    return { ok: false, detail: "expected error, got success" };
+  } catch {
+    return { ok: true };
+  }
+}
+
+function runPQHashVerify(r: Record): Result {
+  const raw = hexToBytes(r.input_hex!);
+  const content = hexToBytes(r.content_hex!);
+  const got = pqhashVerify(raw, content);
+  const want = r.expected as boolean;
+  if (got !== want) return { ok: false, detail: `got=${got} want=${want}` };
+  return { ok: true };
+}
+
 function dispatch(r: Record): Result {
   switch (r.op) {
     case "decode": return runDecode(r);
@@ -164,6 +261,14 @@ function dispatch(r: Record): Result {
     case "validate_invalid": return runValidateInvalid(r);
     case "hlc_overflow": return runHLCOverflow(r);
     case "validate_min_timestamp": return runValidateMinTimestamp(r);
+    case "pqhash_hash_only": return runPQHashHashOnly(r);
+    case "pqhash_decode": return runPQHashDecode(r);
+    case "pqhash_encode_b64": return runPQHashEncodeB64(r);
+    case "pqhash_decode_b64": return runPQHashDecodeB64(r);
+    case "pqhash_encode_crockford": return runPQHashEncodeCrockford(r);
+    case "pqhash_decode_crockford": return runPQHashDecodeCrockford(r);
+    case "pqhash_validate_invalid": return runPQHashValidateInvalid(r);
+    case "pqhash_verify": return runPQHashVerify(r);
   }
   return { ok: false, detail: `unknown op ${r.op}` };
 }
