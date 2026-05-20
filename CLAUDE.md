@@ -1,10 +1,10 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working in the **pq-toolkit** repository.
+This file provides guidance to Claude Code (claude.ai/code) when working in the **pqtoolkit** repository.
 
 ## What this repo is
 
-`pq-toolkit` is a **specification-first, polyglot monorepo** that houses a family of post-quantum-era reference projects. Each project under this root is an independent spec with its own normative wire format, its own polyglot reference implementations, and its own whitepaper:
+`pqtoolkit` is a **specification-first, polyglot monorepo** that houses a family of post-quantum-era reference projects. Each project under this root is an independent spec with its own normative wire format, its own polyglot reference implementations, and its own whitepaper:
 
 - **[pqid/](pqid/)** — a 41-byte sortable identifier format (Standard + HLC variants). See [pqid/CLAUDE.md](pqid/CLAUDE.md).
 - **[pqhash/](pqhash/)** — a SHAKE-256-based content hash format. See [pqhash/CLAUDE.md](pqhash/CLAUDE.md).

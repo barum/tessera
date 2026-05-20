@@ -1,6 +1,6 @@
 # common/
 
-Shared primitives used by more than one project under `pq-toolkit`.
+Shared primitives used by more than one project under `pqtoolkit`.
 
 ## What belongs here
 
@@ -19,7 +19,7 @@ Current shared code:
   - C++: namespace `pqtoolkit::common`.
   - Java: package `com.pqtoolkit.common`.
   - Rust: crate name `pqtoolkit-common` (if added).
-  - Go: module path `github.com/<org>/pq-toolkit/common/go` (if added).
+  - Go: module path `github.com/<org>/pqtoolkit/common/go` (if added).
 
 ## Change discipline
 

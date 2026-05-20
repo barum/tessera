@@ -1,6 +1,6 @@
 # tools/
 
-Cross-project tooling that exercises more than one `pq-toolkit` project from a single binary per language. The most important inhabitant is the conformance runner family.
+Cross-project tooling that exercises more than one `pqtoolkit` project from a single binary per language. The most important inhabitant is the conformance runner family.
 
 ## What belongs here vs. `common/`
 

@@ -1,4 +1,4 @@
-# Cargo workspace for the pq-toolkit monorepo.
+# Cargo workspace for the pqtoolkit monorepo.
 #
 # Each project under pqid/ and pqhash/ is an independent crate;
 # tools/conformance/rust/ is a binary that depends on both. The workspace

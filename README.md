@@ -1,4 +1,4 @@
-# pq-toolkit — Post-Quantum Identifier & Hash Toolkit
+# pqtoolkit — Post-Quantum Identifier & Hash Toolkit
 
 [![conformance](https://github.com/bahramsamani/pqid/actions/workflows/conformance.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/conformance.yml)
 [![python](https://github.com/bahramsamani/pqid/actions/workflows/python.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/python.yml)
@@ -10,7 +10,7 @@
 [![java](https://github.com/bahramsamani/pqid/actions/workflows/java.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/java.yml)
 [![cpython-extension](https://github.com/bahramsamani/pqid/actions/workflows/cpython.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/cpython.yml)
 
-`pq-toolkit` is a specification-first, polyglot monorepo of post-quantum-era data formats.
+`pqtoolkit` is a specification-first, polyglot monorepo of post-quantum-era data formats.
 Each project under this root is an independent spec with normative wire format, polyglot
 reference implementations, and (where applicable) its own whitepaper.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cross-language pq-toolkit conformance harness.
+# Cross-language pqtoolkit conformance harness.
 #
 # Builds every per-language runner and runs every vectors/*.json against
 # each. Vectors come from BOTH pqid/conformance/vectors/ and
@@ -75,7 +75,7 @@ if [ -z "$LANGS" ]; then
     exit 2
 fi
 
-echo "=== pq-toolkit conformance harness ==="
+echo "=== pqtoolkit conformance harness ==="
 echo "vectors: $VECTOR_DIRS"
 echo "languages: $LANGS"
 echo
