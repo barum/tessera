@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 
+	"pqhash"
 	"pqid"
 )
 
@@ -186,7 +187,7 @@ func runPQHashHashOnly(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	tail := pqid.PQHashHashOnly(content)
+	tail := pqhash.PQHashHashOnly(content)
 	got := hex.EncodeToString(tail[:])
 	if got != r.ExpectedTailHex {
 		return false, fmt.Sprintf("got=%s want=%s", got, r.ExpectedTailHex)
@@ -199,7 +200,7 @@ func runPQHashDecode(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	d, err := pqid.PQHashDecode(raw)
+	d, err := pqhash.PQHashDecode(raw)
 	if err != nil {
 		return false, fmt.Sprintf("decode: %v", err)
 	}
@@ -228,9 +229,9 @@ func runPQHashEncodeB64(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	var arr [pqid.PQHashSizeBytes]byte
+	var arr [pqhash.PQHashSizeBytes]byte
 	copy(arr[:], raw)
-	got := pqid.PQHashEncodeBase64URL(arr)
+	got := pqhash.PQHashEncodeBase64URL(arr)
 	if got != r.ExpectedStr {
 		return false, fmt.Sprintf("got=%q want=%q", got, r.ExpectedStr)
 	}
@@ -238,7 +239,7 @@ func runPQHashEncodeB64(r Record) (bool, string) {
 }
 
 func runPQHashDecodeB64(r Record) (bool, string) {
-	arr, err := pqid.PQHashDecodeBase64URL(r.InputStr)
+	arr, err := pqhash.PQHashDecodeBase64URL(r.InputStr)
 	if err != nil {
 		return false, fmt.Sprintf("decode: %v", err)
 	}
@@ -254,9 +255,9 @@ func runPQHashEncodeCrockford(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	var arr [pqid.PQHashSizeBytes]byte
+	var arr [pqhash.PQHashSizeBytes]byte
 	copy(arr[:], raw)
-	got := pqid.PQHashEncodeCrockford(arr)
+	got := pqhash.PQHashEncodeCrockford(arr)
 	if got != r.ExpectedStr {
 		return false, fmt.Sprintf("got=%q want=%q", got, r.ExpectedStr)
 	}
@@ -264,7 +265,7 @@ func runPQHashEncodeCrockford(r Record) (bool, string) {
 }
 
 func runPQHashDecodeCrockford(r Record) (bool, string) {
-	arr, err := pqid.PQHashDecodeCrockford(r.InputStr)
+	arr, err := pqhash.PQHashDecodeCrockford(r.InputStr)
 	if err != nil {
 		return false, fmt.Sprintf("decode: %v", err)
 	}
@@ -282,17 +283,17 @@ func runPQHashValidateInvalid(r Record) (bool, string) {
 		if err != nil {
 			return true, ""
 		}
-		if _, err := pqid.PQHashDecode(raw); err != nil {
+		if _, err := pqhash.PQHashDecode(raw); err != nil {
 			return true, ""
 		}
 		return false, "expected error, got success"
 	case "b64":
-		if _, err := pqid.PQHashDecodeBase64URL(r.InputStr); err != nil {
+		if _, err := pqhash.PQHashDecodeBase64URL(r.InputStr); err != nil {
 			return true, ""
 		}
 		return false, "expected error, got success"
 	case "crockford":
-		if _, err := pqid.PQHashDecodeCrockford(r.InputStr); err != nil {
+		if _, err := pqhash.PQHashDecodeCrockford(r.InputStr); err != nil {
 			return true, ""
 		}
 		return false, "expected error, got success"
@@ -309,7 +310,7 @@ func runPQHashVerify(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("bad content_hex: %v", err)
 	}
-	got := pqid.PQHashVerify(raw, content)
+	got := pqhash.PQHashVerify(raw, content)
 	var want bool
 	if err := json.Unmarshal(r.Expected, &want); err != nil {
 		return false, "no expected bool"

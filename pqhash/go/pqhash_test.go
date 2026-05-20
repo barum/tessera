@@ -1,8 +1,10 @@
-package pqid
+package pqhash
 
 import (
 	"bytes"
 	"testing"
+
+	"pqid"
 )
 
 func TestPQHashSize(t *testing.T) {
@@ -52,17 +54,17 @@ func TestPQHashMonotonic(t *testing.T) {
 
 func TestPQHashCrossRejectPQID(t *testing.T) {
 	// PQID buffer must not decode as PQHash.
-	p, _ := New()
+	p, _ := pqid.New()
 	if _, err := PQHashDecode(p[:]); err == nil {
 		t.Fatal("PQHashDecode accepted a 41-byte PQID buffer")
 	}
 	// PQHash buffer must not decode as PQID.
 	g := &PQHashGenerator{}
 	h := g.New([]byte("x"))
-	if _, err := Decode(h[:]); err == nil {
+	if _, err := pqid.Decode(h[:]); err == nil {
 		t.Fatal("Decode accepted a 73-byte PQHash buffer")
 	}
-	if _, err := Decode(h[:41]); err == nil {
+	if _, err := pqid.Decode(h[:41]); err == nil {
 		t.Fatal("Decode accepted a 41-byte PQHash prefix")
 	}
 }

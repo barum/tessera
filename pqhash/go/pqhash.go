@@ -1,10 +1,10 @@
-// Package pqid also exports the PQHash sibling format: a 73-byte sortable
+// Package pqhash implements the PQHash format: a 73-byte sortable
 // content identifier with a 512-bit SHAKE-256 tail. Variant byte 0x03.
 //
 // PQHash is NOT a hash function, NOT a MAC, NOT a signature. It is a
 // content identifier with provenance metadata. See spec sec03 / sec:pqhash.
 
-package pqid
+package pqhash
 
 import (
 	"crypto/subtle"
@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/sha3"
 )
@@ -45,8 +46,32 @@ var (
 	ErrPQHashInvalidEncoding = errors.New("pqhash: invalid encoding")
 )
 
-// pqhashNowMS — clock indirected for testability. Reuses pqid's nowMS.
+// nowMS returns the current time as ms since the Unix epoch. Indirected
+// for testability. (Duplicated from pqid; package-private to pqhash.)
+var nowMS = func() int64 { return time.Now().UnixMilli() }
+
+// pqhashNowMS — clock indirected for testability.
 var pqhashNowMS = nowMS
+
+// crockfordAlphabet / crockfordDecode — duplicated from pqid. Crockford
+// Base32 alphabet (32 chars, deliberately omits I, L, O, U).
+const crockfordAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+var crockfordDecode = func() [256]int8 {
+	var t [256]int8
+	for i := range t {
+		t[i] = -1
+	}
+	for i, c := range crockfordAlphabet {
+		t[byte(c)] = int8(i)
+		if c >= 'A' && c <= 'Z' {
+			t[byte(c)+32] = int8(i)
+		}
+	}
+	t['I'], t['L'], t['O'] = 1, 1, 0
+	t['i'], t['l'], t['o'] = 1, 1, 0
+	return t
+}()
 
 // SetPQHashNowMSForTesting overrides the PQHash clock source.
 func SetPQHashNowMSForTesting(fn func() int64) func() int64 {
