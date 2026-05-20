@@ -20,7 +20,7 @@
 #include <mutex>
 
 extern "C" {
-#include "../c/keccak.h"
+#include "keccak.h"
 }
 
 namespace pqhash {
