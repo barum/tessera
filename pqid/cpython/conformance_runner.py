@@ -103,6 +103,101 @@ def run_validate_invalid(rec):
     return False, "expected error, got success"
 
 
+def run_pqhash_hash_only(rec):
+    content = bytes.fromhex(rec["input_hex"])
+    got = pqid_ext.pqhash_hash_only(content)
+    if got.hex() != rec["expected_tail_hex"]:
+        return False, "tail mismatch"
+    return True, ""
+
+
+def run_pqhash_decode(rec):
+    raw = bytes.fromhex(rec["input_hex"])
+    if len(raw) != 73:
+        return False, "wrong length"
+    if raw[6] != 0x03:
+        return False, "wrong variant"
+    exp = rec["expected"]
+    ts = int.from_bytes(raw[0:6], "big")
+    ctr = int.from_bytes(raw[7:9], "big")
+    if exp["variant"] != raw[6]:
+        return False, "variant"
+    if exp["timestamp_ms"] != ts:
+        return False, f"ts got={ts} want={exp['timestamp_ms']}"
+    if exp["counter"] != ctr:
+        return False, "counter"
+    if exp["tail_hex"] != raw[9:].hex():
+        return False, "tail"
+    return True, ""
+
+
+def run_pqhash_encode_b64(rec):
+    raw = bytes.fromhex(rec["input_hex"])
+    got = pqid_ext.pqhash_encode_b64(raw)
+    if got != rec["expected_str"]:
+        return False, f"got={got!r} want={rec['expected_str']!r}"
+    return True, ""
+
+
+def run_pqhash_decode_b64(rec):
+    try:
+        raw = pqid_ext.pqhash_decode_b64(rec["input_str"])
+    except Exception as e:
+        return False, f"raised {type(e).__name__}: {e}"
+    if raw.hex() != rec["expected_hex"]:
+        return False, f"got={raw.hex()} want={rec['expected_hex']}"
+    return True, ""
+
+
+def run_pqhash_encode_crockford(rec):
+    raw = bytes.fromhex(rec["input_hex"])
+    got = pqid_ext.pqhash_encode_b32(raw)
+    if got != rec["expected_str"]:
+        return False, f"got={got!r} want={rec['expected_str']!r}"
+    return True, ""
+
+
+def run_pqhash_decode_crockford(rec):
+    try:
+        raw = pqid_ext.pqhash_decode_b32(rec["input_str"])
+    except Exception as e:
+        return False, f"raised {type(e).__name__}: {e}"
+    if raw.hex() != rec["expected_hex"]:
+        return False, f"got={raw.hex()} want={rec['expected_hex']}"
+    return True, ""
+
+
+def run_pqhash_validate_invalid(rec):
+    kind = rec["input_kind"]
+    try:
+        if kind == "binary_hex":
+            h = rec["input_hex"]
+            if len(h) != 2 * 73:
+                return True, ""
+            raw = bytes.fromhex(h)
+            pqid_ext.pqhash_validate(raw)
+            return False, "expected error, got success"
+        elif kind == "b64":
+            pqid_ext.pqhash_decode_b64(rec["input_str"])
+            return False, "expected error, got success"
+        elif kind == "crockford":
+            pqid_ext.pqhash_decode_b32(rec["input_str"])
+            return False, "expected error, got success"
+    except Exception:
+        return True, ""
+    return False, "expected error, got success"
+
+
+def run_pqhash_verify(rec):
+    raw = bytes.fromhex(rec["input_hex"])
+    content = bytes.fromhex(rec["content_hex"])
+    got = pqid_ext.pqhash_verify(raw, content)
+    want = rec["expected"]
+    if got != want:
+        return False, f"got={got} want={want}"
+    return True, ""
+
+
 def run_hlc_overflow(rec):
     # Skipped: extension does not expose HLC state hooks. Covered by C runner.
     return True, "(skipped — covered by C reference)"
@@ -126,6 +221,14 @@ DISPATCH = {
     "validate_invalid": run_validate_invalid,
     "hlc_overflow": run_hlc_overflow,
     "validate_min_timestamp": run_validate_min_timestamp,
+    "pqhash_hash_only": run_pqhash_hash_only,
+    "pqhash_decode": run_pqhash_decode,
+    "pqhash_encode_b64": run_pqhash_encode_b64,
+    "pqhash_decode_b64": run_pqhash_decode_b64,
+    "pqhash_encode_crockford": run_pqhash_encode_crockford,
+    "pqhash_decode_crockford": run_pqhash_decode_crockford,
+    "pqhash_validate_invalid": run_pqhash_validate_invalid,
+    "pqhash_verify": run_pqhash_verify,
 }
 
 
