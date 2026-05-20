@@ -231,7 +231,8 @@ function buildSpec() {
       ["0x02", "HLC",           "Hybrid Logical Clock: logical time + counter that captures causality across nodes."],
       ["0x00",            "Permanently reserved", "MUST be rejected by decoders. Reserved defensively so zero-filled buffers cannot be confused with valid PQIDs. MUST NOT be assigned in any future revision."],
       ["0xFF",            "Permanently reserved", "MUST be rejected by decoders. Reserved defensively so all-ones uninitialized memory cannot be confused with valid PQIDs. MUST NOT be assigned in any future revision."],
-      ["0x03–0xFE",       "Reserved for future variants", "MUST be rejected by decoders until a future revision of this specification assigns them."],
+      ["0x03",            "PQHash (sibling format)", "Allocated 2026. PQID decoders MUST reject 0x03 — a 0x03 buffer is a PQHash (73 bytes), not a PQID (41 bytes). See the PQHash section below."],
+      ["0x04–0xFE",       "Reserved for future variants", "MUST be rejected by decoders until a future revision of this specification assigns them."],
     ],
     [1100, 1500, 6760],
   ));
@@ -340,6 +341,101 @@ function buildSpec() {
 
   out.push(p([
     tx("The Crockford form is intended for use cases where humans handle the identifier directly: pasted into chat messages, read aloud over phones, written on paper, or appearing in CLI tools where mixed-case is hostile. The Base64URL form is intended for everything else."),
+  ]));
+
+  // ============================================================
+  // PQHash subsection
+  // ============================================================
+  out.push(h2("PQHash — sibling content-identifier format (variant 0x03)"));
+
+  out.push(p([
+    bold("PQHash is a sibling format to PQID"),
+    tx(", sharing PQID's 9-byte header layout but extending the wire size and replacing the random tail with a deterministic content digest. PQHash is "),
+    it("additive"),
+    tx(": it does not change PQID, and the two formats are guaranteed to not cross-decode."),
+  ]));
+
+  out.push(h3("Wire layout (73 bytes)"));
+
+  out.push(p(
+    "  0       6      7       9                                            73\n" +
+    "  +-------+------+-------+--------------------------------------------+\n" +
+    "  |  TS   | 0x03 |  CTR  |              SHAKE256(content, 64B)        |\n" +
+    "  | 48 b  |  8 b | 16 b  |                       512 b                |\n" +
+    "  +-------+------+-------+--------------------------------------------+\n"
+  ));
+
+  out.push(bullet([
+    bold("Timestamp (0–5): "),
+    tx("Provenance metadata — when this identifier was assigned. NOT a security claim."),
+  ]));
+  out.push(bullet([
+    bold("Variant (6): "),
+    tx("Fixed at 0x03, allocated from PQID's reserved-future range."),
+  ]));
+  out.push(bullet([
+    bold("Counter (7–8): "),
+    tx("Same-ms disambiguator within a generator."),
+  ]));
+  out.push(bullet([
+    bold("Tail (9–72): "),
+    tx("64 bytes (512 bits) of SHAKE-256(content), output truncated to 64 bytes. Deterministic from the content alone: two callers that PQHash the same content produce the same tail, regardless of generator or timestamp."),
+  ]));
+
+  out.push(h3("Security claim"));
+
+  out.push(p("The 512-bit tail gives:"));
+  out.push(bullet([
+    tx("2"),
+    new TextRun({ text: "256", size: 22, superScript: true }),
+    tx(" classical and post-quantum (Grover) second-preimage resistance."),
+  ]));
+  out.push(bullet([
+    tx("2"),
+    new TextRun({ text: "256", size: 22, superScript: true }),
+    tx(" classical collision resistance (birthday)."),
+  ]));
+  out.push(bullet([
+    tx("2"),
+    new TextRun({ text: "170", size: 22, superScript: true }),
+    tx(" post-quantum collision resistance (BHT). This is the surface that matters for content addressing across multi-decade archival horizons."),
+  ]));
+
+  out.push(p([
+    bold("What PQHash is NOT: "),
+    tx("not a hash function (use SHAKE-256 directly), not a MAC (use KMAC256), not a signature (use ML-DSA / SLH-DSA). PQHash is a content identifier with provenance metadata; the timestamp carries no security claim."),
+  ]));
+
+  out.push(h3("Cross-format non-overlap"));
+
+  out.push(p([
+    tx("PQID and PQHash MUST NOT cross-decode. PQID is exactly 41 bytes with variant 0x01 or 0x02; conformant PQID decoders reject 73-byte buffers (length error) and reject the 0x03 variant byte. PQHash is exactly 73 bytes with variant 0x03; conformant PQHash decoders reject 41-byte buffers (length error) and any variant other than 0x03."),
+  ]));
+
+  out.push(p("An application that may receive either format dispatches at the boundary:"));
+  out.push(p(
+    "  if len(buf) == 73 and buf[6] == 0x03:  PQHash.decode(buf)\n" +
+    "  elif len(buf) == 41 and buf[6] in {0x01, 0x02}:  PQID.decode(buf)\n" +
+    "  else: error\n"
+  ));
+
+  out.push(h3("Encodings"));
+
+  out.push(bullet([
+    bold("Base64URL: 98 characters. "),
+    tx("ceil(73*8/6) = 98. Final character carries 4 bits of value plus 4 bits of zero padding. Decoders MUST reject inputs whose final character carries non-zero padding bits."),
+  ]));
+  out.push(bullet([
+    bold("Crockford Base32: 117 characters. "),
+    tx("ceil(73*8/5) = 117. 584 input bits → 585 output bits with 1 zero pad bit at the bottom of the final character. Case-insensitive with the same I/L→1 and O→0 confusables as PQID."),
+  ]));
+
+  out.push(h3("Verify"));
+
+  out.push(p([
+    tx("A conformant PQHash implementation MUST expose a "),
+    bold("verify(raw, content)"),
+    tx(" predicate that returns true iff raw is a 73-byte PQHash with variant 0x03 AND its tail equals SHAKE-256(content) truncated to 64 bytes. The tail comparison MUST be constant-time on the 64-byte input to avoid timing oracles. Malformed buffers return false rather than raising."),
   ]));
 
   return out;

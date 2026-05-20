@@ -39,12 +39,13 @@ A PQID is exactly 41 bytes (328 bits), structured as four contiguous fields:
 \textbf{Field semantics}:
 \begin{description}
   \item[Timestamp (offsets 0--5).] Big-endian unsigned 48-bit integer, milliseconds since the Unix epoch (1970-01-01T00:00:00Z). The 48-bit field provides $2^{48}$ ms $\approx$ 8{,}919 years of forward range, sufficient through the year 10889.
-  \item[Variant (offset 6).] Single byte.
+  \item[Variant (offset 6).] \label{sec:variant-reservation} Single byte.
     \begin{itemize}
       \item \code{0x01} = Standard (wall-clock).
       \item \code{0x02} = HLC (Hybrid Logical Clock).
+      \item \code{0x03} = PQHash (sibling content-identifier format, §\ref{sec:pqhash}). Allocated 2026 from the reserved-future range; PQID decoders MUST reject \code{0x03} (a 0x03 buffer is not a PQID).
       \item \code{0x00} and \code{0xFF} are \textbf{permanently reserved}: they MUST be rejected by conformant decoders and MUST NOT be assigned in any future revision of this specification. These two values are reserved defensively so that PQID buffers cannot be confused with zero-filled or all-ones uninitialized memory.
-      \item \code{0x03}--\code{0xFE} are reserved for future variants. Conformant decoders MUST reject them with an unknown-variant error until they are assigned by a future revision of this specification.
+      \item \code{0x04}--\code{0xFE} are reserved for future variants. Conformant decoders MUST reject them with an unknown-variant error until they are assigned by a future revision of this specification.
     \end{itemize}
   \item[Counter (offsets 7--8).] Big-endian unsigned 16-bit integer. For Standard, the counter is incremented within a single millisecond by a small random step (1--16); for HLC, it is the HLC logical counter.
   \item[Random tail (offsets 9--40).] 32 bytes from a cryptographically-strong random source. The full 256 bits provide $2^{128}$ effective post-quantum security against second-preimage attacks.
@@ -147,4 +148,78 @@ RFC 4648 Section 5 (``Base 64 Encoding with URL and Filename Safe Alphabet''), n
 Crockford's alphabet (\code{0123456789ABCDEFGHJKMNPQRSTVWXYZ}) and its case-insensitive decoding (with the I/L→1 and O→0 confusables canonicalized) make this encoding suitable for human transcription. Encoding 41 bytes produces $\lceil 41 \cdot 8 / 5 \rceil = 66$ characters; the final character carries 3 bits of value plus 2 bits of zero padding.
 
 The Crockford form is intended for use cases where humans handle the identifier directly: pasted into chat messages, read aloud over phones, written on paper, or appearing in CLI tools where mixed-case is hostile. The Base64URL form is intended for everything else.
+
+\subsection{PQHash --- sibling content-identifier format (variant \code{0x03})}
+\label{sec:pqhash}
+
+PQHash is a \textbf{sibling format} to PQID, sharing PQID's 9-byte header layout but extending the wire size and replacing the random tail with a deterministic content digest. PQHash is \emph{additive}: it does not change PQID, and the two formats are guaranteed to not cross-decode.
+
+\subsubsection{Wire layout (73 bytes)}
+
+\begin{lstlisting}
+0       6      7       9                                            73
++-------+------+-------+--------------------------------------------+
+|  TS   | 0x03 |  CTR  |              SHAKE256(content, 64B)        |
+| 48 b  |  8 b | 16 b  |                       512 b                |
++-------+------+-------+--------------------------------------------+
+\end{lstlisting}
+
+\begin{description}
+  \item[Timestamp (offsets 0--5).] Big-endian unsigned 48-bit ms since Unix epoch. Provenance metadata: \emph{when} this identifier was assigned. NOT a security claim.
+  \item[Variant (offset 6).] Fixed at \code{0x03}, allocated from PQID's reserved-future range (§\ref{sec:variant-reservation}).
+  \item[Counter (offsets 7--8).] Big-endian unsigned 16-bit. Same-ms disambiguator within a generator.
+  \item[Tail (offsets 9--72).] 64 bytes (512 bits) of \code{SHAKE256(content)} \citep{fips202}, output truncated to 64 bytes. The tail is \emph{deterministic from the content alone}: two callers that PQHash the same content produce the same tail, regardless of generator or timestamp.
+\end{description}
+
+\subsubsection{Security claim}
+
+The 512-bit tail gives:
+\begin{itemize}
+  \item $2^{256}$ classical and post-quantum (Grover) second-preimage resistance.
+  \item $2^{256}$ classical collision resistance (birthday).
+  \item $2^{170}$ post-quantum collision resistance (BHT \citep{bht1998}). This is the surface that matters for content addressing across multi-decade archival horizons.
+\end{itemize}
+
+\textbf{What PQHash is NOT:} not a hash function (use SHAKE-256 directly), not a MAC (use KMAC256), not a signature (use ML-DSA / SLH-DSA). PQHash is a content identifier with provenance metadata; the timestamp carries no security claim. See §\ref{sec:threat-model} for the framing PQID established; the same boundary applies, sharpened: the second-preimage figure for PQHash is the brute-force-the-content-via-SHAKE game, which is what every content-addressed format gets.
+
+\subsubsection{Cross-format non-overlap}
+
+PQID and PQHash MUST NOT cross-decode:
+\begin{itemize}
+  \item PQID is exactly 41 bytes with variant \code{0x01} or \code{0x02}. Conformant PQID decoders reject 73-byte buffers (length error) and reject the \code{0x03} variant byte (unknown-variant error, codified by the §\ref{sec:variant-reservation} reservation).
+  \item PQHash is exactly 73 bytes with variant \code{0x03}. Conformant PQHash decoders reject 41-byte buffers (length error) and reject any variant other than \code{0x03}.
+\end{itemize}
+
+An application that may receive either format dispatches at the application boundary:
+
+\begin{lstlisting}
+if len(buf) == 73 and buf[6] == 0x03:  PQHash.decode(buf)
+elif len(buf) == 41 and buf[6] in {0x01, 0x02}:  PQID.decode(buf)
+else: error
+\end{lstlisting}
+
+\subsubsection{Encodings}
+
+PQHash uses the same Base64URL and Crockford Base32 alphabets as PQID, sized for the larger payload:
+
+\begin{itemize}
+  \item \textbf{Base64URL: 98 characters.} $\lceil 73 \cdot 8 / 6 \rceil = 98$. The final character carries 4 bits of value plus 4 bits of zero padding. Decoders MUST reject inputs whose final character carries non-zero padding bits.
+  \item \textbf{Crockford Base32: 117 characters.} $\lceil 73 \cdot 8 / 5 \rceil = 117$. 584 bits of input produce 585 output bits with 1 zero pad bit at the bottom of the final character. Case-insensitive decoding with the same I/L→1 and O→0 confusables as PQID.
+\end{itemize}
+
+\subsubsection{Verify}
+
+A conformant PQHash implementation MUST expose a \code{verify(raw, content)} predicate that returns true iff \code{raw} is a 73-byte PQHash with variant \code{0x03} \emph{and} its tail equals \code{SHAKE256(content)} truncated to 64 bytes. The tail comparison MUST be constant-time on the 64-byte input to avoid timing oracles. Malformed buffers return false rather than raising.
+
+\subsubsection{Generator semantics}
+
+The PQHash generator maintains \code{last\_ts} and \code{counter}. On every call:
+\begin{enumerate}
+  \item Compute \code{tail = SHAKE256(content, 64)}.
+  \item Read the wall clock; clamp on regression (as for PQID Standard).
+  \item If the new timestamp equals \code{last\_ts}, increment the counter (spin to next ms on overflow).
+  \item Otherwise reset the counter to 0.
+\end{enumerate}
+
+Consecutive calls from a single generator produce strictly monotonic identifiers (binary order, and ASCII order under Crockford). Two callers that PQHash the same content at different times produce identifiers that differ only in \code{(ts, counter)} and share the 64-byte tail.
 
