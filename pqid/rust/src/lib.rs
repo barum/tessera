@@ -22,6 +22,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use base64::engine::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
+pub mod pqhash;
+
 /// Binary length of a PQID.
 pub const SIZE_BYTES: usize = 41;
 /// Length of the random tail in bytes (256 bits).

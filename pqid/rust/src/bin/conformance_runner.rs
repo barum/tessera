@@ -7,6 +7,7 @@ use std::process::ExitCode;
 use pqid::{
     set_now_ms_for_testing, HlcGenerator, Pqid, VARIANT_HLC, SIZE_BYTES,
 };
+use pqid::pqhash::{self, Pqhash, PQHASH_SIZE_BYTES};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -32,6 +33,10 @@ struct Record {
     physical_time_ms: Option<i64>,
     #[serde(default)]
     observe: Option<Value>,
+    #[serde(default)]
+    expected_tail_hex: Option<String>,
+    #[serde(default)]
+    content_hex: Option<String>,
 }
 
 fn hex_to_arr(s: &str) -> Result<[u8; SIZE_BYTES], String> {
@@ -204,6 +209,117 @@ fn run_hlc_overflow(r: &Record) -> Result<(), String> {
     Ok(())
 }
 
+fn pqhash_from_hex(hex_s: &str) -> Result<Pqhash, String> {
+    let bytes = hex::decode(hex_s).map_err(|e| e.to_string())?;
+    if bytes.len() != PQHASH_SIZE_BYTES {
+        return Err(format!("len {} != {}", bytes.len(), PQHASH_SIZE_BYTES));
+    }
+    let mut arr = [0u8; PQHASH_SIZE_BYTES];
+    arr.copy_from_slice(&bytes);
+    Ok(Pqhash(arr))
+}
+
+fn run_pqhash_hash_only(r: &Record) -> Result<(), String> {
+    let content = hex::decode(r.input_hex.as_ref().unwrap()).map_err(|e| e.to_string())?;
+    let tail = pqhash::hash_only(&content);
+    let got = hex::encode(tail);
+    let want = r.expected_tail_hex.as_ref().ok_or("no expected_tail_hex")?;
+    if &got != want {
+        return Err(format!("got={} want={}", got, want));
+    }
+    Ok(())
+}
+
+fn run_pqhash_decode(r: &Record) -> Result<(), String> {
+    let p = pqhash_from_hex(r.input_hex.as_ref().unwrap())?;
+    let exp = r.expected.as_ref().ok_or("no expected")?;
+    if p.variant() as i64 != exp["variant"].as_i64().unwrap() {
+        return Err("variant".into());
+    }
+    if p.timestamp_ms() != exp["timestamp_ms"].as_i64().unwrap() {
+        return Err("ts".into());
+    }
+    if p.counter() as i64 != exp["counter"].as_i64().unwrap() {
+        return Err("counter".into());
+    }
+    let got_tail = hex::encode(p.tail());
+    let want_tail = exp["tail_hex"].as_str().unwrap();
+    if got_tail != want_tail {
+        return Err(format!("tail got={} want={}", got_tail, want_tail));
+    }
+    Ok(())
+}
+
+fn run_pqhash_encode_b64(r: &Record) -> Result<(), String> {
+    let p = pqhash_from_hex(r.input_hex.as_ref().unwrap())?;
+    let s = p.to_base64url();
+    let want = r.expected_str.as_ref().unwrap();
+    if &s != want { return Err(format!("got={} want={}", s, want)); }
+    Ok(())
+}
+
+fn run_pqhash_decode_b64(r: &Record) -> Result<(), String> {
+    let p = Pqhash::from_base64url(r.input_str.as_ref().unwrap())
+        .map_err(|e| format!("{:?}", e))?;
+    let got = hex::encode(p.as_bytes());
+    let want = r.expected_hex.as_ref().unwrap();
+    if &got != want { return Err(format!("got={} want={}", got, want)); }
+    Ok(())
+}
+
+fn run_pqhash_encode_crockford(r: &Record) -> Result<(), String> {
+    let p = pqhash_from_hex(r.input_hex.as_ref().unwrap())?;
+    let s = p.to_crockford();
+    let want = r.expected_str.as_ref().unwrap();
+    if &s != want { return Err(format!("got={} want={}", s, want)); }
+    Ok(())
+}
+
+fn run_pqhash_decode_crockford(r: &Record) -> Result<(), String> {
+    let p = Pqhash::from_crockford(r.input_str.as_ref().unwrap())
+        .map_err(|e| format!("{:?}", e))?;
+    let got = hex::encode(p.as_bytes());
+    let want = r.expected_hex.as_ref().unwrap();
+    if &got != want { return Err(format!("got={} want={}", got, want)); }
+    Ok(())
+}
+
+fn run_pqhash_validate_invalid(r: &Record) -> Result<(), String> {
+    let kind = r.input_kind.as_ref().unwrap().as_str();
+    match kind {
+        "binary_hex" => {
+            let h = r.input_hex.as_ref().unwrap();
+            let bytes = match hex::decode(h) {
+                Ok(b) => b,
+                Err(_) => return Ok(()),
+            };
+            match Pqhash::from_bytes(&bytes) {
+                Ok(_) => Err("expected error, got success".into()),
+                Err(_) => Ok(()),
+            }
+        }
+        "b64" => match Pqhash::from_base64url(r.input_str.as_ref().unwrap()) {
+            Ok(_) => Err("expected error, got success".into()),
+            Err(_) => Ok(()),
+        },
+        "crockford" => match Pqhash::from_crockford(r.input_str.as_ref().unwrap()) {
+            Ok(_) => Err("expected error, got success".into()),
+            Err(_) => Ok(()),
+        },
+        _ => Err(format!("unknown input_kind {:?}", kind)),
+    }
+}
+
+fn run_pqhash_verify(r: &Record) -> Result<(), String> {
+    let p = pqhash_from_hex(r.input_hex.as_ref().unwrap())?;
+    let content = hex::decode(r.content_hex.as_ref().unwrap()).map_err(|e| e.to_string())?;
+    let got = p.verify(&content);
+    let want = r.expected.as_ref().and_then(|v| v.as_bool())
+        .ok_or_else(|| "no expected bool".to_string())?;
+    if got != want { return Err(format!("got={} want={}", got, want)); }
+    Ok(())
+}
+
 fn dispatch(r: &Record) -> Result<(), String> {
     match r.op.as_str() {
         "decode" => run_decode(r),
@@ -214,6 +330,14 @@ fn dispatch(r: &Record) -> Result<(), String> {
         "validate_invalid" => run_validate_invalid(r),
         "hlc_overflow" => run_hlc_overflow(r),
         "validate_min_timestamp" => run_validate_min_timestamp(r),
+        "pqhash_hash_only" => run_pqhash_hash_only(r),
+        "pqhash_decode" => run_pqhash_decode(r),
+        "pqhash_encode_b64" => run_pqhash_encode_b64(r),
+        "pqhash_decode_b64" => run_pqhash_decode_b64(r),
+        "pqhash_encode_crockford" => run_pqhash_encode_crockford(r),
+        "pqhash_decode_crockford" => run_pqhash_decode_crockford(r),
+        "pqhash_validate_invalid" => run_pqhash_validate_invalid(r),
+        "pqhash_verify" => run_pqhash_verify(r),
         other => Err(format!("unknown op {:?}", other)),
     }
 }
