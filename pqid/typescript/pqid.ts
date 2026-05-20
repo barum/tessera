@@ -29,6 +29,11 @@ export const VARIANT_HLC = 0x02 as const;
 const MAX_COUNTER = 0xffff;
 const HLC_MAX_DRIFT_MS = 60_000;
 
+/** Project epoch — optional, non-normative defensive bound. The standard
+ *  decoder accepts all timestamps; validateMinTimestamp() returns true
+ *  only for PQIDs at or after this. */
+export const MIN_TIMESTAMP_MS = 1_700_000_000_000 as const;
+
 export const ENCODED_LEN_B64 = 55 as const;
 export const ENCODED_LEN_B32 = 66 as const;
 
@@ -93,9 +98,15 @@ export class UnknownVariantError extends PQIDError {
 // Time helpers
 // ---------------------------------------------------------------------------
 
+// Test-only clock override. Set via setNowMsForTesting; pass null to restore.
+let nowMsOverride: number | null = null;
+export function setNowMsForTesting(value: number | null): void {
+  nowMsOverride = value;
+}
+
 // 48-bit ms timestamp uses two halves to avoid JS BigInt cost on hot path.
 // JS Number is safe for integers up to 2^53; 2^48 - 1 fits comfortably.
-const nowMs = (): number => Date.now();
+const nowMs = (): number => nowMsOverride !== null ? nowMsOverride : Date.now();
 
 function writeHeader(
   out: Uint8Array,
@@ -175,6 +186,12 @@ export class StandardGenerator {
 export class HLCGenerator {
   private l = 0;
   private c = 0;
+
+  // Test-only: force internal (l, c) state.
+  setStateForTesting(l: number, c: number): void {
+    this.l = l;
+    this.c = c;
+  }
 
   newId(observe?: Uint8Array): Uint8Array {
     const out = new Uint8Array(SIZE_BYTES);
@@ -334,6 +351,12 @@ export function decodeBase64URL(s: string): Uint8Array {
   if (bytes.length !== SIZE_BYTES) {
     throw new InvalidEncodingError(`decoded length ${bytes.length} != ${SIZE_BYTES}`);
   }
+  // Enforce canonical form: the final character carries 4 bits of value
+  // plus 2 bits of zero padding. Inputs whose pad bits are non-zero are
+  // rejected (matching the C reference and spec sec03).
+  if (base64url.encode(bytes) !== s) {
+    throw new InvalidEncodingError("non-canonical Base64URL (pad bits non-zero)");
+  }
   return bytes;
 }
 
@@ -363,6 +386,14 @@ export function encodeCrockford(raw: Uint8Array): string {
     out[idx++] = CROCKFORD_ALPHABET[(buf << (5 - bits)) & 0x1f];
   }
   return out.join("");
+}
+
+/** Non-normative defensive helper. Returns true iff the PQID's timestamp
+ *  is at or after MIN_TIMESTAMP_MS. The standard decoder accepts all
+ *  values; callers MAY opt into this check. */
+export function validateMinTimestamp(raw: Uint8Array): boolean {
+  if (raw.length !== SIZE_BYTES) return false;
+  return readTimestamp(raw) >= MIN_TIMESTAMP_MS;
 }
 
 export function decodeCrockford(s: string): Uint8Array {

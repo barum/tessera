@@ -47,6 +47,14 @@ COUNTER_BYTES: Final[int] = 2        # 16 bits
 MAX_TIMESTAMP_MS: Final[int] = (1 << 48) - 1
 MAX_COUNTER: Final[int] = (1 << 16) - 1
 
+# Project epoch — the earliest plausible PQID timestamp. Any decoded
+# timestamp below this is presumed malformed (zero-fill, mis-parse, or
+# corruption). NON-NORMATIVE: standard decoders still accept all values
+# in [0, MAX_TIMESTAMP_MS]; this is an opt-in defensive check via
+# validate_min_timestamp() / validate_min_timestamp_raw().
+# 1_700_000_000_000 ms ≈ 2023-11-14T22:13:20Z, the project's chosen epoch.
+MIN_TIMESTAMP_MS: Final[int] = 1_700_000_000_000
+
 # HLC drift bound: reject incoming HLC values more than this far in the future.
 # 60s is a generous bound that protects against clock-skewed or hostile peers
 # while permitting normal NTP error and brief network partitions.
@@ -115,9 +123,13 @@ class StandardGenerator:
             ts = self._last_ts
 
         if ts == self._last_ts:
-            # Same millisecond as previous ID → bump counter with a small
-            # random step so the counter itself isn't predictable from
-            # observed external IDs.
+            # Same millisecond as previous ID: advance by a random step in
+            # {1..16}. The +1 is the monotonicity guarantee; the random
+            # component is a defense-in-depth flourish (it spreads the
+            # counter overflow point over the ms more uniformly than +1
+            # would), but it is NOT the source of unlinkability — that's
+            # the randomized initial offset on each new ms (below) and,
+            # more importantly, the 256-bit random tail.
             step = 1 + (os.urandom(1)[0] & 0x0F)
             self._counter += step
             if self._counter > MAX_COUNTER:
@@ -127,8 +139,11 @@ class StandardGenerator:
                 ts = _now_ms()
                 self._counter = os.urandom(1)[0]
         else:
-            # New ms — randomize the starting offset to make counter values
-            # opaque to outside observers.
+            # New ms — randomize the starting offset (0..255). This avoids
+            # an observable "counter resets to 0 at every ms boundary"
+            # pattern; combined with the 256-bit random tail, it makes
+            # consecutive IDs from one generator unlinkable to anyone who
+            # doesn't already have insider state.
             self._counter = os.urandom(1)[0]
 
         self._last_ts = ts
@@ -292,10 +307,15 @@ def encode_b64(raw: bytes) -> str:
 
 
 def decode_b64(s: str) -> bytes:
-    """Decode a 55-character Base64URL PQID string."""
+    """Decode a 55-character Base64URL PQID string.
+
+    Enforces canonical form: the final character carries 4 bits of value
+    plus 2 bits of zero padding. Inputs whose pad bits are non-zero are
+    rejected (matching the C reference and spec sec03). Implemented as a
+    re-encode-and-compare check on the stdlib decoder.
+    """
     if len(s) != 55:
         raise InvalidEncoding(f"Base64URL PQID must be 55 chars, got {len(s)}")
-    # Pad back to multiple of 4 for stdlib decoder.
     padded = s + "=" * (-len(s) % 4)
     try:
         raw = base64.urlsafe_b64decode(padded.encode("ascii"))
@@ -303,6 +323,9 @@ def decode_b64(s: str) -> bytes:
         raise InvalidEncoding(f"Base64URL decode failed: {e}") from e
     if len(raw) != PQID_SIZE_BYTES:
         raise InvalidEncoding(f"decoded length {len(raw)} != {PQID_SIZE_BYTES}")
+    # Enforce bijection: non-canonical pad bits mean the input is invalid.
+    if encode_b64(raw) != s:
+        raise InvalidEncoding("non-canonical Base64URL (pad bits non-zero)")
     return raw
 
 
@@ -311,29 +334,70 @@ def decode_b64(s: str) -> bytes:
 # ---------------------------------------------------------------------------
 
 def encode_b32(raw: bytes) -> str:
-    """Encode a 41-byte PQID as Crockford Base32 (66 chars, uppercase)."""
+    """Encode a 41-byte PQID as Crockford Base32 (66 chars, uppercase).
+
+    Encoding is MSB-first byte-by-byte, with the trailing 3 bits of the last
+    byte placed in the high 3 bits of the final character (low 2 bits are
+    zero padding). This matches the C, Go, and Rust reference implementations
+    and the normative spec in sec03 of the whitepaper.
+    """
     if len(raw) != PQID_SIZE_BYTES:
         raise InvalidEncoding(f"PQID must be {PQID_SIZE_BYTES} bytes")
-    n = int.from_bytes(raw, "big")
-    # 41 bytes = 328 bits → 66 base32 chars (covers 330 bits)
-    chars = []
-    for _ in range(66):
-        chars.append(_CROCKFORD_ALPHABET[n & 0x1F])
-        n >>= 5
-    return "".join(reversed(chars))
+    out = bytearray(66)
+    buf = 0
+    bits = 0
+    idx = 0
+    for b in raw:
+        buf = (buf << 8) | b
+        bits += 8
+        while bits >= 5:
+            bits -= 5
+            out[idx] = ord(_CROCKFORD_ALPHABET[(buf >> bits) & 0x1F])
+            idx += 1
+    if bits > 0:
+        # 41*8 = 328 bits; 328 % 5 = 3 trailing bits. Pad with 2 zero bits.
+        out[idx] = ord(_CROCKFORD_ALPHABET[(buf << (5 - bits)) & 0x1F])
+        idx += 1
+    return out.decode("ascii")
+
+
+def validate_min_timestamp(raw: bytes) -> bool:
+    """Optional defensive check: returns True iff the decoded PQID has a
+    timestamp at or after MIN_TIMESTAMP_MS. NON-NORMATIVE — the standard
+    decoder accepts smaller timestamps. Callers MAY use this to reject
+    PQIDs that almost certainly came from zeroed memory or a mis-parse.
+    """
+    if len(raw) != PQID_SIZE_BYTES:
+        return False
+    ts = int.from_bytes(raw[0:TIMESTAMP_BYTES], "big")
+    return ts >= MIN_TIMESTAMP_MS
 
 
 def decode_b32(s: str) -> bytes:
-    """Decode a 66-character Crockford Base32 PQID string."""
+    """Decode a 66-character Crockford Base32 PQID string.
+
+    Inverse of encode_b32: MSB-first, with the final character's low 2 bits
+    required to be zero (the encoder's padding).
+    """
     if len(s) != 66:
         raise InvalidEncoding(f"Crockford Base32 PQID must be 66 chars, got {len(s)}")
-    n = 0
+    out = bytearray(PQID_SIZE_BYTES)
+    buf = 0
+    bits = 0
+    idx = 0
     for ch in s.upper():
         v = _CROCKFORD_DECODE.get(ch)
         if v is None:
             raise InvalidEncoding(f"invalid Crockford char: {ch!r}")
-        n = (n << 5) | v
-    # Top 2 bits of the 330-bit value must be zero.
-    if n >> 328:
-        raise InvalidEncoding("Crockford Base32 string overflows 41 bytes")
-    return n.to_bytes(PQID_SIZE_BYTES, "big")
+        buf = (buf << 5) | v
+        bits += 5
+        if bits >= 8:
+            bits -= 8
+            out[idx] = (buf >> bits) & 0xFF
+            idx += 1
+    # 66 chars = 330 bits; 328 emitted, 2 trailing bits must be zero padding.
+    if bits > 0 and (buf & ((1 << bits) - 1)) != 0:
+        raise InvalidEncoding("Crockford Base32 string has non-zero padding bits")
+    if idx != PQID_SIZE_BYTES:
+        raise InvalidEncoding(f"decoded length {idx} != {PQID_SIZE_BYTES}")
+    return bytes(out)

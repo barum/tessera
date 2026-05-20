@@ -17,7 +17,7 @@ Everything else (Go, Rust, TypeScript, C++, Java, CPython extension) follows tho
 These are checked by tests in every language. Breaking them in one implementation is a bug in that implementation, not a design decision:
 
 - **41 bytes total**, laid out as `TS(6) || VARIANT(1) || CTR(2) || RANDOM(32)`, big-endian.
-- **Variant byte**: `0x01` = Standard, `0x02` = HLC. Any other value is a decode error (`UnknownVariant` / `PQID_E_UNKNOWN_VARIANT`).
+- **Variant byte**: `0x01` = Standard, `0x02` = HLC. Any other value is a decode error (`UnknownVariant` / `PQID_E_UNKNOWN_VARIANT`). `0x00` and `0xFF` are **permanently reserved** and MUST NOT be assigned in future revisions (they defensively prevent zero-filled / all-ones buffers from passing validation). `0x03`–`0xFE` are reserved-future.
 - **Canonical encodings**: Base64URL → exactly 55 chars, no padding. Crockford Base32 → exactly 66 chars, case-insensitive on decode, `I/L→1`, `O→0` confusables accepted.
 - **Crockford decode** must reject inputs whose top 2 bits (of the 330-bit decoded value) are non-zero — the 41-byte payload occupies only 328 bits.
 - **HLC drift bound**: `HLC_MAX_DRIFT_MS = 60_000`. Observing a peer HLC more than 60s ahead of local physical time is a hard error (`HLCDriftError`), not a silent clamp.

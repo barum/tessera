@@ -1,0 +1,40 @@
+name: conformance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cross-language conformance gate: builds every implementation on a single
+# runner and runs the harness end-to-end. This is the single check branch
+# protection should require — the per-language workflows (python.yml, c.yml,
+# go.yml, …) cover per-OS and per-toolchain variants independently.
+jobs:
+  cross-language:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install --upgrade pip setuptools
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Run cross-language conformance harness
+        run: bash pqid/conformance/run.sh

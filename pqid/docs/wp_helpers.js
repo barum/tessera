@@ -1,5 +1,5 @@
 // PQID Whitepaper — Word document generator
-// Renders /home/claude/pqid/docs/PQID_Whitepaper.docx
+// Renders pqid/docs/PQID_Whitepaper.docx (path resolved relative to build_whitepaper.js)
 
 const fs = require("fs");
 const {

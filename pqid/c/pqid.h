@@ -30,6 +30,11 @@ extern "C" {
 
 #define PQID_HLC_MAX_DRIFT_MS 60000
 
+/* Project epoch. Optional defensive helper (non-normative): any decoded
+ * timestamp below this is presumed malformed. The standard decoder accepts
+ * all values; callers MAY check with pqid_validate_min_timestamp(). */
+#define PQID_MIN_TIMESTAMP_MS 1700000000000ULL
+
 typedef enum {
     PQID_OK                  = 0,
     PQID_E_RNG               = -1,
@@ -93,6 +98,15 @@ uint16_t pqid_counter(const uint8_t in[PQID_SIZE_BYTES]);
 
 /* Validates: variant byte is 0x01 or 0x02. */
 pqid_status_t pqid_validate(const uint8_t in[PQID_SIZE_BYTES]);
+
+/* Test-only: override the clock source used by the HLC generator.
+ * Pass UINT64_MAX to restore the real clock. Conformance tests use
+ * this to drive HLC overflow scenarios deterministically. */
+void pqid_set_now_ms_for_testing(uint64_t value_ms);
+
+/* Returns 1 iff the PQID's timestamp is at or after PQID_MIN_TIMESTAMP_MS.
+ * NON-NORMATIVE optional defensive check. */
+int pqid_validate_min_timestamp(const uint8_t in[PQID_SIZE_BYTES]);
 
 #ifdef __cplusplus
 }

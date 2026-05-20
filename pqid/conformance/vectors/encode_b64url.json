@@ -1,0 +1,62 @@
+[
+  {
+    "name": "std_zero_ts",
+    "op": "encode_b64",
+    "input_hex": "0000000000000100000000000000000000000000000000000000000000000000000000000000000000",
+    "expected_str": "AAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  },
+  {
+    "name": "std_epoch_2020",
+    "op": "encode_b64",
+    "input_hex": "016f5e66e800010001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "expected_str": "AW9eZugAAQABqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo"
+  },
+  {
+    "name": "std_recent",
+    "op": "encode_b64",
+    "input_hex": "018bcfe5680001002a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a",
+    "expected_str": "AYvP5WgAAQAqWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlo"
+  },
+  {
+    "name": "std_max_ts",
+    "op": "encode_b64",
+    "input_hex": "ffffffffffff01ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "expected_str": "________Af____________________________________________8"
+  },
+  {
+    "name": "std_mid_counter",
+    "op": "encode_b64",
+    "input_hex": "018bcfe568010180004242424242424242424242424242424242424242424242424242424242424242",
+    "expected_str": "AYvP5WgBAYAAQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI"
+  },
+  {
+    "name": "hlc_zero_ts",
+    "op": "encode_b64",
+    "input_hex": "0000000000000200000000000000000000000000000000000000000000000000000000000000000000",
+    "expected_str": "AAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  },
+  {
+    "name": "hlc_recent",
+    "op": "encode_b64",
+    "input_hex": "018bcfe56800020007cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "expected_str": "AYvP5WgAAgAHzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMw"
+  },
+  {
+    "name": "hlc_max_counter",
+    "op": "encode_b64",
+    "input_hex": "018bcfe569f402ffff3333333333333333333333333333333333333333333333333333333333333333",
+    "expected_str": "AYvP5Wn0Av__MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM"
+  },
+  {
+    "name": "hlc_max_ts",
+    "op": "encode_b64",
+    "input_hex": "ffffffffffff020001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "expected_str": "________AgAB7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u4"
+  },
+  {
+    "name": "hlc_typical",
+    "op": "encode_b64",
+    "input_hex": "018bcfe5687b0200649999999999999999999999999999999999999999999999999999999999999999",
+    "expected_str": "AYvP5Wh7AgBkmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZk"
+  }
+]

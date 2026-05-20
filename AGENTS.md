@@ -11,10 +11,11 @@ Start with [pqid/README.md](pqid/README.md) for the language tree, then use the 
 
 ## What To Preserve
 - Wire format is fixed at 41 bytes.
-- Variant bytes are `0x01` for Standard and `0x02` for HLC.
+- Variant bytes: `0x01` (Standard), `0x02` (HLC). `0x00` and `0xFF` are **permanently reserved** — MUST be rejected, MUST NOT be assigned. `0x03`–`0xFE` are reserved-future and MUST also be rejected by current decoders.
 - Canonical encodings are Base64URL (55 chars) and Crockford Base32 (66 chars).
 - StandardGenerator is intentionally not internally locked; HLCGenerator must be internally locked.
 - HLC drift handling is part of the contract and must stay bounded at 60 seconds.
+- The 32-byte random tail MUST come from an OS CSPRNG (getrandom / getentropy / BCryptGenRandom / os.urandom / SecureRandom / crypto.getRandomValues / `/dev/urandom`). NO userspace PRNG fallback is permitted. CSPRNG failure surfaces an error and produces no PQID. See `pqid/latex/sec03_part2_spec.tex` §3 CSPRNG requirements.
 
 ## Work Style
 - Use the reference implementations to confirm behavior before changing any other language.

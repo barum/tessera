@@ -24,6 +24,21 @@ The HLC variant solves this. A Hybrid Logical Clock \citep{kulkarni2014hlc} comb
 
 PQID's HLC variant exposes that machinery as a first-class identifier shape. The wire format is identical to the Standard variant; the only difference is the variant byte (\code{0x02} instead of \code{0x01}) and the semantic interpretation of the timestamp (logical, not physical, with a 60-second drift bound). A consumer that doesn't care about variant semantics can sort PQIDs as opaque bytes and get correct ordering across both variants in the same stream.
 
+\subsection{Threat model and what PQID is not}
+\label{sec:threat-model}
+
+The single sentence: \textbf{PQID is an identifier, not a cryptographic hash, not a MAC, and not a content fingerprint.} The post-quantum security claim is narrow, and conflating it with hash-function properties leads to misuse. Three points make the boundary explicit, with the math in \S\ref{sec:security} as the backing.
+
+\begin{description}
+  \item[Targeted second-preimage is the right threat.] An attacker who knows a specific target PQID and wants to produce a different generator output equal to it must brute-force the 256-bit random tail. Under Grover \citep{grover1996} that costs $\Theta(2^{128})$ quantum operations (see \S\ref{sec:security} lines for the exact bound). This is the \emph{only} security claim PQID makes for its random field, and it is the one that matters for identifier use cases such as opaque references, audit-log row keys, and capability tokens.
+
+  \item[Collision resistance is a statistical, not cryptographic, property.] Two PQIDs colliding (any two, not a specific one) is the BHT \citep{bht1998} regime: $\Theta(2^{n/3}) = 2^{85}$ for $n = 256$. \S\ref{sec:security} works through both bounds together. For UUIDv7 the equivalent number is $2^{25}$; for ULID, $2^{27}$; for KSUID, $2^{43}$. PQID's $2^{85}$ is large enough that a deployment producing $10^9$ IDs/s would run for $10^{18}$ years before the expected collision count reached 1. But it is not the second-preimage number, and it is not what the headline claim is about.
+
+  \item[Do not use PQID where you would use a hash.] PQID is not a SHA-2, SHA-3, BLAKE3, or KMAC substitute. The random tail has no relation to any input the generator has seen; PQID cannot be used to fingerprint content, prove possession of a preimage, derive a key, or authenticate a message. The 128-bit number applies only to the brute-force-the-random-tail game, not to any of the cryptographic-hash games.
+\end{description}
+
+If a system needs second-preimage resistance against an adversary who controls the input, use a hash function. If it needs message authentication, use a MAC. If it needs an identifier whose post-quantum brute-force cost is at parity with AES-128 \citep{fips197}, PQID is the right tool. The bound is the bound; treating it as a stronger one is a footgun.
+
 \subsection{The cost: bytes}
 
 PQID's distinguishing properties are the 256-bit random field --- the only format with comfortable post-quantum margins --- and the dual-variant design that makes the same wire format usable for both centralized and distributed generation. The cost is byte-count: at 41 bytes binary or 55 characters Base64URL, PQID is roughly $2.5\times$ the size of UUIDv4. Part \ref{sec:compare} works through the format-by-format tradeoffs; Part \ref{sec:when} maps them onto specific use cases.

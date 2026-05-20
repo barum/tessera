@@ -6,6 +6,10 @@ edition = "2024"
 [dependencies]
 getrandom = "0.3"
 base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+sha3 = "0.10"
 
 [lib]
 name = "pqid"
@@ -14,6 +18,14 @@ path = "src/lib.rs"
 [[bin]]
 name = "bench"
 path = "benches/bench_bin.rs"
+
+[[bin]]
+name = "conformance_runner"
+path = "src/bin/conformance_runner.rs"
+
+[[bin]]
+name = "fuzz_decode"
+path = "src/bin/fuzz_decode.rs"
 
 [profile.release]
 opt-level = 3

@@ -12,5 +12,5 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node"]
   },
-  "include": ["pqid.ts", "test_pqid.ts", "bench.ts"]
+  "include": ["pqid.ts", "pqhash.ts", "test_pqid.ts", "bench.ts", "conformance_runner.ts", "fuzz/fuzz_decode.ts"]
 }

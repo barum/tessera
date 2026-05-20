@@ -77,6 +77,46 @@ function buildWhy() {
     tx(" at offset 6. Variant 0x01 (Standard) is wall-clock; variant 0x02 (HLC) is hybrid logical clock. The wire format is identical otherwise, so consumers can ignore the variant byte and treat all PQIDs as opaque sortable identifiers. Producers that need causal ordering across nodes opt into HLC; producers that don't get the simpler, lock-free Standard generator."),
   ]));
 
+  out.push(h2("Threat model and what PQID is not"));
+
+  out.push(p([
+    bold("PQID is an identifier, not a cryptographic hash, not a MAC, and not a content fingerprint."),
+    tx(" The post-quantum security claim is narrow, and conflating it with hash-function properties leads to misuse. The math is in Part VI; this section pins down the boundary."),
+  ]));
+
+  out.push(p([
+    bold("Targeted second-preimage is the right threat."),
+    tx(" An attacker who knows a specific target PQID and wants to produce a different generator output equal to it must brute-force the 256-bit random tail. Under Grover that costs Θ(2"),
+    new TextRun({ text: "128", size: 22, superScript: true }),
+    tx(") quantum operations. This is the "),
+    it("only"),
+    tx(" security claim PQID makes for its random field, and it is the one that matters for identifier use cases such as opaque references, audit-log row keys, and capability tokens."),
+  ]));
+
+  out.push(p([
+    bold("Collision resistance is statistical, not cryptographic."),
+    tx(" Two PQIDs colliding (any two, not a specific one) is the BHT regime: Θ(2"),
+    new TextRun({ text: "n/3", size: 22, superScript: true }),
+    tx(") = 2"),
+    new TextRun({ text: "85", size: 22, superScript: true }),
+    tx(" for n=256. UUIDv7's equivalent is 2"),
+    new TextRun({ text: "25", size: 22, superScript: true }),
+    tx("; ULID's is 2"),
+    new TextRun({ text: "27", size: 22, superScript: true }),
+    tx("; KSUID's is 2"),
+    new TextRun({ text: "43", size: 22, superScript: true }),
+    tx(". PQID's 2"),
+    new TextRun({ text: "85", size: 22, superScript: true }),
+    tx(" is large enough that a deployment producing 10⁹ IDs/s would run for 10¹⁸ years before the expected collision count reached 1. But it is not the second-preimage number, and it is not what the headline claim is about."),
+  ]));
+
+  out.push(p([
+    bold("Do not use PQID where you would use a hash."),
+    tx(" PQID is not a SHA-2, SHA-3, BLAKE3, or KMAC substitute. The random tail has no relation to any input the generator has seen; PQID cannot be used to fingerprint content, prove possession of a preimage, derive a key, or authenticate a message. The 128-bit number applies "),
+    it("only"),
+    tx(" to the brute-force-the-random-tail game, not to any of the cryptographic-hash games. If a system needs second-preimage resistance against an adversary who controls the input, use a hash function. If it needs message authentication, use a MAC. If it needs an identifier whose post-quantum brute-force cost is at parity with AES-128, PQID is the right tool."),
+  ]));
+
   out.push(h2("What PQID is Not"));
 
   out.push(p([
@@ -189,14 +229,16 @@ function buildSpec() {
     [
       ["0x01", "Standard",      "Wall-clock timestamp, ms-scoped monotonic counter. Lock-free per-thread generation."],
       ["0x02", "HLC",           "Hybrid Logical Clock: logical time + counter that captures causality across nodes."],
-      ["0x00, 0x03–0x7F", "Reserved", "Reserved for future PQID variants. Decoders MUST reject these as unknown until a future revision defines them."],
-      ["0x80–0xFF",       "Vendor",   "Reserved for vendor or experimental extensions. Decoders SHOULD reject by default but MAY accept under explicit opt-in."],
+      ["0x00",            "Permanently reserved", "MUST be rejected by decoders. Reserved defensively so zero-filled buffers cannot be confused with valid PQIDs. MUST NOT be assigned in any future revision."],
+      ["0xFF",            "Permanently reserved", "MUST be rejected by decoders. Reserved defensively so all-ones uninitialized memory cannot be confused with valid PQIDs. MUST NOT be assigned in any future revision."],
+      ["0x03",            "PQHash (sibling format)", "Allocated 2026. PQID decoders MUST reject 0x03 — a 0x03 buffer is a PQHash (73 bytes), not a PQID (41 bytes). See the PQHash section below."],
+      ["0x04–0xFE",       "Reserved for future variants", "MUST be rejected by decoders until a future revision of this specification assigns them."],
     ],
     [1100, 1500, 6760],
   ));
 
   out.push(p([
-    tx("The variant byte is mandatory. Decoders MUST verify the variant before interpreting the rest of the identifier — an unknown variant indicates either corruption or a future format the decoder does not understand, and in either case the safe behavior is to reject."),
+    tx("The variant byte is mandatory. Decoders MUST verify the variant before interpreting the rest of the identifier — an unknown variant indicates either corruption or a future format the decoder does not understand, and in either case the safe behavior is to reject. The permanent reservation of 0x00 and 0xFF gives PQID a small but free defensive property: a 41-byte buffer of all zeroes or all ones cannot accidentally pass validation."),
   ]));
 
   out.push(h3("COUNTER field (16 bits)"));
@@ -219,8 +261,32 @@ function buildSpec() {
 
   out.push(p([
     tx("Thirty-two bytes drawn from a "),
-    bold("cryptographically-secure pseudorandom number generator"),
-    tx(". On Linux, /dev/urandom or the getrandom(2) syscall. On macOS, SecRandomCopyBytes or arc4random. On Windows, BCryptGenRandom. In Node.js, crypto.randomFillSync. In browsers, crypto.getRandomValues. Implementations MUST NOT use Math.random, rand(), or any non-cryptographic PRNG. Implementations MUST handle CSPRNG failure as a fatal condition — generating a PQID with predictable randomness destroys the entire security argument of the format."),
+    bold("cryptographically-secure pseudorandom number generator (CSPRNG)"),
+    tx(". This is the only field carrying the post-quantum security claim, so the requirements are normative:"),
+  ]));
+
+  out.push(bullet([
+    bold("Source. "),
+    tx("Implementations MUST draw the random tail from one of: getrandom(2) (Linux 3.17+), getentropy(3) or arc4random_buf (BSDs and macOS), BCryptGenRandom (Windows), the language wrappers around these (os.urandom, crypto/rand.Read, getrandom::fill, crypto.getRandomValues, SecureRandom), or — as a last-resort portable fallback — /dev/urandom. Implementations MUST NOT use a non-cryptographic userspace PRNG (Math.random, rand(), Mersenne Twister, Xoshiro, etc.) under any circumstance."),
+  ]));
+
+  out.push(bullet([
+    bold("Failure. "),
+    tx("If the CSPRNG returns an error or refuses to produce 32 bytes, the generator MUST surface the error to the caller and MUST NOT emit a PQID. There is no fallback path."),
+  ]));
+
+  out.push(bullet([
+    bold("Partial reads. "),
+    tx("A read that returns fewer than 32 bytes MUST be retried until either 32 bytes are obtained or an unrecoverable error is returned."),
+  ]));
+
+  out.push(bullet([
+    bold("Independence. "),
+    tx("Each PQID's random tail MUST be drawn independently. A generator MAY combine the 32-byte tail with a small additional read (1–2 bytes) used for the counter step in the same syscall as an optimization; this is unrelated to the cryptographic claim and does not weaken it because the OS CSPRNG output is uniform."),
+  ]));
+
+  out.push(p([
+    tx("The current implementations call: os.urandom (Python), getrandom / getentropy (C and C++), crypto/rand.Read (Go), getrandom::fill (Rust), crypto.getRandomValues / randomFillSync (TypeScript), SecureRandom (Java), and the underlying C reference (CPython extension). A test vector cannot directly verify entropy quality, but conformance reviewers SHOULD spot-check each implementation's call site against the rules above."),
   ]));
 
   out.push(p([
@@ -275,6 +341,101 @@ function buildSpec() {
 
   out.push(p([
     tx("The Crockford form is intended for use cases where humans handle the identifier directly: pasted into chat messages, read aloud over phones, written on paper, or appearing in CLI tools where mixed-case is hostile. The Base64URL form is intended for everything else."),
+  ]));
+
+  // ============================================================
+  // PQHash subsection
+  // ============================================================
+  out.push(h2("PQHash — sibling content-identifier format (variant 0x03)"));
+
+  out.push(p([
+    bold("PQHash is a sibling format to PQID"),
+    tx(", sharing PQID's 9-byte header layout but extending the wire size and replacing the random tail with a deterministic content digest. PQHash is "),
+    it("additive"),
+    tx(": it does not change PQID, and the two formats are guaranteed to not cross-decode."),
+  ]));
+
+  out.push(h3("Wire layout (73 bytes)"));
+
+  out.push(p(
+    "  0       6      7       9                                            73\n" +
+    "  +-------+------+-------+--------------------------------------------+\n" +
+    "  |  TS   | 0x03 |  CTR  |              SHAKE256(content, 64B)        |\n" +
+    "  | 48 b  |  8 b | 16 b  |                       512 b                |\n" +
+    "  +-------+------+-------+--------------------------------------------+\n"
+  ));
+
+  out.push(bullet([
+    bold("Timestamp (0–5): "),
+    tx("Provenance metadata — when this identifier was assigned. NOT a security claim."),
+  ]));
+  out.push(bullet([
+    bold("Variant (6): "),
+    tx("Fixed at 0x03, allocated from PQID's reserved-future range."),
+  ]));
+  out.push(bullet([
+    bold("Counter (7–8): "),
+    tx("Same-ms disambiguator within a generator."),
+  ]));
+  out.push(bullet([
+    bold("Tail (9–72): "),
+    tx("64 bytes (512 bits) of SHAKE-256(content), output truncated to 64 bytes. Deterministic from the content alone: two callers that PQHash the same content produce the same tail, regardless of generator or timestamp."),
+  ]));
+
+  out.push(h3("Security claim"));
+
+  out.push(p("The 512-bit tail gives:"));
+  out.push(bullet([
+    tx("2"),
+    new TextRun({ text: "256", size: 22, superScript: true }),
+    tx(" classical and post-quantum (Grover) second-preimage resistance."),
+  ]));
+  out.push(bullet([
+    tx("2"),
+    new TextRun({ text: "256", size: 22, superScript: true }),
+    tx(" classical collision resistance (birthday)."),
+  ]));
+  out.push(bullet([
+    tx("2"),
+    new TextRun({ text: "170", size: 22, superScript: true }),
+    tx(" post-quantum collision resistance (BHT). This is the surface that matters for content addressing across multi-decade archival horizons."),
+  ]));
+
+  out.push(p([
+    bold("What PQHash is NOT: "),
+    tx("not a hash function (use SHAKE-256 directly), not a MAC (use KMAC256), not a signature (use ML-DSA / SLH-DSA). PQHash is a content identifier with provenance metadata; the timestamp carries no security claim."),
+  ]));
+
+  out.push(h3("Cross-format non-overlap"));
+
+  out.push(p([
+    tx("PQID and PQHash MUST NOT cross-decode. PQID is exactly 41 bytes with variant 0x01 or 0x02; conformant PQID decoders reject 73-byte buffers (length error) and reject the 0x03 variant byte. PQHash is exactly 73 bytes with variant 0x03; conformant PQHash decoders reject 41-byte buffers (length error) and any variant other than 0x03."),
+  ]));
+
+  out.push(p("An application that may receive either format dispatches at the boundary:"));
+  out.push(p(
+    "  if len(buf) == 73 and buf[6] == 0x03:  PQHash.decode(buf)\n" +
+    "  elif len(buf) == 41 and buf[6] in {0x01, 0x02}:  PQID.decode(buf)\n" +
+    "  else: error\n"
+  ));
+
+  out.push(h3("Encodings"));
+
+  out.push(bullet([
+    bold("Base64URL: 98 characters. "),
+    tx("ceil(73*8/6) = 98. Final character carries 4 bits of value plus 4 bits of zero padding. Decoders MUST reject inputs whose final character carries non-zero padding bits."),
+  ]));
+  out.push(bullet([
+    bold("Crockford Base32: 117 characters. "),
+    tx("ceil(73*8/5) = 117. 584 input bits → 585 output bits with 1 zero pad bit at the bottom of the final character. Case-insensitive with the same I/L→1 and O→0 confusables as PQID."),
+  ]));
+
+  out.push(h3("Verify"));
+
+  out.push(p([
+    tx("A conformant PQHash implementation MUST expose a "),
+    bold("verify(raw, content)"),
+    tx(" predicate that returns true iff raw is a 73-byte PQHash with variant 0x03 AND its tail equals SHAKE-256(content) truncated to 64 bytes. The tail comparison MUST be constant-time on the 64-byte input to avoid timing oracles. Malformed buffers return false rather than raising."),
   ]));
 
   return out;

@@ -1,0 +1,86 @@
+[
+  {
+    "name": "binary_variant_0x00",
+    "op": "validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe568000000010000000000000000000000000000000000000000000000000000000000000000",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "binary_variant_0x03",
+    "op": "validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe568000300010000000000000000000000000000000000000000000000000000000000000000",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "binary_variant_0xff",
+    "op": "validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe56800ff00010000000000000000000000000000000000000000000000000000000000000000",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "binary_short",
+    "op": "validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe5680001000100000000000000000000000000000000000000000000000000000000000000",
+    "expected_error": "InvalidEncoding"
+  },
+  {
+    "name": "binary_long",
+    "op": "validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe56800010001000000000000000000000000000000000000000000000000000000000000000000",
+    "expected_error": "InvalidEncoding"
+  },
+  {
+    "name": "b64_short",
+    "op": "validate_invalid",
+    "input_kind": "b64",
+    "input_str": "AYvP5WgAAQABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "expected_error": "InvalidEncoding"
+  },
+  {
+    "name": "b64_long",
+    "op": "validate_invalid",
+    "input_kind": "b64",
+    "input_str": "AYvP5WgAAQABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "expected_error": "InvalidEncoding"
+  },
+  {
+    "name": "b64_bad_char",
+    "op": "validate_invalid",
+    "input_kind": "b64",
+    "input_str": "!YvP5WgAAQABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "expected_error": "InvalidEncoding"
+  },
+  {
+    "name": "b64_nonzero_pad_bits",
+    "op": "validate_invalid",
+    "input_kind": "b64",
+    "input_str": "AYvP5WgAAQABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB",
+    "expected_error": "InvalidEncoding"
+  },
+  {
+    "name": "crockford_short",
+    "op": "validate_invalid",
+    "input_kind": "crockford",
+    "input_str": "065WZSB8000G00800000000000000000000000000000000000000000000000000",
+    "expected_error": "InvalidEncoding"
+  },
+  {
+    "name": "crockford_overflow",
+    "op": "validate_invalid",
+    "input_kind": "crockford",
+    "input_str": "065WZSB8000G008000000000000000000000000000000000000000000000000001",
+    "expected_error": "InvalidEncoding"
+  },
+  {
+    "name": "crockford_bad_char",
+    "op": "validate_invalid",
+    "input_kind": "crockford",
+    "input_str": "U65WZSB8000G008000000000000000000000000000000000000000000000000000",
+    "expected_error": "InvalidEncoding"
+  }
+]

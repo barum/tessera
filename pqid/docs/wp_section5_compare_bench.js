@@ -167,6 +167,38 @@ function buildComparison() {
     tx("Bytes are at an absolute premium (8 vs 41 is 5× smaller), and you have a coordination service (e.g., Zookeeper) that can hand out unique machine IDs. For purely intra-database identifiers in a coordinated cluster, Snowflake's compactness is unbeatable."),
   ]));
 
+  out.push(h2("vs TSID"));
+
+  out.push(p([
+    tx("TSID (Time-Sorted ID, Mihalcea 2020) is a Snowflake-shape compact identifier with a configurable random portion: 42-bit ms timestamp + 22-bit random/sequence, packed into a 64-bit integer. Eight bytes total. Time-ordered at millisecond granularity, uncoordinated (unlike Snowflake), and time-sortable lexicographically when serialized as Crockford Base32 (13 chars)."),
+  ]));
+
+  out.push(p([
+    bold("PQID wins when: "),
+    tx("Post-quantum margins matter (TSID's 22 random bits give 11 PQ bits, well below comfortable margins), distributed-systems semantics matter (TSID is wall-clock only), or you need stronger collision-resistance margins than a 22-bit random field can provide at high generation rates."),
+  ]));
+
+  out.push(p([
+    bold("TSID wins when: "),
+    tx("Byte cost is the dominant constraint and you still need uncoordinated generation. TSID is what you reach for when Snowflake's coordination cost is unacceptable but Snowflake's 8 bytes is."),
+  ]));
+
+  out.push(h2("vs NanoID"));
+
+  out.push(p([
+    tx("NanoID (Sitnik 2017): pure random identifiers with no timestamp. Default 21 characters of a custom 64-character alphabet (URL-safe), carrying 126 bits of randomness. Configurable to any length / any alphabet. Time-unordered by design."),
+  ]));
+
+  out.push(p([
+    bold("PQID wins when: "),
+    tx("Time-sortability matters (NanoID has none), distributed-systems semantics matter, or you want the post-quantum margin baked in (NanoID's default 126 bits gives 63 PQ bits; achieving PQID-level 128 PQ bits requires NanoID at 42+ chars, same size class as PQID but without any of the structure)."),
+  ]));
+
+  out.push(p([
+    bold("NanoID wins when: "),
+    tx("You want an opaque, time-unordered, configurable-length token. PQID is one shape; NanoID is a family. For any use case where the identifier should NOT encode time, NanoID is the right tool."),
+  ]));
+
   out.push(h2("Decision Matrix"));
 
   out.push(p([
@@ -176,18 +208,24 @@ function buildComparison() {
   out.push(spacer());
 
   out.push(table(
-    ["Concern",                        "UUIDv4", "UUIDv7", "ULID",  "KSUID",  "Snowflake", "PQID Std", "PQID HLC"],
+    ["Concern",                        "UUIDv4", "UUIDv7", "ULID",  "KSUID",  "Snowflake", "TSID",   "NanoID*", "PQID Std", "PQID HLC"],
     [
-      ["Time-sortable",                 "✗",     "Partial","✓",     "(1s)",   "✓",         "✓",        "✓ (causal)"],
-      ["Post-quantum (≥128 bit)",       "✗",     "✗",      "✗",     "✗",      "✗",         "✓",        "✓"],
-      ["No coordination required",      "✓",     "✓",      "✓",     "✓",      "✗",         "✓",        "✓"],
-      ["Causal ordering across nodes",  "✗",     "✗",      "✗",     "✗",      "Partial",   "✗",        "✓"],
-      ["RFC / standard",                "✓",     "✓",      "Community","Community","Industry","Proposed", "Proposed"],
-      ["Compact (≤20 bytes)",           "✓",     "✓",      "✓",     "✓",      "✓",         "✗",        "✗"],
-      ["Lock-free per-thread",          "✓",     "✓",      "✓",     "✓",      "✓",         "✓",        "✗"],
+      ["Random bits",                   "122",   "74",    "80",    "128",    "0",         "22",     "126",     "256",      "256"],
+      ["PQ bits (n/2)",                 "61",    "37",    "40",    "64",     "0",         "11",     "63",      "128",      "128"],
+      ["Time-sortable",                 "✗",     "Partial","✓",     "(1s)",   "✓",         "✓",      "✗",       "✓",        "✓ (causal)"],
+      ["Post-quantum (≥128 bit)",       "✗",     "✗",      "✗",     "✗",      "✗",         "✗",      "✗",       "✓",        "✓"],
+      ["No coordination required",      "✓",     "✓",      "✓",     "✓",      "✗",         "✓",      "✓",       "✓",        "✓"],
+      ["Causal ordering across nodes",  "✗",     "✗",      "✗",     "✗",      "Partial",   "✗",      "✗",       "✗",        "✓"],
+      ["RFC / standard",                "✓",     "✓",      "Comm.", "Comm.",  "Industry",  "Comm.",  "Comm.",   "Prop.",    "Prop."],
+      ["Compact (≤20 bytes)",           "✓",     "✓",      "✓",     "✓",      "✓",         "✓",      "✓*",      "✗",        "✗"],
+      ["Lock-free per-thread",          "✓",     "✓",      "✓",     "✓",      "✓",         "✓",      "✓",       "✓",        "✗"],
     ],
-    [2400, 800, 800, 800, 800, 1000, 1000, 1760],
+    [1900, 650, 650, 650, 650, 700, 650, 650, 700, 1200],
   ));
+
+  out.push(p([
+    tx("*NanoID is configurable; numbers shown are for the default 21-char form (16 bytes, 126 bits)."),
+  ]));
 
   return out;
 }

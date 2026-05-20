@@ -1,0 +1,43 @@
+name: c
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        cc: [gcc, clang]
+        exclude:
+          # macOS gcc is really clang; the dedicated clang matrix entry covers it.
+          - os: macos-latest
+            cc: gcc
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test
+        env:
+          CC: ${{ matrix.cc }}
+        run: |
+          cd pqid/c
+          make clean
+          make all
+          ./test_pqid
+      - name: Run conformance vectors against C runner
+        run: |
+          for f in pqid/conformance/vectors/*.json; do
+            pqid/c/conformance_runner "$f"
+          done
+      - name: Fuzz smoke (60s)
+        run: |
+          cd pqid/c
+          make fuzz_decode
+          timeout 60 ./fuzz_decode 5000000 || ec=$?
+          if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
+            exit "$ec"
+          fi

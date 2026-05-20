@@ -8,23 +8,47 @@
  * No dynamic allocation. Standard variant is lock-free per generator;
  * HLC variant requires external serialization or single-threaded use.
  */
-#define _POSIX_C_SOURCE 200809L
-#define _DEFAULT_SOURCE
+#if !defined(_POSIX_C_SOURCE)
+#  define _POSIX_C_SOURCE 200809L
+#endif
+#if !defined(_DEFAULT_SOURCE)
+#  define _DEFAULT_SOURCE
+#endif
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#  define _DARWIN_C_SOURCE
+#endif
 #include "pqid.h"
 
 #include <errno.h>
 #include <fcntl.h>
 #include <string.h>
-#include <sys/random.h>
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
+#if defined(__linux__) || defined(__GLIBC__)
+#  include <sys/random.h>
+#  define PQID_HAVE_GETRANDOM 1
+#elif defined(__APPLE__)
+#  include <sys/random.h>  /* macOS exposes getentropy here */
+#  define PQID_HAVE_GETENTROPY 1
+#elif defined(__FreeBSD__) || defined(__OpenBSD__)
+#  include <unistd.h>
+#  define PQID_HAVE_GETENTROPY 1
+#endif
+
 /* ---------- CSPRNG ----------
- * getrandom(2) is the kernel-level interface on Linux 3.17+.
- * Fallback to /dev/urandom for portability.
+ * Normative requirement (PQID-00008): MUST use an OS-provided CSPRNG and
+ * MUST NOT fall back to a non-cryptographic source. The order below is:
+ *   1. getrandom(2)   (Linux ≥ 3.17)
+ *   2. getentropy(3)  (macOS, BSDs, glibc ≥ 2.25)
+ *   3. /dev/urandom   (last-resort portable POSIX)
+ *
+ * Partial reads are retried; any unrecoverable error returns -1 and the
+ * caller surfaces PQID_E_RNG.
  */
 static int pqid_getrandom(uint8_t *buf, size_t len) {
+#if defined(PQID_HAVE_GETRANDOM)
     size_t off = 0;
     while (off < len) {
         ssize_t n = getrandom(buf + off, len - off, 0);
@@ -35,10 +59,55 @@ static int pqid_getrandom(uint8_t *buf, size_t len) {
         off += (size_t)n;
     }
     return 0;
+#elif defined(PQID_HAVE_GETENTROPY)
+    /* getentropy() reads at most 256 bytes per call. Loop for safety. */
+    size_t off = 0;
+    while (off < len) {
+        size_t chunk = len - off;
+        if (chunk > 256) chunk = 256;
+        if (getentropy(buf + off, chunk) != 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        off += chunk;
+    }
+    return 0;
+#else
+    /* Portable fallback. Still a CSPRNG on every conformant POSIX system. */
+    int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    size_t off = 0;
+    while (off < len) {
+        ssize_t n = read(fd, buf + off, len - off);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            close(fd);
+            return -1;
+        }
+        if (n == 0) { close(fd); return -1; }
+        off += (size_t)n;
+    }
+    close(fd);
+    return 0;
+#endif
 }
 
-/* ---------- Time ---------- */
+/* ---------- Time ----------
+ * Production: real wall clock via clock_gettime(CLOCK_REALTIME).
+ * Test override: pqid_set_now_ms_for_testing(value). Pass UINT64_MAX
+ * to restore the real clock. Conformance tests use this to drive HLC
+ * scenarios deterministically.
+ */
+static uint64_t pqid_test_now_ms_override = UINT64_MAX;
+
+void pqid_set_now_ms_for_testing(uint64_t value_ms) {
+    pqid_test_now_ms_override = value_ms;
+}
+
 static uint64_t pqid_now_ms(void) {
+    if (pqid_test_now_ms_override != UINT64_MAX) {
+        return pqid_test_now_ms_override;
+    }
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
@@ -161,15 +230,36 @@ pqid_status_t pqid_hlc_new(pqid_hlc_generator_t *g,
 static const char B64URL_ALPHA[64] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-/* Decode lookup: 0xFF = invalid. Built at first use. */
-static int8_t b64url_lookup_inited = 0;
-static uint8_t b64url_lookup[256];
-
-static void b64url_lookup_init(void) {
-    for (int i = 0; i < 256; i++) b64url_lookup[i] = 0xFF;
-    for (int i = 0; i < 64; i++) b64url_lookup[(uint8_t)B64URL_ALPHA[i]] = (uint8_t)i;
-    b64url_lookup_inited = 1;
-}
+/* Decode lookup table — compile-time constant (eliminates the lazy-init
+ * data race that PQID-00006 fixed). 0xFF marks invalid characters.
+ *
+ * Layout:
+ *   '+' (43) invalid, '-' (45) -> 62, '/' (47) invalid,
+ *   '0'..'9' (48..57) -> 52..61,
+ *   'A'..'Z' (65..90) -> 0..25,
+ *   '_' (95) -> 63,
+ *   'a'..'z' (97..122) -> 26..51,
+ *   everything else 0xFF.
+ */
+static const uint8_t b64url_lookup[256] = {
+    /* 0x00-0x0F */ 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    /* 0x10-0x1F */ 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    /* 0x20-0x2F (' '..'/') */ 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,  62,0xFF,0xFF,
+    /* 0x30-0x3F ('0'..'?') */   52,  53,  54,  55,  56,  57,  58,  59,   60,  61,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    /* 0x40-0x4F ('@'..'O') */ 0xFF,   0,   1,   2,   3,   4,   5,   6,    7,   8,   9,  10,  11,  12,  13,  14,
+    /* 0x50-0x5F ('P'..'_') */   15,  16,  17,  18,  19,  20,  21,  22,   23,  24,  25,0xFF,0xFF,0xFF,0xFF,  63,
+    /* 0x60-0x6F ('`'..'o') */ 0xFF,  26,  27,  28,  29,  30,  31,  32,   33,  34,  35,  36,  37,  38,  39,  40,
+    /* 0x70-0x7F ('p'..DEL) */   41,  42,  43,  44,  45,  46,  47,  48,   49,  50,  51,0xFF,0xFF,0xFF,0xFF,0xFF,
+    /* 0x80-0xFF */
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+};
 
 void pqid_encode_b64url(const uint8_t in[PQID_SIZE_BYTES], char out[PQID_ENCODED_LEN_B64]) {
     /* 41 bytes = 13 full groups of 3 (39 bytes -> 52 chars) + 2 trailing bytes -> 3 chars. Total 55. */
@@ -189,8 +279,6 @@ void pqid_encode_b64url(const uint8_t in[PQID_SIZE_BYTES], char out[PQID_ENCODED
 }
 
 pqid_status_t pqid_decode_b64url(const char in[PQID_ENCODED_LEN_B64], uint8_t out[PQID_SIZE_BYTES]) {
-    if (!b64url_lookup_inited) b64url_lookup_init();
-
     size_t i = 0, j = 0;
     for (; i + 4 <= PQID_ENCODED_LEN_B64 - 3; i += 4, j += 3) {
         uint8_t a = b64url_lookup[(uint8_t)in[i+0]];
@@ -218,24 +306,28 @@ pqid_status_t pqid_decode_b64url(const char in[PQID_ENCODED_LEN_B64], uint8_t ou
 /* ---------- Crockford Base32 ---------- */
 static const char CROCKFORD_ALPHA[32] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
-static int8_t crockford_lookup_inited = 0;
-static uint8_t crockford_lookup[256];
-
-static void crockford_lookup_init(void) {
-    for (int i = 0; i < 256; i++) crockford_lookup[i] = 0xFF;
-    /* Canonical alphabet, both cases. */
-    for (int i = 0; i < 32; i++) {
-        crockford_lookup[(uint8_t)CROCKFORD_ALPHA[i]] = (uint8_t)i;
-        if (CROCKFORD_ALPHA[i] >= 'A' && CROCKFORD_ALPHA[i] <= 'Z') {
-            crockford_lookup[(uint8_t)(CROCKFORD_ALPHA[i] - 'A' + 'a')] = (uint8_t)i;
-        }
-    }
-    /* Confusables: I/L → 1, O → 0. */
-    crockford_lookup[(uint8_t)'I'] = 1;  crockford_lookup[(uint8_t)'i'] = 1;
-    crockford_lookup[(uint8_t)'L'] = 1;  crockford_lookup[(uint8_t)'l'] = 1;
-    crockford_lookup[(uint8_t)'O'] = 0;  crockford_lookup[(uint8_t)'o'] = 0;
-    crockford_lookup_inited = 1;
-}
+/* Compile-time decode lookup. Canonical: 0..9 = 0..9; A..H,J,K,M,N,P,Q,R,S,T,V,W,X,Y,Z
+ * = 10..31 (skipping I, L, O, U from the canonical alphabet). Confusables:
+ * I/i and L/l → 1; O/o → 0. Lowercase letters share their uppercase mapping. */
+static const uint8_t crockford_lookup[256] = {
+    /* 0x00-0x0F */ 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    /* 0x10-0x1F */ 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    /* 0x20-0x2F */ 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    /* 0x30-0x3F ('0'..'?') */    0,   1,   2,   3,   4,   5,   6,   7,    8,   9,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    /* 0x40-0x4F ('@'..'O') */ 0xFF,  10,  11,  12,  13,  14,  15,  16,   17,   1,  18,  19,   1,  20,  21,   0,
+    /* 0x50-0x5F ('P'..'_') */   22,  23,  24,  25,  26,0xFF,  27,  28,   29,  30,  31,0xFF,0xFF,0xFF,0xFF,0xFF,
+    /* 0x60-0x6F ('`'..'o') */ 0xFF,  10,  11,  12,  13,  14,  15,  16,   17,   1,  18,  19,   1,  20,  21,   0,
+    /* 0x70-0x7F ('p'..DEL) */   22,  23,  24,  25,  26,0xFF,  27,  28,   29,  30,  31,0xFF,0xFF,0xFF,0xFF,0xFF,
+    /* 0x80-0xFF */
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+    0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+};
 
 void pqid_encode_crockford(const uint8_t in[PQID_SIZE_BYTES], char out[PQID_ENCODED_LEN_B32]) {
     /* 41 bytes (328 bits) → 66 chars × 5 bits = 330 bits (2 zero-pad bits). */
@@ -262,8 +354,6 @@ void pqid_encode_crockford(const uint8_t in[PQID_SIZE_BYTES], char out[PQID_ENCO
 }
 
 pqid_status_t pqid_decode_crockford(const char in[PQID_ENCODED_LEN_B32], uint8_t out[PQID_SIZE_BYTES]) {
-    if (!crockford_lookup_inited) crockford_lookup_init();
-
     size_t i = 0, j = 0;
     while (i + 8 <= PQID_ENCODED_LEN_B32 - 2) {
         uint64_t acc = 0;
@@ -298,6 +388,10 @@ uint8_t pqid_variant(const uint8_t in[PQID_SIZE_BYTES]) {
 }
 uint16_t pqid_counter(const uint8_t in[PQID_SIZE_BYTES]) {
     return get_be16(in + PQID_COUNTER_OFFSET);
+}
+
+int pqid_validate_min_timestamp(const uint8_t in[PQID_SIZE_BYTES]) {
+    return get_be48(in) >= PQID_MIN_TIMESTAMP_MS ? 1 : 0;
 }
 
 pqid_status_t pqid_validate(const uint8_t in[PQID_SIZE_BYTES]) {

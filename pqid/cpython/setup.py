@@ -7,7 +7,7 @@ from setuptools import Extension, setup
 
 ext = Extension(
     name="pqid_ext",
-    sources=["pqid_ext.c", "../c/pqid.c"],
+    sources=["pqid_ext.c", "../c/pqid.c", "../c/pqhash.c", "../c/keccak.c"],
     include_dirs=["../c"],
     extra_compile_args=[
         "-O3",

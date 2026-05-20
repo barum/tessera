@@ -26,6 +26,7 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include "../c/pqid.h"
+#include "../c/pqhash.h"
 
 /* Module-level singleton generators (for the convenience API).
  * For multi-threaded use, allocate explicit generators in user code via
@@ -191,6 +192,171 @@ static PyObject *py_counter(PyObject *self, PyObject *arg) {
     return PyLong_FromLong(c);
 }
 
+static PyObject *py_validate_min_timestamp(PyObject *self, PyObject *arg) {
+    (void)self;
+    Py_buffer buf;
+    if (get_pqid_bytes(arg, &buf) < 0) return NULL;
+    int ok = pqid_validate_min_timestamp((const uint8_t *)buf.buf);
+    PyBuffer_Release(&buf);
+    if (ok) Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
+/* ---------- PQHash bindings ---------- */
+
+static pqhash_generator_t g_pqhash;
+
+/* pqhash_hash_only(content) -> bytes (64-byte tail) */
+static PyObject *py_pqhash_hash_only(PyObject *self, PyObject *arg) {
+    (void)self;
+    Py_buffer buf;
+    if (PyObject_GetBuffer(arg, &buf, PyBUF_SIMPLE) < 0) return NULL;
+    uint8_t tail[PQHASH_TAIL_BYTES];
+    pqhash_hash_only((const uint8_t *)buf.buf, (size_t)buf.len, tail);
+    PyBuffer_Release(&buf);
+    return PyBytes_FromStringAndSize((const char *)tail, PQHASH_TAIL_BYTES);
+}
+
+/* pqhash_hash_at(content, timestamp_ms, counter) -> bytes (73 bytes) */
+static PyObject *py_pqhash_hash_at(PyObject *self, PyObject *args) {
+    (void)self;
+    Py_buffer buf;
+    unsigned long long ts;
+    unsigned int counter;
+    if (!PyArg_ParseTuple(args, "y*KI", &buf, &ts, &counter)) return NULL;
+    if (counter > 0xFFFF) {
+        PyBuffer_Release(&buf);
+        PyErr_SetString(PyExc_ValueError, "counter out of range");
+        return NULL;
+    }
+    uint8_t out[PQHASH_SIZE_BYTES];
+    pqhash_hash_at((const uint8_t *)buf.buf, (size_t)buf.len,
+                   (uint64_t)ts, (uint16_t)counter, out);
+    PyBuffer_Release(&buf);
+    return PyBytes_FromStringAndSize((const char *)out, PQHASH_SIZE_BYTES);
+}
+
+/* pqhash_new(content) -> bytes (73 bytes, uses module-level generator) */
+static PyObject *py_pqhash_new(PyObject *self, PyObject *arg) {
+    (void)self;
+    Py_buffer buf;
+    if (PyObject_GetBuffer(arg, &buf, PyBUF_SIMPLE) < 0) return NULL;
+    uint8_t out[PQHASH_SIZE_BYTES];
+    pqhash_status_t st = pqhash_new(&g_pqhash, (const uint8_t *)buf.buf,
+                                    (size_t)buf.len, out);
+    PyBuffer_Release(&buf);
+    if (st != PQHASH_OK) {
+        PyErr_SetString(PqidError, "pqhash_new failed");
+        return NULL;
+    }
+    return PyBytes_FromStringAndSize((const char *)out, PQHASH_SIZE_BYTES);
+}
+
+/* pqhash_encode_b64(b) -> str (98 chars) */
+static PyObject *py_pqhash_encode_b64(PyObject *self, PyObject *arg) {
+    (void)self;
+    Py_buffer buf;
+    if (PyObject_GetBuffer(arg, &buf, PyBUF_SIMPLE) < 0) return NULL;
+    if (buf.len != PQHASH_SIZE_BYTES) {
+        PyBuffer_Release(&buf);
+        PyErr_SetString(PqidError, "PQHash must be 73 bytes");
+        return NULL;
+    }
+    char out[PQHASH_ENCODED_LEN_B64];
+    pqhash_encode_b64url((const uint8_t *)buf.buf, out);
+    PyBuffer_Release(&buf);
+    return PyUnicode_DecodeASCII(out, PQHASH_ENCODED_LEN_B64, NULL);
+}
+
+/* pqhash_decode_b64(s) -> bytes (73 bytes) */
+static PyObject *py_pqhash_decode_b64(PyObject *self, PyObject *arg) {
+    (void)self;
+    if (!PyUnicode_Check(arg)) { PyErr_SetString(PyExc_TypeError, "expected str"); return NULL; }
+    Py_ssize_t len;
+    const char *s = PyUnicode_AsUTF8AndSize(arg, &len);
+    if (!s) return NULL;
+    if (len != PQHASH_ENCODED_LEN_B64) {
+        PyErr_SetString(PqidError, "Base64URL PQHash must be 98 chars");
+        return NULL;
+    }
+    uint8_t out[PQHASH_SIZE_BYTES];
+    pqhash_status_t st = pqhash_decode_b64url(s, out);
+    if (st != PQHASH_OK) {
+        PyErr_SetString(PqidError, "PQHash decode_b64 failed");
+        return NULL;
+    }
+    return PyBytes_FromStringAndSize((const char *)out, PQHASH_SIZE_BYTES);
+}
+
+/* pqhash_encode_b32(b) -> str (117 chars) */
+static PyObject *py_pqhash_encode_b32(PyObject *self, PyObject *arg) {
+    (void)self;
+    Py_buffer buf;
+    if (PyObject_GetBuffer(arg, &buf, PyBUF_SIMPLE) < 0) return NULL;
+    if (buf.len != PQHASH_SIZE_BYTES) {
+        PyBuffer_Release(&buf);
+        PyErr_SetString(PqidError, "PQHash must be 73 bytes");
+        return NULL;
+    }
+    char out[PQHASH_ENCODED_LEN_B32];
+    pqhash_encode_crockford((const uint8_t *)buf.buf, out);
+    PyBuffer_Release(&buf);
+    return PyUnicode_DecodeASCII(out, PQHASH_ENCODED_LEN_B32, NULL);
+}
+
+/* pqhash_decode_b32(s) -> bytes (73 bytes) */
+static PyObject *py_pqhash_decode_b32(PyObject *self, PyObject *arg) {
+    (void)self;
+    if (!PyUnicode_Check(arg)) { PyErr_SetString(PyExc_TypeError, "expected str"); return NULL; }
+    Py_ssize_t len;
+    const char *s = PyUnicode_AsUTF8AndSize(arg, &len);
+    if (!s) return NULL;
+    if (len != PQHASH_ENCODED_LEN_B32) {
+        PyErr_SetString(PqidError, "Crockford PQHash must be 117 chars");
+        return NULL;
+    }
+    uint8_t out[PQHASH_SIZE_BYTES];
+    pqhash_status_t st = pqhash_decode_crockford(s, out);
+    if (st != PQHASH_OK) {
+        PyErr_SetString(PqidError, "PQHash decode_b32 failed");
+        return NULL;
+    }
+    return PyBytes_FromStringAndSize((const char *)out, PQHASH_SIZE_BYTES);
+}
+
+/* pqhash_verify(raw, content) -> bool */
+static PyObject *py_pqhash_verify(PyObject *self, PyObject *args) {
+    (void)self;
+    Py_buffer raw_buf, content_buf;
+    if (!PyArg_ParseTuple(args, "y*y*", &raw_buf, &content_buf)) return NULL;
+    int ok = 0;
+    if (raw_buf.len == PQHASH_SIZE_BYTES) {
+        ok = pqhash_verify((const uint8_t *)raw_buf.buf,
+                           (const uint8_t *)content_buf.buf,
+                           (size_t)content_buf.len);
+    }
+    PyBuffer_Release(&raw_buf);
+    PyBuffer_Release(&content_buf);
+    if (ok) Py_RETURN_TRUE;
+    Py_RETURN_FALSE;
+}
+
+/* pqhash_validate(b) -> None or raises */
+static PyObject *py_pqhash_validate(PyObject *self, PyObject *arg) {
+    (void)self;
+    Py_buffer buf;
+    if (PyObject_GetBuffer(arg, &buf, PyBUF_SIMPLE) < 0) return NULL;
+    pqhash_status_t st = (buf.len == PQHASH_SIZE_BYTES)
+        ? pqhash_validate((const uint8_t *)buf.buf)
+        : PQHASH_E_INVALID_LEN;
+    PyBuffer_Release(&buf);
+    if (st != PQHASH_OK) {
+        PyErr_SetString(PqidError, "PQHash validate failed");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
 /* Method table ----------------------------------------------------------- */
 static PyMethodDef Methods[] = {
     {"new",          py_new,                              METH_NOARGS,  "Generate a Standard PQID (41 bytes)."},
@@ -203,6 +369,17 @@ static PyMethodDef Methods[] = {
     {"timestamp_ms", py_timestamp_ms,                     METH_O,       "Extract 48-bit timestamp (ms) from a PQID."},
     {"variant",      py_variant,                          METH_O,       "Extract variant byte (0x01 or 0x02)."},
     {"counter",      py_counter,                          METH_O,       "Extract 16-bit counter."},
+    {"validate_min_timestamp", py_validate_min_timestamp, METH_O,       "Non-normative defensive helper: returns True iff timestamp_ms >= MIN_TIMESTAMP_MS."},
+    /* PQHash */
+    {"pqhash_hash_only",    py_pqhash_hash_only,    METH_O,       "SHAKE-256(content) truncated to 64 bytes."},
+    {"pqhash_hash_at",      py_pqhash_hash_at,      METH_VARARGS, "pqhash_hash_at(content, timestamp_ms, counter) -> 73 bytes."},
+    {"pqhash_new",          py_pqhash_new,          METH_O,       "Generate a PQHash using the module-level generator (73 bytes)."},
+    {"pqhash_encode_b64",   py_pqhash_encode_b64,   METH_O,       "Encode 73 bytes -> 98-char Base64URL."},
+    {"pqhash_decode_b64",   py_pqhash_decode_b64,   METH_O,       "Decode 98-char Base64URL -> 73 bytes."},
+    {"pqhash_encode_b32",   py_pqhash_encode_b32,   METH_O,       "Encode 73 bytes -> 117-char Crockford Base32."},
+    {"pqhash_decode_b32",   py_pqhash_decode_b32,   METH_O,       "Decode 117-char Crockford Base32 -> 73 bytes."},
+    {"pqhash_verify",       py_pqhash_verify,       METH_VARARGS, "pqhash_verify(raw, content) -> bool (constant-time tail compare)."},
+    {"pqhash_validate",     py_pqhash_validate,     METH_O,       "Validate a 73-byte PQHash buffer's length and variant."},
     {NULL, NULL, 0, NULL}
 };
 
@@ -213,6 +390,7 @@ static struct PyModuleDef moduledef = {
 PyMODINIT_FUNC PyInit_pqid_ext(void) {
     pqid_std_init(&g_std);
     pqid_hlc_init(&g_hlc);
+    pqhash_init(&g_pqhash);
     PyObject *m = PyModule_Create(&moduledef);
     if (!m) return NULL;
     PqidError = PyErr_NewException("pqid_ext.PqidError", NULL, NULL);
@@ -225,5 +403,15 @@ PyMODINIT_FUNC PyInit_pqid_ext(void) {
     PyModule_AddIntConstant(m, "VARIANT_HLC",      PQID_VARIANT_HLC);
     PyModule_AddIntConstant(m, "ENCODED_LEN_B64",  PQID_ENCODED_LEN_B64);
     PyModule_AddIntConstant(m, "ENCODED_LEN_B32",  PQID_ENCODED_LEN_B32);
+    PyModule_AddIntConstant(m, "PQHASH_SIZE_BYTES",     PQHASH_SIZE_BYTES);
+    PyModule_AddIntConstant(m, "PQHASH_VARIANT",        PQHASH_VARIANT);
+    PyModule_AddIntConstant(m, "PQHASH_ENCODED_LEN_B64",PQHASH_ENCODED_LEN_B64);
+    PyModule_AddIntConstant(m, "PQHASH_ENCODED_LEN_B32",PQHASH_ENCODED_LEN_B32);
+    {
+        PyObject *min_ts = PyLong_FromUnsignedLongLong((unsigned long long)PQID_MIN_TIMESTAMP_MS);
+        if (min_ts) {
+            PyModule_AddObject(m, "MIN_TIMESTAMP_MS", min_ts);
+        }
+    }
     return m;
 }

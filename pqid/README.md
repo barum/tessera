@@ -38,7 +38,7 @@ rust/        no_std-friendly core, `cargo test --release`
 typescript/  Node 18+ / browser, tsc + node test runner
 java/        Plain make-driven build
 cpython/     CPython C extension; mirrors pqid_fast.py's API, not pqid.py's
-benchmarks/  Checked-in bench output, one file per language
+benchmarks/  Checked-in bench output, one file per language (see benchmarks/methodology.md)
 docs/        Whitepaper DOCX-generation pipeline (build_whitepaper.js + wp_* modules)
 latex/       LaTeX source for the typeset whitepaper PDF
 ```
@@ -108,6 +108,22 @@ cd cpython && python bench_pqid_ext.py
 ```bash
 cd latex && make
 ```
+
+## CSPRNG call sites
+
+Every implementation draws the 32-byte random tail from the OS CSPRNG —
+no userspace PRNG fallback is permitted (see normative §3 in the whitepaper).
+
+| Language    | Call                                                    |
+|-------------|---------------------------------------------------------|
+| Python      | [`os.urandom`](python/pqid.py)                          |
+| C           | `getrandom(2)` on Linux, `getentropy(3)` on Apple/BSD, `/dev/urandom` fallback |
+| C++         | `getrandom(2)` on Linux, `getentropy(3)` on Apple       |
+| Go          | [`crypto/rand.Read`](go/pqid.go)                        |
+| Rust        | [`getrandom::fill`](rust/src/lib.rs)                    |
+| TypeScript  | `node:crypto.randomFillSync` / `crypto.getRandomValues` |
+| Java        | `java.security.SecureRandom`                            |
+| CPython ext | Same as C (links to the C reference)                    |
 
 ## Invariants that hold across every implementation
 

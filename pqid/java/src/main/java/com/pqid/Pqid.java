@@ -19,6 +19,16 @@ public final class Pqid implements Comparable<Pqid> {
     public static final byte VARIANT_STANDARD = 0x01;
     public static final byte VARIANT_HLC = 0x02;
 
+    /** Project epoch — optional, non-normative defensive bound. The standard
+     *  constructor accepts all timestamps; validateMinTimestamp() returns
+     *  true only for PQIDs at or after this. */
+    public static final long MIN_TIMESTAMP_MS = 1_700_000_000_000L;
+
+    /** Non-normative defensive check: timestampMs() &gt;= MIN_TIMESTAMP_MS. */
+    public boolean validateMinTimestamp() {
+        return timestampMs() >= MIN_TIMESTAMP_MS;
+    }
+
     private final byte[] bytes; // length 41, defensively copied at construction
 
     Pqid(byte[] bytes) {

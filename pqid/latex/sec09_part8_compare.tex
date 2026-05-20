@@ -90,22 +90,44 @@ Twitter's Snowflake: 41-bit ms timestamp + 10-bit machine ID + 12-bit sequence, 
 
 \textbf{Snowflake wins when:} bytes are at an absolute premium (8 vs 41 is $5\times$ smaller), and you have a coordination service (e.g., Zookeeper) that can hand out unique machine IDs. For purely intra-database identifiers in a coordinated cluster, Snowflake's compactness is unbeatable.
 
+\subsection{vs TSID \citep{tsid}}
+
+TSID (Time-Sorted ID) is a Snowflake-shape compact identifier with a configurable random portion: 42-bit ms timestamp + 22-bit random/sequence, packed into a 64-bit integer. Eight bytes total. Time-ordered at millisecond granularity, uncoordinated (unlike Snowflake), and time-sortable lexicographically when serialized as Crockford Base32 (13 chars).
+
+\textbf{PQID wins when:} post-quantum margins matter (TSID's 22 random bits give 11 PQ bits, well below comfortable margins), distributed-systems semantics matter (TSID is wall-clock only), or you need stronger collision-resistance margins than a 22-bit random field can provide at high generation rates.
+
+\textbf{TSID wins when:} byte cost is the dominant constraint and you still need uncoordinated generation. TSID is what you reach for when Snowflake's coordination cost is unacceptable but Snowflake's 8 bytes is. For high-throughput intra-cluster identifiers in environments where 22 bits of randomness per ms is enough (Java microservices, internal queue tags), TSID is the better fit.
+
+\subsection{vs NanoID \citep{nanoid}}
+
+NanoID: pure random identifiers with no timestamp. Default 21 characters of a custom 64-character alphabet (URL-safe), which carries 126 bits of randomness. Configurable to any length / any alphabet. Time-unordered by design.
+
+\textbf{PQID wins when:} time-sortability matters (NanoID has none), distributed-systems semantics matter, or you want the post-quantum margin baked in (NanoID's default 126 bits gives 63 PQ bits; achieving PQID-level 128 PQ bits requires NanoID at 42+ chars, which is the same size class as PQID without any of the structure).
+
+\textbf{NanoID wins when:} you want an opaque, time-unordered, configurable-length token. NanoID's flexibility is its strength: 8-char short codes for URL shorteners, 16-char tokens for opaque API keys, 30-char tokens for archive identifiers. PQID is one shape; NanoID is a family. For any use case where the identifier should NOT encode time, NanoID is the right tool.
+
 \subsection{Summary table}
 
 \begin{center}
 \renewcommand{\arraystretch}{1.15}
 \footnotesize
-\begin{tabular}{lcccccll}
+\begin{tabular}{lccccccccc}
 \toprule
-\textbf{Concern} & \textbf{UUIDv4} & \textbf{UUIDv7} & \textbf{ULID} & \textbf{KSUID} & \textbf{Snowflake} & \textbf{PQID Std} & \textbf{PQID HLC} \\
+\textbf{Concern} & \textbf{UUIDv4} & \textbf{UUIDv7} & \textbf{ULID} & \textbf{KSUID} & \textbf{Snowflake} & \textbf{TSID} & \textbf{NanoID} & \textbf{PQID Std} & \textbf{PQID HLC} \\
 \midrule
-Sortable           & ---       & Partial    & Yes (ms)   & Yes (s)    & Yes        & \textbf{Yes (ms)}   & \textbf{Yes (HLC)} \\
-PQ ($\geq$ 128 b)  & ---       & ---        & ---        & ---        & ---        & \textbf{Yes}        & \textbf{Yes} \\
-Distributed/HLC    & ---       & ---        & ---        & ---        & Coord.     & ---                 & \textbf{Yes} \\
-Bytes              & 16        & 16         & 16         & 20         & 8          & 41                  & 41 \\
-B64 length         & 22        & 22         & 22         & 27         & 11         & 55                  & 55 \\
-RFC / standard     & RFC       & RFC        & Community  & Community  & Industry   & Proposed            & Proposed \\
+Total bits         & 128       & 128        & 128        & 160        & 64         & 64         & 126*       & 328                 & 328 \\
+Random bits        & 122       & 74         & 80         & 128        & 0          & 22         & 126        & 256                 & 256 \\
+PQ ($n/2$ bits)    & 61        & 37         & 40         & 64         & 0          & 11         & 63         & \textbf{128}        & \textbf{128} \\
+Collision BHT      & $2^{41}$  & $2^{25}$   & $2^{27}$   & $2^{43}$   & N/A        & $2^{7}$    & $2^{42}$   & \textbf{$2^{85}$}   & \textbf{$2^{85}$} \\
+Sortable (intra-ms)& ---       & Partial    & Yes        & --- (s)    & Yes        & Yes        & ---        & \textbf{Yes}        & \textbf{Yes (HLC)} \\
+Distributed/HLC    & ---       & ---        & ---        & ---        & Coord.     & ---        & ---        & ---                 & \textbf{Yes} \\
+Bytes              & 16        & 16         & 16         & 20         & 8          & 8          & ~16*       & 41                  & 41 \\
+B64 / encoded len  & 22        & 22         & 22         & 27         & 11         & 13         & 21*        & 55                  & 55 \\
+RFC / standard     & RFC       & RFC        & Community  & Community  & Industry   & Community  & Community  & Proposed            & Proposed \\
 \bottomrule
 \end{tabular}
+
+\smallskip
+\noindent\footnotesize{*NanoID is configurable; numbers shown are for the default 21-character form.}\normalsize
 \end{center}
 

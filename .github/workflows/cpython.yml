@@ -1,0 +1,42 @@
+name: cpython-extension
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install build deps
+        run: python3 -m pip install --upgrade pip setuptools
+      - name: Build extension
+        working-directory: pqid/cpython
+        run: python3 setup.py build_ext --inplace
+      - name: Run extension tests
+        working-directory: pqid/cpython
+        run: python3 test_pqid_ext.py
+      - name: Run conformance runner
+        working-directory: pqid/cpython
+        run: |
+          for f in ../conformance/vectors/*.json; do
+            python3 conformance_runner.py "$f"
+          done
+      - name: Fuzz smoke (60s)
+        working-directory: pqid/cpython
+        run: |
+          timeout 60 python3 fuzz/fuzz_decode.py 1000000 || ec=$?
+          if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
+            exit "$ec"
+          fi

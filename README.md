@@ -1,5 +1,15 @@
 # PQID — Post-Quantum Identifier
 
+[![conformance](https://github.com/bahramsamani/pqid/actions/workflows/conformance.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/conformance.yml)
+[![python](https://github.com/bahramsamani/pqid/actions/workflows/python.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/python.yml)
+[![c](https://github.com/bahramsamani/pqid/actions/workflows/c.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/c.yml)
+[![cpp](https://github.com/bahramsamani/pqid/actions/workflows/cpp.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/cpp.yml)
+[![go](https://github.com/bahramsamani/pqid/actions/workflows/go.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/go.yml)
+[![rust](https://github.com/bahramsamani/pqid/actions/workflows/rust.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/rust.yml)
+[![typescript](https://github.com/bahramsamani/pqid/actions/workflows/typescript.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/typescript.yml)
+[![java](https://github.com/bahramsamani/pqid/actions/workflows/java.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/java.yml)
+[![cpython-extension](https://github.com/bahramsamani/pqid/actions/workflows/cpython.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/cpython.yml)
+
 A 41-byte, time-sortable identifier with a 256-bit random tail, designed to retain
 ~128-bit security against Grover-style quantum search while remaining a practical
 drop-in for ULID/UUIDv7-shaped workloads.
@@ -82,7 +92,9 @@ cd pqid/typescript && npm install && npm test
 ```
 
 The full per-language command matrix (including C, C++, Java, CPython extension,
-and how to run a single test) is in [CLAUDE.md](CLAUDE.md).
+and how to run a single test) is in [CLAUDE.md](CLAUDE.md). For benchmark
+methodology and reproduction commands, see
+[pqid/benchmarks/methodology.md](pqid/benchmarks/methodology.md).
 
 ## Contributing
 

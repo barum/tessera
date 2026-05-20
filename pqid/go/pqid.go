@@ -35,7 +35,17 @@ const (
 	VariantHLC      byte = 0x02
 
 	maxCounter      uint16 = 0xFFFF
-	hlcMaxDriftMS   int64  = 60_000
+	// MinTimestampMS is the project epoch for the optional, non-normative
+	// validate_min_timestamp helper. Any decoded PQID with a timestamp below
+	// this is presumed malformed. The standard decoder accepts everything in
+	// [0, MaxTimestampMS]; callers may opt into ValidateMinTimestamp.
+	MinTimestampMS int64 = 1_700_000_000_000
+
+	// HLCMaxDriftMS is the normative outer drift bound for HLC observations.
+	// An observation whose logical time exceeds the local physical clock by
+	// more than this is rejected. Spec sec03 / sec:csprng.
+	HLCMaxDriftMS   int64  = 60_000
+	hlcMaxDriftMS          = HLCMaxDriftMS // back-compat alias for internal callers
 
 	// Base64URL canonical encoded length (no padding).
 	EncodedLengthB64 = 55
@@ -54,6 +64,24 @@ var (
 // nowMS returns the current time as milliseconds since the Unix epoch.
 // Indirected through a variable for testability.
 var nowMS = func() int64 { return time.Now().UnixMilli() }
+
+// SetNowMSForTesting overrides the clock source. Returns the previous source
+// so callers can restore it. Conformance tests use this to drive HLC overflow
+// scenarios deterministically.
+func SetNowMSForTesting(fn func() int64) func() int64 {
+	prev := nowMS
+	nowMS = fn
+	return prev
+}
+
+// SetHLCStateForTesting forces the HLC generator's internal (l, c) state.
+// Test-only; production code should never need this.
+func (g *HLCGenerator) SetHLCStateForTesting(l int64, c uint16) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.l = l
+	g.c = c
+}
 
 // ---------------------------------------------------------------------------
 // Standard generator
@@ -151,7 +179,9 @@ func (g *HLCGenerator) New(observe *[SizeBytes]byte) ([SizeBytes]byte, error) {
 	lOld, cOld := g.l, g.c
 
 	var lNew int64
-	var cNew uint16
+	// Stage in uint32 so we can detect MAX_COUNTER overflow with an
+	// unconditional post-check (matches the Python and C reference).
+	var cWide uint32
 
 	if observe != nil {
 		lMsg := readTimestamp(observe[:])
@@ -165,31 +195,36 @@ func (g *HLCGenerator) New(observe *[SizeBytes]byte) ([SizeBytes]byte, error) {
 		switch {
 		case lNew == lOld && lNew == lMsg:
 			if cOld > cMsg {
-				cNew = cOld + 1
+				cWide = uint32(cOld) + 1
 			} else {
-				cNew = cMsg + 1
+				cWide = uint32(cMsg) + 1
 			}
 		case lNew == lOld:
-			cNew = cOld + 1
+			cWide = uint32(cOld) + 1
 		case lNew == lMsg:
-			cNew = cMsg + 1
+			cWide = uint32(cMsg) + 1
 		default:
-			cNew = 0
+			cWide = 0
 		}
 	} else {
-		if lOld > pt {
+		// l_new = max(l_old, pt); c_new = c_old+1 iff l_new == l_old else 0.
+		if lOld >= pt {
 			lNew = lOld
-			cNew = cOld + 1
+			cWide = uint32(cOld) + 1
 		} else {
 			lNew = pt
-			cNew = 0
+			cWide = 0
 		}
 	}
 
-	if cNew == 0 && lNew == lOld && cOld == maxCounter {
-		// Edge: counter overflowed. Bump l to make room.
+	// Counter overflow: bump l to make room. Unconditional check (matches
+	// the Python and C reference implementations and the spec pseudocode
+	// in sec03 of the whitepaper).
+	if cWide > uint32(maxCounter) {
 		lNew++
+		cWide = 0
 	}
+	cNew := uint16(cWide)
 
 	g.l, g.c = lNew, cNew
 
@@ -246,6 +281,17 @@ func Decode(raw []byte) (Decoded, error) {
 	return d, nil
 }
 
+// ValidateMinTimestamp is a non-normative defensive helper. It returns true
+// iff the PQID's timestamp is at or after MinTimestampMS. The standard
+// decoder accepts all values; callers MAY use this to reject PQIDs that
+// almost certainly came from zeroed memory or a mis-parse.
+func ValidateMinTimestamp(raw []byte) bool {
+	if len(raw) != SizeBytes {
+		return false
+	}
+	return readTimestamp(raw) >= MinTimestampMS
+}
+
 // ---------------------------------------------------------------------------
 // Encodings
 // ---------------------------------------------------------------------------
@@ -257,7 +303,10 @@ func EncodeBase64URL(raw [SizeBytes]byte) string {
 	return b64enc.EncodeToString(raw[:])
 }
 
-// DecodeBase64URL parses a 55-character Base64URL string.
+// DecodeBase64URL parses a 55-character Base64URL string. The final
+// character carries 4 bits of value plus 2 bits of zero padding; we
+// MUST reject inputs whose pad bits are non-zero (matching the C and
+// Python references and the spec sec03).
 func DecodeBase64URL(s string) ([SizeBytes]byte, error) {
 	var out [SizeBytes]byte
 	if len(s) != EncodedLengthB64 {
@@ -272,6 +321,12 @@ func DecodeBase64URL(s string) ([SizeBytes]byte, error) {
 		return out, fmt.Errorf("%w: decoded %d bytes", ErrInvalidEncoding, len(b))
 	}
 	copy(out[:], b)
+	// Enforce bijection: the encoder produces deterministic output,
+	// and any non-zero pad bits in the final character mean the input
+	// was non-canonical. Re-encode and compare; mismatch => reject.
+	if b64enc.EncodeToString(out[:]) != s {
+		return out, fmt.Errorf("%w: non-canonical Base64URL (pad bits non-zero)", ErrInvalidEncoding)
+	}
 	return out, nil
 }
 
@@ -315,17 +370,13 @@ func EncodeCrockford(raw [SizeBytes]byte) string {
 			idx++
 		}
 	}
-	// Final partial nibble (3 bits remain after 41*8=328; 328 % 5 = 3).
+	// 41 bytes × 8 = 328 bits → 66 chars × 5 = 330 bits; the final char
+	// carries 3 real bits left-shifted by 2 (low 2 bits are zero padding).
+	// MSB-first throughout, matching the spec (sec03) and conformance vectors.
 	if bits > 0 {
 		out[idx] = crockfordAlphabet[(buf<<(5-uint(bits)))&0x1F]
 		idx++
 	}
-	// We laid bits MSB-first into idx 0..65; the final char encodes the
-	// LOW-order 3 bits left-shifted by 2. To match the Python encoder
-	// (which builds LSB-first then reverses), we need MSB-first throughout.
-	// The loop above already does MSB-first, so out[0..66] is correct
-	// EXCEPT it fills idx 0..65 = 66 chars for 330 bits but we only have 328.
-	// The final char's low 2 bits are zero by construction.
 	return string(out[:EncodedLengthB32])
 }
 
