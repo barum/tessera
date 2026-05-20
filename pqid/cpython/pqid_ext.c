@@ -25,8 +25,8 @@
  */
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
-#include "../c/pqid.h"
-#include "../c/pqhash.h"
+#include "pqid.h"
+#include "pqhash.h"
 
 /* Module-level singleton generators (for the convenience API).
  * For multi-threaded use, allocate explicit generators in user code via

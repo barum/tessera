@@ -16,7 +16,8 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
+# pqid_ext extension is built in pqid/cpython/ via setup.py build_ext --inplace.
+sys.path.insert(0, str(HERE.parent.parent.parent / "pqid" / "cpython"))
 
 import pqid_ext  # type: ignore
 
