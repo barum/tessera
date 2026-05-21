@@ -2,13 +2,14 @@
 # Cross-language pqtoolkit conformance harness.
 #
 # Builds every per-language runner and runs every vectors/*.json against
-# each. Vectors come from BOTH pqid/conformance/vectors/ and
-# pqhash/conformance/vectors/.
+# each. Vectors come from pqid/conformance/vectors/,
+# pqhash/conformance/vectors/, and pqcrypt/conformance/vectors/.
 #
 # Usage:
-#   bash tools/conformance/run.sh                 # run all languages
-#   bash tools/conformance/run.sh python go       # subset
-#   PQTK_CONFORMANCE_SKIP="java cpython" run.sh   # skip languages
+#   bash tools/conformance/run.sh                            # all langs, all projects
+#   bash tools/conformance/run.sh python go                  # subset of languages
+#   PQTK_CONFORMANCE_SKIP="java cpython" run.sh              # skip languages
+#   PQTK_CONFORMANCE_SKIP="cpp typescript java cpython" run.sh   # PQCrypt v1 alpha set
 #
 # Portable bash 3.2 compatible — no associative arrays.
 
@@ -17,7 +18,7 @@ set -o pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"             # tools/conformance/
 TOOLS="$(cd "$HERE/.." && pwd)"                   # tools/
 ROOT="$(cd "$TOOLS/.." && pwd)"                   # repo root
-VECTOR_DIRS="$ROOT/pqid/conformance/vectors $ROOT/pqhash/conformance/vectors"
+VECTOR_DIRS="$ROOT/pqid/conformance/vectors $ROOT/pqhash/conformance/vectors $ROOT/pqcrypt/conformance/vectors"
 
 ALL_LANGS="python c cpp go rust typescript java cpython"
 
@@ -35,13 +36,29 @@ runner_cmd() {
     esac
 }
 
+# Per-language PQCrypt-only runner. The pqid/pqhash vectors are the historical
+# scope of `runner_cmd`; the pqcrypt vector dir is consumed by these dedicated
+# binaries (PQCK-00015). Languages that don't have a pqcrypt runner yet (cpp,
+# typescript, java, cpython) fall back to the Python runner via the empty-case.
+pqcrypt_runner_cmd() {
+    case "$1" in
+        python)     echo "python3 $HERE/python/python_runner.py" ;;
+        c)          echo "$HERE/c/pqcrypt_runner" ;;
+        go)         echo "$ROOT/target-go/pqcrypt_runner" ;;
+        rust)       echo "$ROOT/target/release/pqcrypt_runner" ;;
+        *)          return 1 ;;  # cpp/typescript/java/cpython: skip pqcrypt vectors for now
+    esac
+}
+
 build_lang() {
     case "$1" in
         python)     return 0 ;;
         c)          ( cd "$HERE/c"   && make -s ) ;;
         cpp)        ( cd "$HERE/cpp" && make -s ) ;;
-        go)         ( cd "$HERE/go"  && go build -o conformance_runner . ) ;;
-        rust)       ( cd "$HERE/rust" && cargo build --release --bin conformance_runner --quiet ) ;;
+        go)         ( cd "$HERE/go"  && go build -o conformance_runner .
+                      cd "$HERE/go/pqcrypt_runner" && go build -o "$ROOT/target-go/pqcrypt_runner" .
+                    ) ;;
+        rust)       ( cd "$HERE/rust" && cargo build --release --bin conformance_runner --bin pqcrypt_runner --quiet ) ;;
         typescript) (
                         cd "$ROOT/pqid/typescript" && { [ -d node_modules ] || npm install --silent; } && npx tsc &&
                         cd "$ROOT/pqhash/typescript" && { [ -d node_modules ] || npm install --silent; } && npx tsc &&
@@ -52,6 +69,9 @@ build_lang() {
         *)          return 1 ;;
     esac
 }
+
+# Ensure target-go/ exists for the Go pqcrypt_runner output.
+mkdir -p "$ROOT/target-go"
 
 if [ $# -gt 0 ]; then
     LANGS="$*"
@@ -93,13 +113,21 @@ done
 echo
 
 overall_fail=0
+PQCRYPT_VEC_DIR="$ROOT/pqcrypt/conformance/vectors"
 for lang in $LANGS; do
     cmd=$(runner_cmd "$lang")
+    pqcrypt_cmd=$(pqcrypt_runner_cmd "$lang" 2>/dev/null || echo "")
     pass=0
     fail=0
     for vdir in $VECTOR_DIRS; do
+        # Choose which runner to use for this vector dir.
+        if [ "$vdir" = "$PQCRYPT_VEC_DIR" ] && [ -n "$pqcrypt_cmd" ]; then
+            this_cmd="$pqcrypt_cmd"
+        else
+            this_cmd="$cmd"
+        fi
         for v in "$vdir"/*.json; do
-            out=$($cmd "$v" 2>&1)
+            out=$($this_cmd "$v" 2>&1)
             p=$(echo "$out" | grep -c "^PASS")
             f=$(echo "$out" | grep -c "^FAIL")
             pass=$((pass + p))

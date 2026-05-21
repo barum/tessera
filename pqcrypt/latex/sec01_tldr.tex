@@ -1,0 +1,16 @@
+\section*{TL;DR}
+\addcontentsline{toc}{section}{TL;DR}
+
+\pqcrypt{} is a 16-byte-header, variable-body \textbf{post-quantum encryption envelope} format with byte-identical polyglot reference implementations under the \texttt{pqtoolkit} monorepo. It joins \pqid{} (41-byte identifier, variant bytes \texttt{0x01}/\texttt{0x02}) and \pqhash{} (73-byte content hash, variant byte \texttt{0x03}) as the third project in the family, owning variant byte \texttt{0x04}.
+
+v1 ships \textbf{one mandatory suite} (\texttt{0x01}): \textbf{ML-KEM-1024} \citep{fips203} + \textbf{AES-256-GCM} + a \textbf{32-byte UtC commitment tag} \citep{bellare2022commitment} + \textbf{HKDF-SHA3-256}. One optional software-only suite (\texttt{0x02}) substitutes ChaCha20-Poly1305 for callers without AES hardware. There is no hybrid X25519 fallback. The residual risk this creates (Module-LWE structural break $\Rightarrow$ confidentiality loss with no classical safety net) is documented in \cref{sec:threat-model} and \cref{sec:appendices}; it is the deliberate cost of an unambiguous post-quantum confidentiality promise.
+
+\begin{calloutinfo}[At a glance]
+\begin{itemize}
+\item \textbf{One suite, one promise.} No agility, no negotiation, no downgrade.
+\item \textbf{Inherits monorepo discipline.} Spec-first LaTeX; Python is the readable reference; C pins the ABI; cross-language KAT vectors gate CI.
+\item \textbf{Binds \pqid{} as AD} by convention. Envelope rebinding fails closed.
+\item \textbf{Plugin protocol ships in v1.} Key-on-disk lives in the plugin, not the core spec.
+\item \textbf{Pure PQ.} ML-KEM-1024 only. Residual risk explicit.
+\end{itemize}
+\end{calloutinfo}

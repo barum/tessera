@@ -14,6 +14,13 @@
     "expected_error": "UnknownVariant"
   },
   {
+    "name": "binary_variant_0x04",
+    "op": "pqhash_validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe5680004000112f5b9a0876ccbe4629801d8450ae313a8fd831761f3eef6e5d0c7b071834ce1fecc4ff691aa916a59575faa544387909440cd204a22d909dda45b3e7d28343d",
+    "expected_error": "UnknownVariant"
+  },
+  {
     "name": "binary_variant_0x00",
     "op": "pqhash_validate_invalid",
     "input_kind": "binary_hex",

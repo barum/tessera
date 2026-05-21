@@ -3,5 +3,7 @@ go 1.26
 use (
 	./pqid/go
 	./pqhash/go
+	./pqcrypt/go
 	./tools/conformance/go
+	./tools/conformance/go/pqcrypt_runner
 )

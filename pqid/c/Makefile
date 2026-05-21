@@ -1,22 +1,32 @@
 # PQID C reference implementation Makefile.
+#
+# As of PQCK-00018, pqid.c delegates its CSPRNG path to
+# ../../common/c/random.c::pqtk_csprng. The Makefile compiles and links
+# that as a separate object.
 
 CC      ?= gcc
 CFLAGS  ?= -O3 -Wall -Wextra -Wpedantic -Wshadow -std=c11 -fno-plt -DNDEBUG
 LDFLAGS ?=
 
+COMMON  := ../../common/c
+CFLAGS  += -I$(COMMON)
+
 all: test_pqid bench_pqid
 
-pqid.o: pqid.c pqid.h
+pqid.o: pqid.c pqid.h $(COMMON)/random.h
 	$(CC) $(CFLAGS) -c pqid.c -o pqid.o
 
-test_pqid: test_pqid.c pqid.o
-	$(CC) $(CFLAGS) test_pqid.c pqid.o -o test_pqid $(LDFLAGS)
+random.o: $(COMMON)/random.c $(COMMON)/random.h
+	$(CC) $(CFLAGS) -c $(COMMON)/random.c -o random.o
 
-bench_pqid: bench_pqid.c pqid.o
-	$(CC) $(CFLAGS) bench_pqid.c pqid.o -o bench_pqid $(LDFLAGS)
+test_pqid: test_pqid.c pqid.o random.o
+	$(CC) $(CFLAGS) test_pqid.c pqid.o random.o -o test_pqid $(LDFLAGS)
 
-fuzz_decode: fuzz/fuzz_decode.c pqid.o
-	$(CC) $(CFLAGS) fuzz/fuzz_decode.c pqid.o -o fuzz_decode $(LDFLAGS)
+bench_pqid: bench_pqid.c pqid.o random.o
+	$(CC) $(CFLAGS) bench_pqid.c pqid.o random.o -o bench_pqid $(LDFLAGS)
+
+fuzz_decode: fuzz/fuzz_decode.c pqid.o random.o
+	$(CC) $(CFLAGS) fuzz/fuzz_decode.c pqid.o random.o -o fuzz_decode $(LDFLAGS)
 
 fuzz: fuzz_decode
 	./fuzz_decode

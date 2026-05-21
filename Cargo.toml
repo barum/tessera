@@ -8,6 +8,7 @@
 resolver = "3"
 members = [
     "pqid/rust",
+    "pqcrypt/rust",
     "pqhash/rust",
     "tools/conformance/rust",
 ]

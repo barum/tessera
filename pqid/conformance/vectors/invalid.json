@@ -14,6 +14,13 @@
     "expected_error": "UnknownVariant"
   },
   {
+    "name": "binary_variant_0x04",
+    "op": "validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe568000400010000000000000000000000000000000000000000000000000000000000000000",
+    "expected_error": "UnknownVariant"
+  },
+  {
     "name": "binary_variant_0xff",
     "op": "validate_invalid",
     "input_kind": "binary_hex",

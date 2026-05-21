@@ -1,0 +1,25 @@
+\section{Algorithm Suites}
+\label{sec:suites}
+
+The \code{SUITE} byte at offset 7 selects a complete algorithm bundle. v1 allocates two:
+
+\begin{center}
+\small
+\begin{tabular}{@{}clllll@{}}
+\toprule
+\textbf{Suite} & \textbf{KEM} & \textbf{AEAD} & \textbf{KDF/MAC} & \textbf{Status} & \textbf{Notes} \\
+\midrule
+\code{0x01} & ML-KEM-1024 & AES-256-GCM + UtC commit (32 B) & HKDF-SHA3-256 & \textbf{mandatory} & v1 default \\
+\code{0x02} & ML-KEM-1024 & ChaCha20-Poly1305 + UtC commit (32 B) & HKDF-SHA3-256 & optional & software-only callers \\
+\code{0x00}, \code{0x03}--\code{0xFF} & --- reject --- & --- & --- & --- & reserved-future \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Why ML-KEM-1024 only, not ML-KEM-768?} v1 has no hybrid safety net (see \cref{sec:threat-model}). We buy the largest NIST-defined PQ margin (level 5, $\sim$AES-256-equivalent classical-search) at the cost of a 1568 B KEM ciphertext (vs 1088 B for ML-KEM-768). For envelope use this $\sim$500 B difference is irrelevant; the security margin is not.
+
+\textbf{Why AES-256-GCM + UtC, not AEGIS or GCM-SIV?} AEGIS-128L is 2--3$\times$ faster on modern x86 and ARM \citep{rfc9678} but its RFC finalized only September 2025; library support is immature. AES-256-GCM has decade-scale review, AES-NI/VAES acceleration to $\sim$10 GB/s \citep{intelisa,ebacs}, and a settled commitment construction in UtC \citep{bellare2022commitment}. GCM-SIV duplicates the misuse-resistance property that the deterministic-nonce-from-KDF already provides structurally (\cref{sec:kdf-nonce}). AEGIS is an explicit v1.x candidate (suite \code{0x03}) once verified implementations mature in libcrux and \texttt{mlkem-native}.
+
+\textbf{Why HKDF-SHA3-256?} SHAKE/Keccak is already vendored under \code{common/c/keccak.\{h,c\}} for \pqhash{}; HKDF-SHA3 reuses that primitive and aligns with FIPS 203's internal use of Keccak. SHA-256 with SHA-NI is faster but creates two hash families to audit and certify.
+
+\textbf{No agility within a suite.} A suite byte \emph{is} a version: changing any algorithm requires a new suite byte. There is no negotiation. This matches \pqid{}'s and \pqhash{}'s immutable-variant-byte discipline and avoids the downgrade and cross-protocol attack surface of TLS-style negotiation (cf.~Terrapin \citep{terrapin}).

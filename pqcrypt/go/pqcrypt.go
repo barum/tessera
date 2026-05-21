@@ -1,0 +1,664 @@
+// Package pqcrypt is the Go reference implementation of PQCrypt v1.
+//
+// PQCrypt is a pure post-quantum encryption envelope: ML-KEM-1024 +
+// AES-256-GCM (or ChaCha20-Poly1305) + a 32-byte UtC commitment tag,
+// with deterministic AEAD nonce derived via HKDF-SHA3-256.
+//
+// Authority order: whitepaper (pqcrypt/latex/) -> python/pqcrypt.py ->
+// c/pqcrypt.h -> THIS PACKAGE. Public API mirrors the C ABI (see
+// c/pqcrypt.h) and the Python module (python/pqcrypt.py). Cross-language
+// KAT vectors live under ../conformance/vectors/.
+package pqcrypt
+
+import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hmac"
+	"crypto/mlkem"
+	"errors"
+	"fmt"
+	"hash"
+	"sync"
+	"time"
+
+	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/sha3"
+)
+
+// ---------------------------------------------------------------------------
+// Constants — match c/pqcrypt.h and python/pqcrypt.py byte-for-byte.
+// ---------------------------------------------------------------------------
+
+const (
+	VariantPQCrypt = 0x04
+
+	SuiteMLKEM1024AESGCM = 0x01
+	SuiteMLKEM1024ChaCha = 0x02
+
+	HeaderBytes = 16
+
+	MLKem1024PKBytes = 1568
+	MLKem1024SKBytes = 3168
+	MLKem1024CTBytes = 1568
+	MLKem1024SSBytes = 32
+	MLKem1024SeedBytes = 64 // FIPS 203 (d || z)
+
+	AEADNonceBytes = 12
+	AEADTagBytes   = 16
+	CommitBytes    = 32
+
+	MaxKEMCTLen  = 4096
+	MaxADLen     = 65536
+	MaxPlaintext = 4 * 1024 * 1024 * 1024 // 4 GiB
+)
+
+// Wire-layout offsets within the 16-byte header.
+const (
+	tsOffset         = 0
+	tsBytes          = 6
+	variantOffset    = 6
+	suiteOffset      = 7
+	ctrOffset        = 8
+	ctrBytes         = 2
+	kemCTLenOffset   = 10
+	kemCTLenBytes    = 2
+	adLenOffset      = 12
+	adLenBytes       = 4
+)
+
+// KDF domain separators — must match python/pqcrypt.py and c/pqcrypt.c.
+var (
+	saltLabel     = []byte("pqcrypt v1 header")
+	infoAEADKey   = []byte("pqcrypt v1 aead k")
+	infoAEADNonce = []byte("pqcrypt v1 aead n")
+	infoCommitKey = []byte("pqcrypt v1 commit")
+	infoTimingPad = []byte("pqcrypt v1 timing pad")
+)
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+var (
+	// ErrUnknownVariant indicates the variant byte at offset 6 is not 0x04.
+	ErrUnknownVariant = errors.New("pqcrypt: unknown variant byte")
+	// ErrUnknownSuite indicates the suite byte at offset 7 is not allocated in v1.
+	ErrUnknownSuite = errors.New("pqcrypt: unknown suite byte")
+	// ErrInvalidLength indicates the envelope is truncated or declares impossible lengths.
+	ErrInvalidLength = errors.New("pqcrypt: invalid envelope length")
+	// ErrDecrypt covers EVERY authentication-class failure (bad AEAD tag, bad commit
+	// tag, bad KEM ciphertext, AD mismatch, derived-nonce mismatch). The decrypt
+	// path is constant-time across these — see whitepaper sec09.
+	ErrDecrypt = errors.New("pqcrypt: envelope failed authentication")
+	// ErrBadKey indicates a key of the wrong size was provided.
+	ErrBadKey = errors.New("pqcrypt: bad key")
+)
+
+// ---------------------------------------------------------------------------
+// Clock (test override)
+// ---------------------------------------------------------------------------
+
+var (
+	clockMu       sync.Mutex
+	clockOverride uint64 // 0 means use wall clock
+	clockSet      bool
+)
+
+// SetNowMsForTesting overrides the wall-clock source so KAT vectors are
+// reproducible. Pass 0 to restore the real clock. Production callers MUST NOT
+// invoke this — the contract is documentation only.
+func SetNowMsForTesting(ms uint64) {
+	clockMu.Lock()
+	defer clockMu.Unlock()
+	if ms == 0 {
+		clockSet = false
+		clockOverride = 0
+	} else {
+		clockSet = true
+		clockOverride = ms
+	}
+}
+
+func nowMs() uint64 {
+	clockMu.Lock()
+	defer clockMu.Unlock()
+	if clockSet {
+		return clockOverride
+	}
+	return uint64(time.Now().UnixMilli())
+}
+
+// ---------------------------------------------------------------------------
+// Key wrappers (opaque-ish)
+// ---------------------------------------------------------------------------
+
+// PublicKey wraps an ML-KEM-1024 encapsulation key (1568 bytes).
+type PublicKey struct {
+	pk    [MLKem1024PKBytes]byte
+	Suite uint8
+}
+
+// PrivateKey wraps an ML-KEM-1024 decapsulation key (3168 bytes, FIPS 203 form)
+// alongside the 64-byte seed (d || z) that produced it. Either field is
+// sufficient to reconstruct the KEM state via Go's stdlib mlkem package.
+type PrivateKey struct {
+	seed  [MLKem1024SeedBytes]byte
+	dk    *mlkem.DecapsulationKey1024
+	Suite uint8
+}
+
+// PublicBytes returns a copy of the 1568-byte ML-KEM-1024 encapsulation key.
+func (pk *PublicKey) PublicBytes() []byte {
+	out := make([]byte, MLKem1024PKBytes)
+	copy(out, pk.pk[:])
+	return out
+}
+
+// Seed returns a copy of the 64-byte ML-KEM-1024 seed (d || z) the keypair
+// was constructed from. Useful for KAT round-trips.
+func (sk *PrivateKey) Seed() []byte {
+	out := make([]byte, MLKem1024SeedBytes)
+	copy(out, sk.seed[:])
+	return out
+}
+
+// GenerateKeypair creates a fresh ML-KEM-1024 keypair under `suite`.
+func GenerateKeypair(suite uint8) (*PrivateKey, *PublicKey, error) {
+	if suite != SuiteMLKEM1024AESGCM && suite != SuiteMLKEM1024ChaCha {
+		return nil, nil, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, suite)
+	}
+	dk, err := mlkem.GenerateKey1024()
+	if err != nil {
+		return nil, nil, fmt.Errorf("pqcrypt: mlkem keygen: %w", err)
+	}
+	seed := dk.Bytes() // 64-byte seed (d || z)
+	if len(seed) != MLKem1024SeedBytes {
+		return nil, nil, fmt.Errorf("pqcrypt: unexpected seed length %d", len(seed))
+	}
+	priv := &PrivateKey{Suite: suite, dk: dk}
+	copy(priv.seed[:], seed)
+	pub := &PublicKey{Suite: suite}
+	copy(pub.pk[:], dk.EncapsulationKey().Bytes())
+	return priv, pub, nil
+}
+
+// GenerateKeypairFromSeed reconstructs the keypair from a 64-byte
+// ML-KEM-1024 seed (d || z, FIPS 203). Used by KAT consumers.
+func GenerateKeypairFromSeed(seed []byte, suite uint8) (*PrivateKey, *PublicKey, error) {
+	if suite != SuiteMLKEM1024AESGCM && suite != SuiteMLKEM1024ChaCha {
+		return nil, nil, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, suite)
+	}
+	if len(seed) != MLKem1024SeedBytes {
+		return nil, nil, fmt.Errorf("%w: seed must be %d bytes", ErrBadKey, MLKem1024SeedBytes)
+	}
+	dk, err := mlkem.NewDecapsulationKey1024(seed)
+	if err != nil {
+		return nil, nil, fmt.Errorf("pqcrypt: mlkem rebuild: %w", err)
+	}
+	priv := &PrivateKey{Suite: suite, dk: dk}
+	copy(priv.seed[:], seed)
+	pub := &PublicKey{Suite: suite}
+	copy(pub.pk[:], dk.EncapsulationKey().Bytes())
+	return priv, pub, nil
+}
+
+// PublicKeyFromBytes wraps an existing 1568-byte ML-KEM-1024 encapsulation key.
+func PublicKeyFromBytes(pk []byte, suite uint8) (*PublicKey, error) {
+	if suite != SuiteMLKEM1024AESGCM && suite != SuiteMLKEM1024ChaCha {
+		return nil, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, suite)
+	}
+	if len(pk) != MLKem1024PKBytes {
+		return nil, fmt.Errorf("%w: pk must be %d bytes", ErrBadKey, MLKem1024PKBytes)
+	}
+	out := &PublicKey{Suite: suite}
+	copy(out.pk[:], pk)
+	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// Header pack / unpack
+// ---------------------------------------------------------------------------
+
+// DecodedHeader is the result of PeekHeader. Structural fields only; the
+// envelope has NOT been authenticated.
+type DecodedHeader struct {
+	TimestampMs uint64
+	Variant     uint8
+	Suite       uint8
+	Counter     uint16
+	KEMCTLen    uint16
+	ADLen       uint32
+}
+
+func packHeader(out []byte, tsMs uint64, variant, suite uint8, counter uint16, kemCTLen uint16, adLen uint32) {
+	out[0] = byte(tsMs >> 40)
+	out[1] = byte(tsMs >> 32)
+	out[2] = byte(tsMs >> 24)
+	out[3] = byte(tsMs >> 16)
+	out[4] = byte(tsMs >> 8)
+	out[5] = byte(tsMs)
+	out[6] = variant
+	out[7] = suite
+	out[8] = byte(counter >> 8)
+	out[9] = byte(counter)
+	out[10] = byte(kemCTLen >> 8)
+	out[11] = byte(kemCTLen)
+	out[12] = byte(adLen >> 24)
+	out[13] = byte(adLen >> 16)
+	out[14] = byte(adLen >> 8)
+	out[15] = byte(adLen)
+}
+
+func unpackHeader(in []byte) DecodedHeader {
+	return DecodedHeader{
+		TimestampMs: uint64(in[0])<<40 | uint64(in[1])<<32 | uint64(in[2])<<24 |
+			uint64(in[3])<<16 | uint64(in[4])<<8 | uint64(in[5]),
+		Variant:  in[6],
+		Suite:    in[7],
+		Counter:  uint16(in[8])<<8 | uint16(in[9]),
+		KEMCTLen: uint16(in[10])<<8 | uint16(in[11]),
+		ADLen:    uint32(in[12])<<24 | uint32(in[13])<<16 | uint32(in[14])<<8 | uint32(in[15]),
+	}
+}
+
+// PeekHeader returns the structural header fields. Does NOT authenticate.
+func PeekHeader(env []byte) (DecodedHeader, error) {
+	if len(env) < HeaderBytes {
+		return DecodedHeader{}, fmt.Errorf("%w: shorter than header", ErrInvalidLength)
+	}
+	h := unpackHeader(env[:HeaderBytes])
+	if h.Variant != VariantPQCrypt {
+		return h, fmt.Errorf("%w: 0x%02x", ErrUnknownVariant, h.Variant)
+	}
+	if h.Suite != SuiteMLKEM1024AESGCM && h.Suite != SuiteMLKEM1024ChaCha {
+		return h, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, h.Suite)
+	}
+	if h.KEMCTLen > MaxKEMCTLen {
+		return h, fmt.Errorf("%w: kem_ct_len %d", ErrInvalidLength, h.KEMCTLen)
+	}
+	if h.ADLen > MaxADLen {
+		return h, fmt.Errorf("%w: ad_len %d", ErrInvalidLength, h.ADLen)
+	}
+	return h, nil
+}
+
+// Validate reports whether the envelope is structurally well-formed.
+// Does NOT authenticate.
+func Validate(env []byte) bool {
+	h, err := PeekHeader(env)
+	if err != nil {
+		return false
+	}
+	need := HeaderBytes + int(h.KEMCTLen) + int(h.ADLen) +
+		AEADNonceBytes + AEADTagBytes + CommitBytes
+	return len(env) >= need
+}
+
+// ValidateMinTimestamp reports whether the envelope's timestamp is >= minMs.
+// Does NOT authenticate.
+func ValidateMinTimestamp(env []byte, minMs uint64) bool {
+	h, err := PeekHeader(env)
+	if err != nil {
+		return false
+	}
+	return h.TimestampMs >= minMs
+}
+
+// EnvelopeSize returns the exact number of bytes Encrypt would write for the
+// given plaintext and AD lengths.
+func EnvelopeSize(ptLen, adLen int) int {
+	return HeaderBytes + MLKem1024CTBytes + adLen +
+		AEADNonceBytes + ptLen + AEADTagBytes + CommitBytes
+}
+
+// ---------------------------------------------------------------------------
+// SHAKE-256, HKDF-SHA3-256, HMAC-SHA3-256
+// ---------------------------------------------------------------------------
+
+func shake256(in []byte, n int) []byte {
+	h := sha3.NewShake256()
+	h.Write(in)
+	out := make([]byte, n)
+	h.Read(out)
+	return out
+}
+
+func newSHA3 () hash.Hash { return sha3.New256() }
+
+func hmacSHA3_256(key, msg []byte) []byte {
+	mac := hmac.New(newSHA3, key)
+	mac.Write(msg)
+	return mac.Sum(nil)
+}
+
+// hkdfExtract per RFC 5869 §2.2; HMAC = HMAC-SHA3-256.
+func hkdfExtract(salt, ikm []byte) []byte {
+	if len(salt) == 0 {
+		salt = make([]byte, 32)
+	}
+	return hmacSHA3_256(salt, ikm)
+}
+
+// hkdfExpand per RFC 5869 §2.3.
+func hkdfExpand(prk, info []byte, length int) ([]byte, error) {
+	n := (length + 31) / 32
+	if n > 255 {
+		return nil, errors.New("pqcrypt: HKDF-Expand output too long")
+	}
+	out := make([]byte, 0, length)
+	var t []byte
+	for i := 1; i <= n; i++ {
+		mac := hmac.New(newSHA3, prk)
+		mac.Write(t)
+		mac.Write(info)
+		mac.Write([]byte{byte(i)})
+		t = mac.Sum(nil)
+		out = append(out, t...)
+	}
+	return out[:length], nil
+}
+
+// ---------------------------------------------------------------------------
+// Session-key derivation
+// ---------------------------------------------------------------------------
+
+type sessionKeys struct {
+	kAEAD    []byte // 32 B
+	nonce    []byte // 12 B
+	kCommit  []byte // 32 B
+}
+
+func deriveSessionKeys(headerBytes, ssMLKEM []byte) (*sessionKeys, error) {
+	salt := shake256(append(append([]byte{}, saltLabel...), headerBytes...), 32)
+	prk := hkdfExtract(salt, ssMLKEM)
+	kAEAD, err := hkdfExpand(prk, infoAEADKey, 32)
+	if err != nil {
+		return nil, err
+	}
+	nonce, err := hkdfExpand(prk, infoAEADNonce, AEADNonceBytes)
+	if err != nil {
+		return nil, err
+	}
+	kCommit, err := hkdfExpand(prk, infoCommitKey, 32)
+	if err != nil {
+		return nil, err
+	}
+	return &sessionKeys{kAEAD: kAEAD, nonce: nonce, kCommit: kCommit}, nil
+}
+
+// deriveSyntheticKeys: synthetic-key schedule for the structural-failure
+// timing pad. Independent of the real ML-KEM secret.
+func deriveSyntheticKeys(headerBytes []byte) *sessionKeys {
+	buf := make([]byte, 0, len(saltLabel)+HeaderBytes+len(infoTimingPad))
+	buf = append(buf, saltLabel...)
+	buf = append(buf, headerBytes...)
+	buf = append(buf, infoTimingPad...)
+	salt := shake256(buf, 32)
+	prk := hkdfExtract(salt, make([]byte, 32))
+	kAEAD, _ := hkdfExpand(prk, infoAEADKey, 32)
+	nonce, _ := hkdfExpand(prk, infoAEADNonce, AEADNonceBytes)
+	kCommit, _ := hkdfExpand(prk, infoCommitKey, 32)
+	return &sessionKeys{kAEAD: kAEAD, nonce: nonce, kCommit: kCommit}
+}
+
+// ---------------------------------------------------------------------------
+// AEAD dispatch
+// ---------------------------------------------------------------------------
+
+func newAEAD(suite uint8, key []byte) (cipher.AEAD, error) {
+	switch suite {
+	case SuiteMLKEM1024AESGCM:
+		blk, err := aes.NewCipher(key)
+		if err != nil {
+			return nil, err
+		}
+		return cipher.NewGCMWithNonceSize(blk, AEADNonceBytes)
+	case SuiteMLKEM1024ChaCha:
+		return chacha20poly1305.New(key)
+	default:
+		return nil, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, suite)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// UtC commitment
+// ---------------------------------------------------------------------------
+
+func utcCommit(kCommit, header, kemCT, ad, aeadCT []byte) []byte {
+	mac := hmac.New(newSHA3, kCommit)
+	mac.Write(header)
+	mac.Write(kemCT)
+	mac.Write(ad)
+	mac.Write(aeadCT)
+	return mac.Sum(nil)
+}
+
+// ---------------------------------------------------------------------------
+// Encrypt
+// ---------------------------------------------------------------------------
+
+// Encrypt produces a PQCrypt v1 envelope.
+//
+//   - pt: plaintext, len <= MaxPlaintext
+//   - pub: recipient ML-KEM-1024 public key
+//   - suite: 0x01 or 0x02
+//   - ad: associated data (canonical pattern: a 41-byte PQID); may be nil
+//   - tsMs: timestamp; pass 0 to use wall clock
+//   - counter: sender counter (0..0xFFFF)
+func Encrypt(pt []byte, pub *PublicKey, suite uint8, ad []byte, tsMs uint64, counter uint16) ([]byte, error) {
+	if suite != SuiteMLKEM1024AESGCM && suite != SuiteMLKEM1024ChaCha {
+		return nil, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, suite)
+	}
+	if pub == nil {
+		return nil, ErrBadKey
+	}
+	if len(ad) > MaxADLen {
+		return nil, fmt.Errorf("%w: ad too large", ErrInvalidLength)
+	}
+	if uint64(len(pt)) > MaxPlaintext {
+		return nil, fmt.Errorf("%w: pt too large", ErrInvalidLength)
+	}
+	if tsMs == 0 {
+		tsMs = nowMs()
+	}
+	if tsMs >= (1 << 48) {
+		return nil, fmt.Errorf("%w: ts overflow", ErrInvalidLength)
+	}
+
+	// 1. ML-KEM-1024 Encaps.
+	ek, err := mlkem.NewEncapsulationKey1024(pub.pk[:])
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrBadKey, err)
+	}
+	ssMLKEM, kemCT := ek.Encapsulate()
+	if len(kemCT) != MLKem1024CTBytes || len(ssMLKEM) != MLKem1024SSBytes {
+		return nil, errors.New("pqcrypt: ML-KEM produced unexpected sizes")
+	}
+
+	// 2. Pack header.
+	header := make([]byte, HeaderBytes)
+	packHeader(header, tsMs, VariantPQCrypt, suite, counter, MLKem1024CTBytes, uint32(len(ad)))
+
+	// 3. Derive K_aead, NONCE, K_commit.
+	sk, err := deriveSessionKeys(header, ssMLKEM)
+	if err != nil {
+		return nil, err
+	}
+
+	// 4. AEAD AAD = header || kem_ct || ad.
+	aad := make([]byte, 0, HeaderBytes+MLKem1024CTBytes+len(ad))
+	aad = append(aad, header...)
+	aad = append(aad, kemCT...)
+	aad = append(aad, ad...)
+
+	aead, err := newAEAD(suite, sk.kAEAD)
+	if err != nil {
+		return nil, err
+	}
+	// AEAD.Seal returns ct || tag.
+	sealed := aead.Seal(nil, sk.nonce, pt, aad)
+	if len(sealed) != len(pt)+AEADTagBytes {
+		return nil, errors.New("pqcrypt: unexpected AEAD output length")
+	}
+	aeadCT := sealed[:len(pt)]
+	aeadTag := sealed[len(pt):]
+
+	// 5. UtC commit.
+	commit := utcCommit(sk.kCommit, header, kemCT, ad, aeadCT)
+
+	// 6. Concatenate the wire form.
+	envSize := EnvelopeSize(len(pt), len(ad))
+	out := make([]byte, 0, envSize)
+	out = append(out, header...)
+	out = append(out, kemCT...)
+	out = append(out, ad...)
+	out = append(out, sk.nonce...)
+	out = append(out, aeadCT...)
+	out = append(out, aeadTag...)
+	out = append(out, commit...)
+	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// Decrypt
+// ---------------------------------------------------------------------------
+
+// Decrypt verifies and decrypts a PQCrypt v1 envelope.
+//
+//   - env: full envelope bytes
+//   - priv: recipient ML-KEM-1024 private key
+//   - expectedAD: the AD the envelope MUST be bound to. Any mismatch
+//     (including length) yields ErrDecrypt in constant time, indistinguishable
+//     from a bad AEAD tag.
+//
+// Returns the plaintext on success, ErrDecrypt on any auth-class failure,
+// or one of ErrUnknownVariant / ErrUnknownSuite / ErrInvalidLength for
+// structural failures.
+func Decrypt(env []byte, priv *PrivateKey, expectedAD []byte) ([]byte, error) {
+	if priv == nil || priv.dk == nil {
+		return nil, ErrBadKey
+	}
+	if len(env) < HeaderBytes {
+		return nil, ErrInvalidLength
+	}
+
+	h, err := PeekHeader(env)
+	if err != nil {
+		return nil, err
+	}
+
+	need := HeaderBytes + int(h.KEMCTLen) + int(h.ADLen) +
+		AEADNonceBytes + AEADTagBytes + CommitBytes
+	if len(env) < need {
+		return nil, ErrInvalidLength
+	}
+	aeadCTLen := len(env) - need
+
+	headerBytes := env[:HeaderBytes]
+	p := HeaderBytes
+	kemCT := env[p : p+int(h.KEMCTLen)]
+	p += int(h.KEMCTLen)
+	ad := env[p : p+int(h.ADLen)]
+	p += int(h.ADLen)
+	nonceWire := env[p : p+AEADNonceBytes]
+	p += AEADNonceBytes
+	aeadCT := env[p : p+aeadCTLen]
+	p += aeadCTLen
+	aeadTag := env[p : p+AEADTagBytes]
+	p += AEADTagBytes
+	commitWire := env[p : p+CommitBytes]
+
+	// ML-KEM Decaps. Implicit-reject on bad ct -> pseudorandom ss.
+	ssMLKEM, decapsErr := priv.dk.Decapsulate(kemCT)
+	ssOK := decapsErr == nil
+	if !ssOK {
+		ssMLKEM = make([]byte, MLKem1024SSBytes)
+	}
+
+	sk, kdfErr := deriveSessionKeys(headerBytes, ssMLKEM)
+	kdfOK := kdfErr == nil
+
+	nonceMatch := hmac.Equal(nonceWire, sk.nonce)
+	adLenMatch := uint32(len(expectedAD)) == h.ADLen
+	var adMatch bool
+	if adLenMatch {
+		adMatch = hmac.Equal(ad, expectedAD)
+	} else {
+		// Run an equal-length compare to keep timing flat.
+		_ = hmac.Equal(ad, ad)
+		adMatch = false
+	}
+
+	expectedCommit := utcCommit(sk.kCommit, headerBytes, kemCT, ad, aeadCT)
+	commitMatch := hmac.Equal(commitWire, expectedCommit)
+
+	// AEAD verify+decrypt. AEAD AAD = header || kem_ct || ad.
+	aad := make([]byte, 0, HeaderBytes+int(h.KEMCTLen)+int(h.ADLen))
+	aad = append(aad, headerBytes...)
+	aad = append(aad, kemCT...)
+	aad = append(aad, ad...)
+
+	aead, aeadErr := newAEAD(h.Suite, sk.kAEAD)
+	aeadOK := aeadErr == nil
+	var pt []byte
+	if aeadOK {
+		// Concat ct || tag for Open.
+		ctTag := make([]byte, len(aeadCT)+AEADTagBytes)
+		copy(ctTag, aeadCT)
+		copy(ctTag[len(aeadCT):], aeadTag)
+		pt, aeadErr = aead.Open(nil, nonceWire, ctTag, aad)
+		aeadOK = aeadErr == nil
+	}
+
+	if ssOK && kdfOK && nonceMatch && adMatch && commitMatch && aeadOK {
+		return pt, nil
+	}
+	// Run synthetic schedule for flat timing.
+	_ = deriveSyntheticKeys(headerBytes)
+	return nil, ErrDecrypt
+}
+
+// ---------------------------------------------------------------------------
+// Sender context (parallels PQID HLCGenerator)
+// ---------------------------------------------------------------------------
+
+// SenderContext is a stateful, internally-locked source of monotonic
+// (timestamp_ms, counter) pairs. Use it when issuing many envelopes from
+// the same logical sender.
+type SenderContext struct {
+	Suite   uint8
+	mu      sync.Mutex
+	lastTs  uint64
+	counter uint16
+}
+
+// NewSenderContext returns a fresh SenderContext for the given suite.
+func NewSenderContext(suite uint8) (*SenderContext, error) {
+	if suite != SuiteMLKEM1024AESGCM && suite != SuiteMLKEM1024ChaCha {
+		return nil, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, suite)
+	}
+	return &SenderContext{Suite: suite}, nil
+}
+
+func (s *SenderContext) nextTsCtr() (uint64, uint16) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := nowMs()
+	if now > s.lastTs {
+		s.lastTs = now
+		s.counter = 0
+	} else {
+		s.counter++
+		if s.counter == 0 {
+			s.lastTs++
+		}
+	}
+	return s.lastTs, s.counter
+}
+
+// Encrypt is a convenience wrapper that pulls a monotonic ts/counter pair
+// from the context.
+func (s *SenderContext) Encrypt(pt []byte, pub *PublicKey, ad []byte) ([]byte, error) {
+	ts, ctr := s.nextTsCtr()
+	return Encrypt(pt, pub, s.Suite, ad, ts, ctr)
+}

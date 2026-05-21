@@ -26,70 +26,23 @@
 #include <time.h>
 #include <unistd.h>
 
-#if defined(__linux__) || defined(__GLIBC__)
-#  include <sys/random.h>
-#  define PQID_HAVE_GETRANDOM 1
-#elif defined(__APPLE__)
-#  include <sys/random.h>  /* macOS exposes getentropy here */
-#  define PQID_HAVE_GETENTROPY 1
-#elif defined(__FreeBSD__) || defined(__OpenBSD__)
-#  include <unistd.h>
-#  define PQID_HAVE_GETENTROPY 1
-#endif
-
-/* ---------- CSPRNG ----------
- * Normative requirement (PQID-00008): MUST use an OS-provided CSPRNG and
- * MUST NOT fall back to a non-cryptographic source. The order below is:
- *   1. getrandom(2)   (Linux ≥ 3.17)
- *   2. getentropy(3)  (macOS, BSDs, glibc ≥ 2.25)
- *   3. /dev/urandom   (last-resort portable POSIX)
+/* ---------- CSPRNG (PQCK-00018 rewire) ----------
  *
- * Partial reads are retried; any unrecoverable error returns -1 and the
- * caller surfaces PQID_E_RNG.
+ * Normative requirement (PQID-00008): MUST use an OS-provided CSPRNG and
+ * MUST NOT fall back to a non-cryptographic source. As of PQCK-00018 this
+ * delegates to common/c/random.c::pqtk_csprng, which implements the same
+ * getrandom -> getentropy -> /dev/urandom fallback chain that previously
+ * lived inline here. The shared implementation is the canonical source.
+ *
+ * Behavior is bit-identical to the pre-rewire version (the C code was
+ * extracted verbatim in PQCK-00002). Tests still pass; the only diff is
+ * that pqid/c now links against pqtk_csprng.o (or includes the .c file
+ * directly via the Makefile).
  */
+#include "../../common/c/random.h"
+
 static int pqid_getrandom(uint8_t *buf, size_t len) {
-#if defined(PQID_HAVE_GETRANDOM)
-    size_t off = 0;
-    while (off < len) {
-        ssize_t n = getrandom(buf + off, len - off, 0);
-        if (n < 0) {
-            if (errno == EINTR) continue;
-            return -1;
-        }
-        off += (size_t)n;
-    }
-    return 0;
-#elif defined(PQID_HAVE_GETENTROPY)
-    /* getentropy() reads at most 256 bytes per call. Loop for safety. */
-    size_t off = 0;
-    while (off < len) {
-        size_t chunk = len - off;
-        if (chunk > 256) chunk = 256;
-        if (getentropy(buf + off, chunk) != 0) {
-            if (errno == EINTR) continue;
-            return -1;
-        }
-        off += chunk;
-    }
-    return 0;
-#else
-    /* Portable fallback. Still a CSPRNG on every conformant POSIX system. */
-    int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
-    if (fd < 0) return -1;
-    size_t off = 0;
-    while (off < len) {
-        ssize_t n = read(fd, buf + off, len - off);
-        if (n < 0) {
-            if (errno == EINTR) continue;
-            close(fd);
-            return -1;
-        }
-        if (n == 0) { close(fd); return -1; }
-        off += (size_t)n;
-    }
-    close(fd);
-    return 0;
-#endif
+    return pqtk_csprng(buf, len);
 }
 
 /* ---------- Time ----------

@@ -1,0 +1,79 @@
+\section{Appendices}
+\label{sec:appendices}
+
+\subsection*{A. Residual-risk acknowledgment for PQ-only}
+
+PQCrypt v1 ships one mandatory suite (ML-KEM-1024 + AES-256-GCM + UtC) and no hybrid. If ML-KEM-1024 is later structurally broken (a sub-exponential Module-LWE attack), every v1 envelope loses confidentiality with no classical fallback. This is a 30--50 year risk we accept in exchange for an unambiguous PQ-only promise. The forward-only mitigation path:
+
+\begin{enumerate}
+\item Future suite byte \code{0x06} introduces a hybrid suite (ML-KEM-1024 + X25519 + AES-256-GCM + UtC) once user demand signals.
+\item Long-lived ciphertexts are re-encrypted under the v2 suite within a defined window.
+\item v1 decoders remain available indefinitely (variant bytes are immutable post-allocation, matching the \pqid{} and \pqhash{} discipline).
+\end{enumerate}
+
+We do \emph{not} mitigate by hedging the v1 spec.
+
+\subsection*{B. Variant byte allocation across pqtoolkit}
+
+\begin{center}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Byte} & \textbf{Owner} & \textbf{Meaning} & \textbf{Status} \\
+\midrule
+\code{0x00} & --- & Permanently reserved & MUST reject \\
+\code{0x01} & \pqid{} & Standard generator & assigned \\
+\code{0x02} & \pqid{} & HLC generator & assigned \\
+\code{0x03} & \pqhash{} & SHAKE-256 / 64 B tail & assigned \\
+\code{0x04} & \pqcrypt{} & Encryption envelope v1 & assigned (this document) \\
+\code{0x05}--\code{0xFE} & --- & Reserved-future & MUST reject \\
+\code{0xFF} & --- & Permanently reserved & MUST reject \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Cross-rejection is normative: \pqid{} and \pqhash{} decoders MUST reject \code{0x04}; \pqcrypt{} decoders MUST reject \code{0x01}, \code{0x02}, \code{0x03}, and every byte in \code{0x05}--\code{0xFF} in v1. Each project's \texttt{invalid.json} conformance file pins the cross-rejection.
+
+\subsection*{C. Suite byte allocation}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Suite} & \textbf{Algorithms} & \textbf{Status} \\
+\midrule
+\code{0x01} & ML-KEM-1024 + AES-256-GCM + UtC commit + HKDF-SHA3-256 & v1 mandatory \\
+\code{0x02} & ML-KEM-1024 + ChaCha20-Poly1305 + UtC commit + HKDF-SHA3-256 & v1 optional \\
+\code{0x03}--\code{0xFF} & Reserved-future & MUST reject \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Earmarked future suites (not normative in v1):
+\begin{itemize}
+\item \code{0x03}: ML-KEM-1024 + AEGIS-128L + UtC commit (once verified AEGIS implementations land).
+\item \code{0x06}: ML-KEM-1024 + X25519 + AES-256-GCM + UtC commit (hybrid).
+\item \code{0x07}: HQC + AES-256-GCM + UtC commit (lattice-fatigue backup).
+\end{itemize}
+
+\subsection*{D. Test-vector schema}
+
+Each KAT file is a JSON array of records. Common fields:
+
+\begin{lstlisting}[language=Pseudocode]
+{
+  "name":         "human-readable id, unique within the file",
+  "op":           "encrypt | decrypt | peek_header | commit | ...",
+  "input_hex":    "raw bytes for decode-from-binary ops",
+  "input":        { ... op-specific structured input },
+  "expected":     { ... op-specific structured output },
+  "should_fail":  false,
+  "error_kind":   "DECRYPT_FAILED | UNKNOWN_VARIANT | UNKNOWN_SUITE | INVALID_LEN"
+}
+\end{lstlisting}
+
+Full schema in \texttt{pqcrypt/conformance/README.md}.
+
+\subsection*{E. Acknowledgments}
+
+\pqid{} and \pqhash{} for the polyglot-spec-first discipline this whitepaper inherits. Bellare and Hoang for the UtC construction \citep{bellare2022commitment}. The \texttt{mlkem-native} \citep{cryspen2025mlkem}, RustCrypto \texttt{ml-kem}, and \texttt{filippo.io/mlkem} maintainers for the verified ML-KEM-1024 implementations PQCrypt v1 vendors. The KyberSlash \citep{kyberslash}, PQShield \citep{pqshield2024}, and GoFetch \citep{gofetch} disclosure teams, whose findings shape the side-channel disclaimer.

@@ -1,0 +1,35 @@
+\section{Conformance}
+\label{sec:conformance}
+
+\subsection{KAT vector files}
+
+\texttt{pqcrypt/conformance/vectors/}:
+
+\begin{itemize}
+\item \texttt{encrypt\_roundtrip.json} --- fixed-RNG-seed determinism. Each record gives a plaintext, a recipient public key, a sender RNG seed, and an expected envelope hex.
+\item \texttt{decrypt.json} --- known envelopes $\to$ known plaintexts, exercising the decrypt path for each suite.
+\item \texttt{peek\_header.json} --- header parsing without authentication.
+\item \texttt{invalid.json} --- bad variant byte (covering 0x00, 0x01, 0x02, 0x03, 0x05--0xFF), bad suite byte, truncated \code{KEM\_CT}, bad AEAD tag, bad commit tag, bad AD.
+\item \texttt{ad\_binding.json} --- \pqid{}-as-AD positive and negative cases.
+\item \texttt{commitment.json} --- UtC commit tag KATs independent of the AEAD path.
+\item \texttt{kyberslash\_regression.json} --- known-bad ML-KEM-1024 inputs that exercised KyberSlash 1/2 \citep{kyberslash}, asserting they reject without timing variance.
+\item \texttt{min\_timestamp.json} --- \code{MIN\_TIMESTAMP\_MS} helper parity (mirrors \pqid{}'s and \pqhash{}'s analogous files).
+\end{itemize}
+
+\subsection{Cross-language runner}
+
+Vectors are consumed by the same harness used by \pqid{} and \pqhash{}: \texttt{tools/conformance/run.sh}. The script discovers per-language runners (\texttt{tools/conformance/python/}, \texttt{.../c/}, \texttt{.../go/}, \texttt{.../rust/}) and executes each against each vector file. Exit code 0 means every runner passed every vector.
+
+Local development can skip slow toolchains:
+\begin{lstlisting}[language=bash]
+bash tools/conformance/run.sh
+PQTK_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh
+\end{lstlisting}
+
+\subsection{Branch-protection gate}
+
+The GitHub Actions workflow \texttt{.github/workflows/conformance.yml} runs the full harness across all three projects (\pqid, \pqhash, \pqcrypt). It is a required check for merging to \texttt{main}.
+
+\subsection{Vector generation}
+
+All vectors are generated against the Python reference (\texttt{pqcrypt/python/pqcrypt.py}). The generator script lives at \texttt{pqcrypt/conformance/scripts/generate.py}. Vectors are committed verbatim: re-running the generator on the same code MUST produce identical JSON. If a code change produces different vectors, that is a spec change and requires a release-notes entry plus updates to every language implementation.

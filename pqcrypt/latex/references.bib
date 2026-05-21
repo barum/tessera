@@ -1,0 +1,309 @@
+% PQCrypt whitepaper bibliography.
+% Style: abbrvnat with (round,authoryear) citations.
+% Conventions match pqid/latex/references.bib.
+
+@techreport{fips202,
+  title       = {{SHA-3} Standard: Permutation-Based Hash and Extendable-Output Functions},
+  number      = {FIPS PUB 202},
+  institution = {National Institute of Standards and Technology},
+  year        = 2015,
+  month       = aug,
+  url         = {https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf}
+}
+
+@techreport{fips203,
+  title       = {Module-Lattice-Based Key-Encapsulation Mechanism Standard},
+  number      = {FIPS PUB 203},
+  institution = {National Institute of Standards and Technology},
+  year        = 2024,
+  month       = aug,
+  url         = {https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf}
+}
+
+@inproceedings{bellare2022commitment,
+  author      = {Bellare, Mihir and Hoang, Viet Tung},
+  title       = {Efficient Schemes for Committing Authenticated Encryption},
+  booktitle   = {Advances in Cryptology -- EUROCRYPT 2022},
+  year        = 2022,
+  url         = {https://eprint.iacr.org/2022/1260}
+}
+
+@inproceedings{grubbs2017aead,
+  author      = {Grubbs, Paul and Lu, Jiahui and Ristenpart, Thomas},
+  title       = {Message Franking via Committing Authenticated Encryption},
+  booktitle   = {CRYPTO 2017},
+  year        = 2017,
+  url         = {https://eprint.iacr.org/2017/664}
+}
+
+@misc{albertini2020aead,
+  author      = {Albertini, Ange and Duong, Thai and Gueron, Shay and K{\"o}lbl, Stefan and Luykx, Atul and Schmieg, Sophie},
+  title       = {How to Abuse and Fix Authenticated Encryption Without Key Commitment},
+  year        = 2020,
+  howpublished= {IACR ePrint 2020/1456},
+  url         = {https://eprint.iacr.org/2020/1456}
+}
+
+@misc{len2021aead,
+  author      = {Len, Julia and Grubbs, Paul and Ristenpart, Thomas},
+  title       = {Partitioning Oracle Attacks},
+  year        = 2021,
+  howpublished= {USENIX Security 2021},
+  url         = {https://eprint.iacr.org/2020/1153}
+}
+
+@misc{chan2022commit,
+  author      = {Chan, John and Rogaway, Phillip},
+  title       = {On Committing Authenticated Encryption},
+  year        = 2022,
+  howpublished= {IACR ePrint 2022/1260 (CTX construction)},
+  url         = {https://eprint.iacr.org/2022/1260}
+}
+
+@misc{bellare2024gcmsst,
+  author      = {Hoang, Viet Tung and Tessaro, Stefano},
+  title       = {{GCM-SST}: {AES-GCM} with Strong Subkey-Tagging},
+  year        = 2024,
+  howpublished= {IACR ePrint 2024/875},
+  url         = {https://eprint.iacr.org/2024/875}
+}
+
+@inproceedings{hofheinz2017fo,
+  author      = {Hofheinz, Dennis and H{\"o}velmanns, Kathrin and Kiltz, Eike},
+  title       = {A Modular Analysis of the {Fujisaki-Okamoto} Transformation},
+  booktitle   = {TCC 2017},
+  year        = 2017,
+  url         = {https://eprint.iacr.org/2017/604}
+}
+
+@inproceedings{don2022qrom,
+  author      = {Don, Jelle and Fehr, Serge and Majenz, Christian and Schaffner, Christian},
+  title       = {Online-Extractability in the Quantum Random-Oracle Model},
+  booktitle   = {EUROCRYPT 2022},
+  year        = 2022,
+  url         = {https://eprint.iacr.org/2021/280}
+}
+
+@misc{kyberslash,
+  author      = {Bernstein, Daniel J. and others},
+  title       = {{KyberSlash 1 \& 2}: Timing-Based Key Recovery on {ML-KEM}},
+  year        = 2024,
+  url         = {https://kyberslash.cr.yp.to/}
+}
+
+@misc{pqshield2024,
+  author      = {{PQShield}},
+  title       = {Plugging Timing Leaks in {Kyber/ML-KEM} via Masking},
+  year        = 2024,
+  url         = {https://pqshield.com/blog/power-side-channel-ml-kem}
+}
+
+@misc{guo2024spa,
+  author      = {Guo, Qian and Johansson, Thomas and Yang, Bo-Yin},
+  title       = {Single-Trace {SPA-CCA} on Unmasked {ML-KEM} on {Cortex-M4}},
+  year        = 2024,
+  howpublished= {IACR ePrint 2024/2051},
+  url         = {https://eprint.iacr.org/2024/2051}
+}
+
+@misc{cryspen2025mlkem,
+  author      = {{Cryspen} and {PQ Code Package}},
+  title       = {{mlkem-native}: Formally Verified {ML-KEM} for {C}/{AArch64}/{AVX2}},
+  year        = 2025,
+  url         = {https://github.com/pq-code-package/mlkem-native}
+}
+
+@misc{hertzbleed,
+  author      = {Wang, Yingchen and Paccagnella, Riccardo and He, Elizabeth Tang and Shacham, Hovav and Fletcher, Christopher W. and Kohlbrenner, David},
+  title       = {{Hertzbleed}: Turning Power Side-Channel Attacks into Remote Timing Attacks on {x86}},
+  year        = 2022,
+  howpublished= {USENIX Security 2022},
+  url         = {https://www.hertzbleed.com/}
+}
+
+@misc{gofetch,
+  author      = {Chen, Boru and others},
+  title       = {{GoFetch}: Breaking Constant-Time Cryptographic Implementations Using Data Memory-Dependent Prefetchers},
+  year        = 2024,
+  howpublished= {USENIX Security 2024},
+  url         = {https://gofetch.fail/}
+}
+
+@misc{intel-doit,
+  author      = {{Intel Corporation}},
+  title       = {Data Operand Independent Timing Instructions ({DOIT})},
+  year        = 2022,
+  url         = {https://www.intel.com/content/www/us/en/developer/articles/technical/software-security-guidance/best-practices/data-operand-independent-timing-isa-guidance.html}
+}
+
+@misc{terrapin,
+  author      = {B{\"a}umer, Fabian and D{\"u}rmuth, Markus and Brinkmann, Marcus},
+  title       = {{Terrapin Attack}: Breaking {SSH} Channel Integrity by Sequence-Number Manipulation ({CVE-2023-48795})},
+  year        = 2023,
+  url         = {https://terrapin-attack.com/}
+}
+
+@misc{rfc9106,
+  title       = {{Argon2} Memory-Hard Function for Password Hashing and Proof-of-Work Applications},
+  number      = {RFC 9106},
+  year        = 2021,
+  url         = {https://datatracker.ietf.org/doc/html/rfc9106}
+}
+
+@misc{rfc9678,
+  title       = {The {AEGIS} Family of Authenticated Encryption Algorithms},
+  number      = {RFC 9678},
+  year        = 2025,
+  month       = sep,
+  url         = {https://www.rfc-editor.org/rfc/rfc9678}
+}
+
+@misc{rfc9420,
+  title       = {The Messaging Layer Security ({MLS}) Protocol},
+  number      = {RFC 9420},
+  year        = 2023,
+  url         = {https://datatracker.ietf.org/doc/html/rfc9420}
+}
+
+@misc{paseto-v4,
+  author      = {Arciszewski, Scott},
+  title       = {{PASETO} v4.local Specification},
+  year        = 2021,
+  url         = {https://github.com/paseto-standard/paseto-spec/blob/master/docs/01-Protocol-Versions/Version4.md}
+}
+
+@misc{c2sp-age-plugin,
+  author      = {{C2SP}},
+  title       = {The Age Plugin Protocol},
+  year        = 2023,
+  url         = {https://github.com/C2SP/C2SP/blob/main/age-plugin.md}
+}
+
+@misc{age-releases,
+  author      = {Valsorda, Filippo and contributors},
+  title       = {age releases (filippo.io/age)},
+  year        = 2025,
+  url         = {https://github.com/FiloSottile/age/releases}
+}
+
+@misc{tink-releases,
+  author      = {{Google}},
+  title       = {Tink releases},
+  year        = 2026,
+  url         = {https://github.com/tink-crypto/tink/releases}
+}
+
+@misc{hpke-pq,
+  author      = {Wood, Christopher A. and others},
+  title       = {Hybrid {HPKE} for Post-Quantum {KEMs} (draft-ietf-hpke-pq-09)},
+  year        = 2026,
+  url         = {https://datatracker.ietf.org/doc/draft-ietf-hpke-pq/}
+}
+
+@misc{signal-pqxdh,
+  author      = {Kret, Ehren and Schmidt, Rolfe},
+  title       = {The {PQXDH} Key Agreement Protocol},
+  year        = 2023,
+  url         = {https://signal.org/docs/specifications/pqxdh/}
+}
+
+@misc{apple-pq3,
+  author      = {{Apple Security Engineering and Architecture}},
+  title       = {iMessage with {PQ3}: A New State of the Art in Quantum-Secure Messaging at Scale},
+  year        = 2024,
+  url         = {https://security.apple.com/blog/imessage-pq3/}
+}
+
+@misc{aws-kms-pq,
+  author      = {{Amazon Web Services}},
+  title       = {Using Post-Quantum {TLS} with {AWS KMS}},
+  year        = 2024,
+  url         = {https://docs.aws.amazon.com/kms/latest/developerguide/pqtls.html}
+}
+
+@misc{gcp-kms-pq,
+  author      = {{Google Cloud}},
+  title       = {Post-Quantum Cryptography in {Cloud KMS}},
+  year        = 2026,
+  url         = {https://cloud.google.com/kms/docs/post-quantum-cryptography}
+}
+
+@misc{cloudflare-radar,
+  author      = {{Cloudflare}},
+  title       = {Radar: Post-Quantum {TLS} Adoption},
+  year        = 2026,
+  url         = {https://radar.cloudflare.com/adoption-and-usage}
+}
+
+@misc{ebacs,
+  author      = {Bernstein, Daniel J. and Lange, Tanja},
+  title       = {{eBACS}: {ECRYPT} Benchmarking of Cryptographic Systems ({SUPERCOP})},
+  year        = 2025,
+  url         = {https://bench.cr.yp.to/}
+}
+
+@misc{intelisa,
+  author      = {{Intel Corporation}},
+  title       = {Intel {ISA-L}: Intelligent Storage Acceleration Library},
+  year        = 2025,
+  url         = {https://github.com/intel/isa-l_crypto}
+}
+
+@misc{mlkem-native-bench,
+  author      = {{PQ Code Package}},
+  title       = {{mlkem-native} Benchmarks},
+  year        = 2026,
+  url         = {https://github.com/pq-code-package/mlkem-native#benchmarks}
+}
+
+@misc{hqc-perf,
+  author      = {{HQC Submission Team}},
+  title       = {{HQC} Performance},
+  year        = 2025,
+  url         = {https://pqc-hqc.org/doc/hqc-performance.pdf}
+}
+
+@misc{mceliece,
+  author      = {{Classic McEliece Submission Team}},
+  title       = {Classic {McEliece}: Implementation Notes},
+  year        = 2022,
+  url         = {https://classic.mceliece.org/mceliece-impl-20221023.pdf}
+}
+
+@misc{bose2018muser,
+  author      = {Bose, Priyanka and Hoang, Viet Tung and Tessaro, Stefano},
+  title       = {Revisiting {AES-GCM-SIV}: Multi-User Security, Faster Key Derivation, and Better Bounds},
+  year        = 2018,
+  howpublished= {IACR ePrint 2017/702},
+  url         = {https://eprint.iacr.org/2017/702}
+}
+
+@misc{hoang2024gcmsst,
+  author      = {Hoang, Viet Tung and Tessaro, Stefano},
+  title       = {Towards Tight Multi-User Security of {GCM}},
+  year        = 2024,
+  howpublished= {IACR ePrint 2024/875},
+  url         = {https://eprint.iacr.org/2024/875}
+}
+
+@techreport{cnsa2,
+  title       = {Commercial National Security Algorithm Suite 2.0},
+  institution = {NSA/CSS},
+  year        = 2022,
+  url         = {https://media.defense.gov/2022/Sep/07/2003071836/-1/-1/0/CSA_CNSA_2.0_ALGORITHMS_.PDF}
+}
+
+@techreport{gri2024,
+  title       = {2024 Quantum Threat Timeline Report},
+  institution = {Global Risk Institute},
+  year        = 2024,
+  url         = {https://globalriskinstitute.org/publication/2024-quantum-threat-timeline-report/}
+}
+
+@misc{gidney2025,
+  author      = {Gidney, Craig},
+  title       = {How to Factor 2048-bit {RSA} Integers with Less than a Million Noisy Qubits},
+  year        = 2025,
+  howpublished= {arXiv:2505.15917},
+  url         = {https://arxiv.org/abs/2505.15917}
+}

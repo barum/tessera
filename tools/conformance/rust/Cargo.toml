@@ -4,15 +4,22 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-pqid   = { path = "../../../pqid/rust" }
-pqhash = { path = "../../../pqhash/rust" }
-serde  = { version = "1", features = ["derive"] }
+pqid    = { path = "../../../pqid/rust" }
+pqhash  = { path = "../../../pqhash/rust" }
+pqcrypt = { path = "../../../pqcrypt/rust" }
+serde   = { version = "1", features = ["derive"] }
 serde_json = "1"
-hex    = "0.4"
+hex     = "0.4"
+hmac    = "0.12"
+sha3    = "0.10"
 
 [[bin]]
 name = "conformance_runner"
 path = "src/bin/conformance_runner.rs"
+
+[[bin]]
+name = "pqcrypt_runner"
+path = "src/bin/pqcrypt_runner.rs"
 
 [profile.release]
 opt-level = 3

@@ -19,6 +19,9 @@ pqid/c/test_pqid
 pqid/c/bench_pqid
 pqid/c/fuzz_decode
 pqhash/c/test_pqhash
+pqcrypt/c/test_pqcrypt
+pqcrypt/c/bench_pqcrypt
+common/c/test_common
 tools/conformance/c/conformance_runner
 tools/conformance/go/conformance_runner
 

@@ -186,6 +186,17 @@ def build_invalid_vectors() -> list:
             "input_hex": hex_of(valid[:6] + b"\x02" + valid[7:]),
             "expected_error": "UnknownVariant",
         },
+        # Wrong variant: PQCrypt v1 (0x04) — allocated to the sibling project
+        # in PQCK-00001. PQHash decoders MUST reject it. Pin this rejection in
+        # the KAT so a future change to the PQHash decoder cannot accidentally
+        # accept PQCrypt envelopes as 73-byte content hashes.
+        {
+            "name": "binary_variant_0x04",
+            "op": "pqhash_validate_invalid",
+            "input_kind": "binary_hex",
+            "input_hex": hex_of(valid[:6] + b"\x04" + valid[7:]),
+            "expected_error": "UnknownVariant",
+        },
         # Permanently-reserved 0x00.
         {
             "name": "binary_variant_0x00",

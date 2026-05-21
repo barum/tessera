@@ -1,0 +1,17 @@
+PQCrypt Python benchmarks (canonical reference, pqcrypt.py)
+----------------------------------------------------------------------
+Run on:    Apple M3 Max, Python 3.14.3, kyber-py 1.0, cryptography 46.0.5
+Date:      2026-05-21
+Note:      Pure-Python kyber-py ML-KEM-1024 dominates the time budget.
+           Expect C/Go/Rust ports to be ~100x faster at keygen/encrypt/decrypt.
+           peek_header (no crypto) reflects the wire-parser baseline.
+
+keygen (ML-KEM-1024)                                413 ops/sec   (   2423968 ns/op)
+encrypt_1KB (AES-256-GCM)                           348 ops/sec   (   2872568 ns/op)
+decrypt_1KB (AES-256-GCM)                           263 ops/sec   (   3803026 ns/op)
+encrypt_1MB (AES-256-GCM)                           226 ops/sec   (   4428101 ns/op)
+decrypt_1MB (AES-256-GCM)                           208 ops/sec   (   4811217 ns/op)
+peek_header                                     1243414 ops/sec   (       804 ns/op)
+encrypt_with_pqid_ad                                333 ops/sec   (   3004102 ns/op)
+encrypt_1KB (ChaCha20-Poly1305)                     329 ops/sec   (   3042006 ns/op)
+decrypt_1KB (ChaCha20-Poly1305)                     258 ops/sec   (   3883328 ns/op)

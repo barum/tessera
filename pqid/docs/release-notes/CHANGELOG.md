@@ -1,0 +1,19 @@
+# pqid release notes — index
+
+Reverse-chronological. One entry per PR (or per logical change shipped together).
+
+- 2026-05-21 — [PQID-00015 — Cross-reject PQCrypt variant `0x04`](2026-05-21-pqid-00015-cross-reject-pqcrypt.md)
+- 2026-05-19 — [PQID-00014 — Bench methodology](2026-05-19-pqid-00014-bench-methodology.md)
+- 2026-05-19 — [PQID-00013 — `MIN_TIMESTAMP_MS` helper](2026-05-19-pqid-00013-min-timestamp-helper.md)
+- 2026-05-19 — [PQID-00012 — Comparison with TSID and NANOID](2026-05-19-pqid-00012-comparison-tsid-nanoid.md)
+- 2026-05-19 — [PQID-00011–00015 — Comment cleanups](2026-05-19-pqid-00011-00015-comment-cleanups.md)
+- 2026-05-19 — [PQID-00010 — HLC drift split](2026-05-19-pqid-00010-hlc-drift-split.md)
+- 2026-05-19 — [PQID-00009 — Fuzz targets](2026-05-19-pqid-00009-fuzz-targets.md)
+- 2026-05-19 — [PQID-00008 — CSPRNG normative](2026-05-19-pqid-00008-csprng-normative.md)
+- 2026-05-19 — [PQID-00007 — CI workflows](2026-05-19-pqid-00007-ci-workflows.md)
+- 2026-05-19 — [PQID-00006 — C lookup tables at compile time](2026-05-19-pqid-00006-c-lookup-tables-compile-time.md)
+- 2026-05-19 — [PQID-00005 — Reserve variant bytes](2026-05-19-pqid-00005-reserve-variant-bytes.md)
+- 2026-05-19 — [PQID-00004 — Threat model](2026-05-19-pqid-00004-threat-model.md)
+- 2026-05-19 — [PQID-00003 — Conformance harness](2026-05-19-pqid-00003-conformance-harness.md)
+- 2026-05-19 — [PQID-00002 — Remove hardcoded sys.path](2026-05-19-pqid-00002-remove-hardcoded-syspath.md)
+- 2026-05-19 — [PQID-00001 — HLC overflow parity](2026-05-19-pqid-00001-hlc-overflow-parity.md)

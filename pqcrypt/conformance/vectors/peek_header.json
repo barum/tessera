@@ -1,0 +1,54 @@
+[
+  {
+    "name": "aesgcm_ctr0_ad0",
+    "op": "peek_header",
+    "header_hex": "018bcfe5680004010000062000000000",
+    "expected": {
+      "timestamp_ms": 1700000000000,
+      "variant": 4,
+      "suite": 1,
+      "counter": 0,
+      "kem_ct_len": 1568,
+      "ad_len": 0
+    }
+  },
+  {
+    "name": "aesgcm_ctr7_ad41",
+    "op": "peek_header",
+    "header_hex": "018bcfe5680004010007062000000029",
+    "expected": {
+      "timestamp_ms": 1700000000000,
+      "variant": 4,
+      "suite": 1,
+      "counter": 7,
+      "kem_ct_len": 1568,
+      "ad_len": 41
+    }
+  },
+  {
+    "name": "chacha_ctr0_ad0",
+    "op": "peek_header",
+    "header_hex": "018bcfe5680004020000062000000000",
+    "expected": {
+      "timestamp_ms": 1700000000000,
+      "variant": 4,
+      "suite": 2,
+      "counter": 0,
+      "kem_ct_len": 1568,
+      "ad_len": 0
+    }
+  },
+  {
+    "name": "chacha_ctr0xFFFE_ad8",
+    "op": "peek_header",
+    "header_hex": "018bcfe568000402fffe062000000008",
+    "expected": {
+      "timestamp_ms": 1700000000000,
+      "variant": 4,
+      "suite": 2,
+      "counter": 65534,
+      "kem_ct_len": 1568,
+      "ad_len": 8
+    }
+  }
+]

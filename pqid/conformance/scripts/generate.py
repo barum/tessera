@@ -167,12 +167,25 @@ def build_invalid_vectors() -> list:
             "input_hex": hex_of(valid_raw[:6] + b"\x00" + valid_raw[7:]),
             "expected_error": "UnknownVariant",
         },
-        # Variant byte 0x03 (reserved-future).
+        # Variant byte 0x03 (now allocated to PQHash sibling project).
+        # PQID decoders MUST reject it: the variant-byte namespace is shared
+        # across the pqtoolkit monorepo (see umbrella CLAUDE.md and PQHash).
         {
             "name": "binary_variant_0x03",
             "op": "validate_invalid",
             "input_kind": "binary_hex",
             "input_hex": hex_of(valid_raw[:6] + b"\x03" + valid_raw[7:]),
+            "expected_error": "UnknownVariant",
+        },
+        # Variant byte 0x04 (now allocated to PQCrypt sibling project, PQCK-00001).
+        # PQID decoders MUST reject it. Pin this rejection in the KAT so a future
+        # change to the PQID decoder cannot accidentally accept PQCrypt envelopes
+        # as 41-byte identifiers.
+        {
+            "name": "binary_variant_0x04",
+            "op": "validate_invalid",
+            "input_kind": "binary_hex",
+            "input_hex": hex_of(valid_raw[:6] + b"\x04" + valid_raw[7:]),
             "expected_error": "UnknownVariant",
         },
         # Variant byte 0xFF (reserved by PQID-00005).

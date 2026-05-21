@@ -1,0 +1,30 @@
+\section{ML-KEM-1024 Binding}
+\label{sec:mlkem}
+
+PQCrypt invokes ML-KEM-1024 unchanged from FIPS 203 \citep{fips203}: \code{KeyGen}, \code{Encaps(pk)} producing $(K, c)$, and \code{Decaps(sk, c)} producing $K$ (or an implicit-reject pseudorandom value on malformed $c$, per the Fujisaki--Okamoto wrapper). We do not modify the FO transform, do not add a combiner, and do not wrap ML-KEM in any further construction. The shared secret $K$ from \code{Decaps} is fed directly to \code{HKDF-Extract} as IKM (\cref{sec:kdf-nonce}).
+
+\subsection{Tight QROM proof}
+
+ML-KEM-1024's IND-CCA2 security has a tight QROM proof under Module-LWE \citep{hofheinz2017fo,don2022qrom}. PQCrypt inherits this directly. We make no assumption beyond what FIPS 203 already requires.
+
+\subsection{Implementation sources (v1 alpha)}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Language} & \textbf{ML-KEM-1024 source} & \textbf{Constant-time claim} \\
+\midrule
+Python   & \texttt{cryptography >= 45} or \texttt{kyber-py >= 1.0} & vendor-documented \\
+C        & \texttt{mlkem-native} (PQ Code Pkg, Cryspen) & formally verified parts \citep{cryspen2025mlkem} \\
+Go       & \texttt{filippo.io/mlkem} (ML-KEM-1024 mode) & maintained, tested \\
+Rust     & \texttt{ml-kem} crate (RustCrypto, \texttt{MlKem1024}) & const-time documented \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+C++, TypeScript, Java, and the CPython extension are deferred to v1.1+; the alpha language set is the minimum that exercises the spec across a readable reference (Python), a canonical ABI (C), a stdlib-heavy ecosystem (Go), and the strongest constant-time toolchain (Rust).
+
+\subsection{The ``Kyber'' naming ban}
+
+ML-KEM (FIPS 203, August 2024) is wire-incompatible with the Kyber-r3 specification it descends from. PQCrypt's public APIs MUST NOT expose the token ``Kyber'' even where the upstream library uses it. Rename at the binding layer (e.g., \texttt{kyber-py.ML\_KEM\_1024} $\to$ \texttt{pqcrypt.MLKem1024}).

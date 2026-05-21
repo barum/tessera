@@ -1,0 +1,14 @@
+PQCrypt Go benchmarks (pqcrypt/go/)
+----------------------------------------------------------------------
+Run on:    Apple M4 Max, Go 1.26.1, darwin/arm64
+Date:      2026-05-21
+Note:      Uses crypto/mlkem from the Go 1.26 stdlib (no external ML-KEM
+           library). golang.org/x/crypto/sha3 for SHA3/SHAKE, x/crypto/chacha20poly1305
+           for the optional ChaCha suite.
+
+BenchmarkKeygen-14               	   24730	     46371 ns/op	   15448 B/op	       4 allocs/op
+BenchmarkEncrypt1KB_AESGCM-14    	   22008	     55769 ns/op	   24448 B/op	      51 allocs/op
+BenchmarkDecrypt1KB_AESGCM-14    	   20823	     57396 ns/op	   10088 B/op	      48 allocs/op
+BenchmarkEncrypt1MB_AESGCM-14    	     846	   1475540 ns/op	 2134159 B/op	      51 allocs/op
+BenchmarkDecrypt1MB_AESGCM-14    	     822	   1430930 ns/op	 2113274 B/op	      48 allocs/op
+BenchmarkPeekHeader-14           	247473556	         5.094 ns/op	       0 B/op	       0 allocs/op
