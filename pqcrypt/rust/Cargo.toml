@@ -11,6 +11,8 @@ edition = "2024"
 ml-kem = "0.3"
 aes-gcm = "0.10"
 chacha20poly1305 = "0.10"
+# Hybrid suite 0x06 — X25519 KEX combined with ML-KEM-1024 via SHAKE-256.
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
 sha3 = "0.10"
 hmac = "0.12"
 hkdf = "0.12"
@@ -23,3 +25,7 @@ zeroize = "1"
 [lib]
 name = "pqcrypt"
 path = "src/lib.rs"
+
+[[bin]]
+name = "pqcrypt-bench"
+path = "benches/bench_bin.rs"

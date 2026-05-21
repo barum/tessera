@@ -53,7 +53,9 @@ fn unhex(s: &Option<String>) -> Vec<u8> {
 
 fn run_decrypt(r: &Record, should_fail: bool) -> bool {
     let seed = unhex(&r.private_key_seed_hex);
-    if seed.len() != 64 {
+    // 64 bytes = ML-KEM-1024 seed (suites 0x01/0x02); 96 bytes = hybrid seed
+    // (ML-KEM seed || X25519 scalar) for suite 0x06.
+    if seed.len() != 64 && seed.len() != 96 {
         return false;
     }
     let suite = r.suite.unwrap_or(SUITE_MLKEM1024_AESGCM);

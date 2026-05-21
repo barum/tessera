@@ -2,6 +2,10 @@
 
 Reverse-chronological. One entry per PR (or per logical change shipped together).
 
+- 2026-05-21 — [PQCK-00027..00029 — v1.3 PARTIAL (Rust + Go hybrid, AES-NI deferred)](2026-05-21-pqcrypt-v1.3-partial.md)
+- 2026-05-21 — [PQCK-00029 — Hybrid suite 0x06 in Go](2026-05-21-pqcrypt-00029-hybrid-go.md)
+- 2026-05-21 — [PQCK-00027 + PQCK-00028 — Hybrid suite 0x06 in Rust (+ AES-NI deferral)](2026-05-21-pqcrypt-00028-hybrid-rust.md)
+- 2026-05-21 — [PQCK-00020..00026 — v1.2 COMPLETE (hybrid suite 0x06 Python, CLI binary, GitHub Actions, bench sweep, security audit, AEGIS deferral)](2026-05-21-pqcrypt-v1.2-complete.md)
 - 2026-05-21 — [PQCK-00011..00019 — v1.1 COMPLETE (C++, TypeScript, Java, CPython ext, runners, v1.1 keyfile, AEGIS eval, CSPRNG rewire)](2026-05-21-pqcrypt-v1.1-complete.md)
 - 2026-05-21 — [PQCK-00010 — v1 alpha COMPLETE (aggregate summary)](2026-05-21-pqcrypt-00010-v1-alpha-complete.md)
 - 2026-05-21 — [PQCK-00009 — Conformance harness extension](2026-05-21-pqcrypt-00009-conformance-harness.md)

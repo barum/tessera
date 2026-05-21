@@ -279,8 +279,8 @@ func TestKATDecrypt(t *testing.T) {
 	for _, r := range recs {
 		t.Run(r.Name, func(t *testing.T) {
 			seed := mustHex(t, r.PrivateKeySeed)
-			if len(seed) != MLKem1024SeedBytes {
-				t.Fatalf("seed length: %d", len(seed))
+			if len(seed) != MLKem1024SeedBytes && len(seed) != HybridSeedBytes {
+				t.Fatalf("seed length: %d (want 64 or 96)", len(seed))
 			}
 			priv, _, err := GenerateKeypairFromSeed(seed, uint8(r.Suite))
 			if err != nil {
@@ -388,6 +388,148 @@ func TestKATMinTimestamp(t *testing.T) {
 			got := ValidateMinTimestamp(env, aux.MinMs)
 			if got != aux.Expected {
 				t.Errorf("got %v expected %v", got, aux.Expected)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Hybrid suite 0x06 (X25519 + ML-KEM-1024 + AES-256-GCM + UtC)
+// ---------------------------------------------------------------------------
+
+func TestHybridRoundtrip(t *testing.T) {
+	priv, pub, err := GenerateKeypair(SuiteHybridX25519MLKEM1024AESGCM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pt := []byte("hybrid X25519+ML-KEM-1024 envelope")
+	env, err := Encrypt(pt, pub, SuiteHybridX25519MLKEM1024AESGCM, nil, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Decrypt(env, priv, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(pt) {
+		t.Fatalf("plaintext mismatch")
+	}
+}
+
+func TestHybridEnvelopeSizeAndKEMCTLen(t *testing.T) {
+	_, pub, err := GenerateKeypair(SuiteHybridX25519MLKEM1024AESGCM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := Encrypt([]byte("x"), pub, SuiteHybridX25519MLKEM1024AESGCM, []byte("ad"), 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := EnvelopeSizeForSuite(SuiteHybridX25519MLKEM1024AESGCM, 1, 2)
+	if len(env) != want {
+		t.Fatalf("envelope size: got %d want %d", len(env), want)
+	}
+	h, err := PeekHeader(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Suite != SuiteHybridX25519MLKEM1024AESGCM {
+		t.Fatalf("suite: got 0x%02x want 0x06", h.Suite)
+	}
+	if int(h.KEMCTLen) != HybridCTBytes {
+		t.Fatalf("KEM_CT_LEN: got %d want %d", h.KEMCTLen, HybridCTBytes)
+	}
+}
+
+func TestHybridADBindingNegative(t *testing.T) {
+	priv, pub, err := GenerateKeypair(SuiteHybridX25519MLKEM1024AESGCM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ad := make([]byte, 41)
+	for i := range ad {
+		ad[i] = 0xAB
+	}
+	env, err := Encrypt([]byte("x"), pub, SuiteHybridX25519MLKEM1024AESGCM, ad, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrong := make([]byte, len(ad))
+	copy(wrong, ad)
+	wrong[0] ^= 1
+	if _, err := Decrypt(env, priv, wrong); err == nil {
+		t.Fatal("expected ErrDecrypt on AD flip")
+	}
+}
+
+func TestHybridTamperX25519Half(t *testing.T) {
+	priv, pub, err := GenerateKeypair(SuiteHybridX25519MLKEM1024AESGCM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := Encrypt([]byte("x"), pub, SuiteHybridX25519MLKEM1024AESGCM, nil, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Flip a byte in the trailing X25519 ephemeral pubkey portion of KEM_CT.
+	env[HeaderBytes+MLKem1024CTBytes] ^= 1
+	if _, err := Decrypt(env, priv, nil); err == nil {
+		t.Fatal("expected ErrDecrypt on X25519 half tamper")
+	}
+}
+
+func TestHybridKATDecrypt(t *testing.T) {
+	recs := loadVectors(t, "hybrid_decrypt.json")
+	if len(recs) == 0 {
+		t.Fatal("no hybrid_decrypt records")
+	}
+	for _, r := range recs {
+		t.Run(r.Name, func(t *testing.T) {
+			seed := mustHex(t, r.PrivateKeySeed)
+			if len(seed) != HybridSeedBytes {
+				t.Fatalf("hybrid seed length: %d want %d", len(seed), HybridSeedBytes)
+			}
+			priv, _, err := GenerateKeypairFromSeed(seed, SuiteHybridX25519MLKEM1024AESGCM)
+			if err != nil {
+				t.Fatal(err)
+			}
+			env := mustHex(t, r.EnvelopeHex)
+			ad := mustHex(t, r.ExpectedADHex)
+			want := mustHex(t, r.ExpectedPTHex)
+			got, err := Decrypt(env, priv, ad)
+			if err != nil {
+				t.Fatalf("decrypt: %v", err)
+			}
+			if string(got) != string(want) {
+				t.Fatalf("plaintext mismatch")
+			}
+		})
+	}
+}
+
+func TestHybridKATADBinding(t *testing.T) {
+	recs := loadVectors(t, "hybrid_ad_binding.json")
+	for _, r := range recs {
+		t.Run(r.Name, func(t *testing.T) {
+			seed := mustHex(t, r.PrivateKeySeed)
+			priv, _, err := GenerateKeypairFromSeed(seed, SuiteHybridX25519MLKEM1024AESGCM)
+			if err != nil {
+				t.Fatal(err)
+			}
+			env := mustHex(t, r.EnvelopeHex)
+			ad := mustHex(t, r.ExpectedADHex)
+			_, derr := Decrypt(env, priv, ad)
+			switch r.Op {
+			case "decrypt":
+				if derr != nil {
+					t.Fatalf("expected ok, got %v", derr)
+				}
+			case "decrypt_should_fail":
+				if derr == nil {
+					t.Fatal("expected fail")
+				}
+			default:
+				t.Fatalf("unknown op %q", r.Op)
 			}
 		})
 	}

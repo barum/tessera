@@ -54,10 +54,16 @@ pqcrypt.o: pqcrypt.c pqcrypt.h $(COMMON)/hkdf_sha3.h $(COMMON)/pqtk_header.h
 test_pqcrypt: test_pqcrypt.c pqcrypt.o hkdf_sha3.o
 	$(CC) $(CFLAGS) test_pqcrypt.c pqcrypt.o hkdf_sha3.o -o test_pqcrypt $(LDFLAGS)
 
+bench_pqcrypt: bench_pqcrypt.c pqcrypt.o hkdf_sha3.o
+	$(CC) $(CFLAGS) bench_pqcrypt.c pqcrypt.o hkdf_sha3.o -o bench_pqcrypt $(LDFLAGS)
+
 test: test_pqcrypt
 	./test_pqcrypt
+
+bench: bench_pqcrypt
+	./bench_pqcrypt
 
 clean:
 	rm -f *.o test_pqcrypt bench_pqcrypt
 
-.PHONY: all test clean
+.PHONY: all test bench clean

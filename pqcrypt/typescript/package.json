@@ -9,9 +9,10 @@
     "test": "tsc && node --test dist/test_pqcrypt.js"
   },
   "dependencies": {
-    "@noble/post-quantum": "^0.5",
     "@noble/ciphers": "^1",
-    "@noble/hashes": "^1"
+    "@noble/curves": "^2.2.0",
+    "@noble/hashes": "^1",
+    "@noble/post-quantum": "^0.5"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

@@ -7,11 +7,13 @@
 //! test working directory is the crate root, so paths use `../conformance/...`.
 
 use pqcrypt::{
-    decrypt, encrypt, envelope_size, generate_keypair, generate_keypair_from_seed,
+    decrypt, encrypt, envelope_size, envelope_size_for_suite,
+    generate_keypair, generate_keypair_from_seed,
     peek_header, validate_min_timestamp, set_now_ms_for_testing,
     Error, SenderContext,
-    HEADER_BYTES, MLKEM1024_CT_BYTES,
+    HEADER_BYTES, MLKEM1024_CT_BYTES, HYBRID_CT_BYTES,
     SUITE_MLKEM1024_AESGCM, SUITE_MLKEM1024_CHACHA,
+    SUITE_HYBRID_X25519_MLKEM1024_AESGCM,
     VARIANT_PQCRYPT,
 };
 
@@ -201,7 +203,8 @@ fn kat_decrypt() {
     assert!(!recs.is_empty(), "no records");
     for r in &recs {
         let seed = unhex(&r.private_key_seed_hex);
-        assert_eq!(seed.len(), 64, "{}: seed length", r.name);
+        assert!(seed.len() == 64 || seed.len() == 96,
+                "{}: seed length must be 64 (non-hybrid) or 96 (hybrid)", r.name);
         let suite = r.suite.unwrap_or(SUITE_MLKEM1024_AESGCM);
         let (priv_k, _) = generate_keypair_from_seed(&seed, suite)
             .unwrap_or_else(|_| panic!("{}: rebuild key", r.name));
@@ -269,4 +272,96 @@ fn kat_min_timestamp() {
         let got = validate_min_timestamp(&env, r.min_ms.unwrap_or(0));
         assert_eq!(got, r.expected.unwrap_or(false), "{}", r.name);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Hybrid suite 0x06 (X25519 + ML-KEM-1024 + AES-256-GCM + UtC)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn hybrid_roundtrip() {
+    let (priv_k, pub_k) = generate_keypair(SUITE_HYBRID_X25519_MLKEM1024_AESGCM).unwrap();
+    let pt = b"hybrid X25519+ML-KEM-1024 envelope";
+    let env = encrypt(pt, &pub_k, SUITE_HYBRID_X25519_MLKEM1024_AESGCM, &[], None, 0).unwrap();
+    let got = decrypt(&env, &priv_k, &[]).unwrap();
+    assert_eq!(got, pt);
+}
+
+#[test]
+fn hybrid_envelope_size_matches() {
+    let (_, pub_k) = generate_keypair(SUITE_HYBRID_X25519_MLKEM1024_AESGCM).unwrap();
+    let env = encrypt(b"hi", &pub_k, SUITE_HYBRID_X25519_MLKEM1024_AESGCM, b"ad", None, 0).unwrap();
+    assert_eq!(
+        env.len(),
+        envelope_size_for_suite(SUITE_HYBRID_X25519_MLKEM1024_AESGCM, 2, 2)
+    );
+}
+
+#[test]
+fn hybrid_kem_ct_length() {
+    let (_, pub_k) = generate_keypair(SUITE_HYBRID_X25519_MLKEM1024_AESGCM).unwrap();
+    let env = encrypt(b"x", &pub_k, SUITE_HYBRID_X25519_MLKEM1024_AESGCM, &[], None, 0).unwrap();
+    let h = peek_header(&env).unwrap();
+    assert_eq!(h.suite, SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    assert_eq!(h.kem_ct_len as usize, HYBRID_CT_BYTES);
+}
+
+#[test]
+fn hybrid_ad_binding_negative() {
+    let (priv_k, pub_k) = generate_keypair(SUITE_HYBRID_X25519_MLKEM1024_AESGCM).unwrap();
+    let ad = vec![0xAB; 41];
+    let env = encrypt(b"x", &pub_k, SUITE_HYBRID_X25519_MLKEM1024_AESGCM, &ad, None, 0).unwrap();
+    let mut wrong_ad = ad.clone();
+    wrong_ad[0] ^= 1;
+    let r = decrypt(&env, &priv_k, &wrong_ad);
+    assert!(matches!(r, Err(Error::DecryptFailed)));
+}
+
+#[test]
+fn hybrid_tamper_kem_ct_x25519_half() {
+    let (priv_k, pub_k) = generate_keypair(SUITE_HYBRID_X25519_MLKEM1024_AESGCM).unwrap();
+    let mut env = encrypt(b"x", &pub_k, SUITE_HYBRID_X25519_MLKEM1024_AESGCM, &[], None, 0).unwrap();
+    // Flip a byte in the trailing X25519 ephemeral pubkey portion of KEM_CT.
+    let x_byte_offset = HEADER_BYTES + MLKEM1024_CT_BYTES;
+    env[x_byte_offset] ^= 1;
+    let r = decrypt(&env, &priv_k, &[]);
+    assert!(matches!(r, Err(Error::DecryptFailed)));
+}
+
+#[test]
+fn hybrid_kat_decrypt() {
+    let recs = load("hybrid_decrypt.json");
+    assert!(!recs.is_empty(), "no hybrid_decrypt records");
+    for r in &recs {
+        let seed = unhex(&r.private_key_seed_hex);
+        assert_eq!(seed.len(), 96, "{}: hybrid seed must be 96 B", r.name);
+        let (priv_k, _) =
+            generate_keypair_from_seed(&seed, SUITE_HYBRID_X25519_MLKEM1024_AESGCM).unwrap();
+        let env = unhex(&r.envelope_hex);
+        let ad = unhex(&r.expected_ad_hex);
+        let want = unhex(&r.expected_plaintext_hex);
+        let got = decrypt(&env, &priv_k, &ad)
+            .unwrap_or_else(|e| panic!("{}: {:?}", r.name, e));
+        assert_eq!(got, want, "{}: hybrid plaintext mismatch", r.name);
+    }
+    println!("KAT hybrid_decrypt: {} records OK", recs.len());
+}
+
+#[test]
+fn hybrid_kat_ad_binding() {
+    let recs = load("hybrid_ad_binding.json");
+    for r in &recs {
+        let seed = unhex(&r.private_key_seed_hex);
+        let (priv_k, _) =
+            generate_keypair_from_seed(&seed, SUITE_HYBRID_X25519_MLKEM1024_AESGCM).unwrap();
+        let env = unhex(&r.envelope_hex);
+        let ad = unhex(&r.expected_ad_hex);
+        let result = decrypt(&env, &priv_k, &ad);
+        match r.op.as_str() {
+            "decrypt" => assert!(result.is_ok(), "{}: expected ok, got {:?}", r.name, result),
+            "decrypt_should_fail" => assert!(result.is_err(), "{}: expected fail", r.name),
+            other => panic!("{}: unknown op {}", r.name, other),
+        }
+    }
+    println!("KAT hybrid_ad_binding: {} records OK", recs.len());
 }

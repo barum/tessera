@@ -1,0 +1,15 @@
+[
+  {
+    "name": "hybrid_ctr0_ad0",
+    "op": "peek_header",
+    "header_hex": "018bcfe5680004060000064000000000",
+    "expected": {
+      "timestamp_ms": 1700000000000,
+      "variant": 4,
+      "suite": 6,
+      "counter": 0,
+      "kem_ct_len": 1600,
+      "ad_len": 0
+    }
+  }
+]

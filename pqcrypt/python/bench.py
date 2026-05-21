@@ -74,6 +74,26 @@ def main() -> None:
         lambda: pqcrypt.decrypt(env_1kb_c, priv_c, expected_ad=b""),
     )
 
+    # Hybrid suite 0x06 (PQCK-00021): X25519 + ML-KEM-1024 + AES-256-GCM + UtC.
+    # X25519 keygen + ECDH adds a measurable but small overhead on top of ML-KEM.
+    priv_h, pub_h = pqcrypt.generate_keypair(suite=pqcrypt.SUITE_HYBRID_X25519_MLKEM1024_AESGCM)
+    env_1kb_h = pqcrypt.encrypt(pt_1kb, pub_h, suite=pqcrypt.SUITE_HYBRID_X25519_MLKEM1024_AESGCM)
+    _measure(
+        "keygen (hybrid X25519+ML-KEM-1024)",
+        ITERS_KEYGEN,
+        lambda: pqcrypt.generate_keypair(suite=pqcrypt.SUITE_HYBRID_X25519_MLKEM1024_AESGCM),
+    )
+    _measure(
+        "encrypt_1KB (hybrid suite 0x06)",
+        ITERS_ENC_1KB,
+        lambda: pqcrypt.encrypt(pt_1kb, pub_h, suite=pqcrypt.SUITE_HYBRID_X25519_MLKEM1024_AESGCM),
+    )
+    _measure(
+        "decrypt_1KB (hybrid suite 0x06)",
+        ITERS_DEC_1KB,
+        lambda: pqcrypt.decrypt(env_1kb_h, priv_h, expected_ad=b""),
+    )
+
 
 if __name__ == "__main__":
     main()

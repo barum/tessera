@@ -66,18 +66,23 @@ _KAT_DRBG_SEED = bytes.fromhex(
 
 
 def _kp_seed(index: int) -> bytes:
-    """Deterministic 64-byte ML-KEM-1024 keypair seed for KAT record `index`.
-
-    Format: 32 zero bytes || 4 big-endian counter bytes || 28 zero bytes.
-    The counter is in the d-portion of the seed (first 32 bytes); the z-
-    portion (last 32 bytes) stays zero. Any deterministic, well-spread
-    function would work — this one is trivially reproducible across languages.
-    """
+    """Deterministic 64-byte ML-KEM-1024 keypair seed for KAT record `index`."""
     out = bytearray(64)
-    # Place the counter at offset 28..32 so the d-portion (offsets 0..32)
-    # still varies non-trivially across records.
     out[28:32] = index.to_bytes(4, "big")
     return bytes(out)
+
+
+def _hybrid_seed(index: int) -> bytes:
+    """Deterministic 96-byte hybrid keypair seed (64 ML-KEM || 32 X25519).
+
+    The ML-KEM half follows the _kp_seed pattern (index biased to avoid
+    collision with non-hybrid records); the X25519 half is just the index
+    big-endian-encoded so different records yield different X25519 keys.
+    """
+    pq_seed = _kp_seed(900_000 + index)
+    x_scalar = bytearray(32)
+    x_scalar[28:32] = index.to_bytes(4, "big")
+    return pq_seed + bytes(x_scalar)
 
 
 def _reset_kat_drbg() -> None:
@@ -439,11 +444,110 @@ def make_min_timestamp_vectors():
     _write(VECTORS_DIR / "min_timestamp.json", records)
 
 
+def make_hybrid_decrypt_vectors():
+    """KAT pairs for the v1.2 hybrid suite 0x06.
+
+    Each record carries:
+      - private_key_seed_hex: 96-byte hybrid seed (FIPS 203 64 || X25519 32)
+      - private_key_hex:       3200-byte expanded form (ML-KEM-1024 sk || X25519 sk)
+      - envelope_hex
+      - expected_ad_hex, expected_plaintext_hex
+
+    Languages that don't yet support suite 0x06 should skip this file.
+    """
+    _reset_kat_drbg()
+    records = []
+    cases = [
+        ("hybrid_empty", b"", b""),
+        ("hybrid_short", b"hello hybrid", b""),
+        ("hybrid_with_ad", b"with AD", b"pqid-like-41-byte-string-padded___........"),
+        ("hybrid_medium", b"X" * 256, b""),
+    ]
+    suite = pqcrypt.SUITE_HYBRID_X25519_MLKEM1024_AESGCM
+    for idx, (name, pt, ad) in enumerate(cases):
+        seed = _hybrid_seed(idx)
+        priv, pub = pqcrypt.generate_keypair_from_seed(seed, suite=suite)
+        env = pqcrypt.encrypt(pt, pub, suite=suite, associated_data=ad)
+        assert pqcrypt.decrypt(env, priv, expected_ad=ad) == pt
+        records.append({
+            "name": name,
+            "op": "decrypt",
+            "suite": suite,
+            "private_key_seed_hex": _hex(seed),
+            "private_key_hex": _hex(priv.to_bytes()),
+            "public_key_hex": _hex(pub.to_bytes()),
+            "envelope_hex": _hex(env),
+            "expected_ad_hex": _hex(ad),
+            "expected_plaintext_hex": _hex(pt),
+        })
+    _write(VECTORS_DIR / "hybrid_decrypt.json", records)
+
+
+def make_hybrid_ad_binding_vectors():
+    """PQID-as-AD positive/negative for the hybrid suite."""
+    _reset_kat_drbg()
+    records = []
+    suite = pqcrypt.SUITE_HYBRID_X25519_MLKEM1024_AESGCM
+    seed = _hybrid_seed(100)
+    priv, pub = pqcrypt.generate_keypair_from_seed(seed, suite=suite)
+    seed_hex = _hex(seed)
+    priv_hex = _hex(priv.to_bytes())
+    pqid_a = bytes(range(41))
+    pqid_b = bytes(range(1, 42))
+    env_a = pqcrypt.encrypt(b"payload-A", pub, suite=suite, associated_data=pqid_a)
+    env_b = pqcrypt.encrypt(b"payload-B", pub, suite=suite, associated_data=pqid_b)
+
+    def _rec(name, op, env, ad, extra=None):
+        r = {
+            "name": name, "op": op, "suite": suite,
+            "private_key_seed_hex": seed_hex,
+            "private_key_hex": priv_hex,
+            "envelope_hex": _hex(env),
+            "expected_ad_hex": _hex(ad),
+        }
+        if extra:
+            r.update(extra)
+        return r
+
+    records.append(_rec("hybrid_positive_a", "decrypt", env_a, pqid_a,
+                        {"expected_plaintext_hex": _hex(b"payload-A")}))
+    records.append(_rec("hybrid_positive_b", "decrypt", env_b, pqid_b,
+                        {"expected_plaintext_hex": _hex(b"payload-B")}))
+    records.append(_rec("hybrid_neg_a_with_b", "decrypt_should_fail", env_a, pqid_b,
+                        {"error_kind": "DECRYPT_FAILED"}))
+    records.append(_rec("hybrid_neg_flip_x25519_eph", "decrypt_should_fail",
+                        bytes(bytearray(env_a)[:pqcrypt.HEADER_BYTES + pqcrypt.MLKEM1024_CT_BYTES + 5]
+                              + bytes([env_a[pqcrypt.HEADER_BYTES + pqcrypt.MLKEM1024_CT_BYTES + 5] ^ 0x01])
+                              + bytearray(env_a)[pqcrypt.HEADER_BYTES + pqcrypt.MLKEM1024_CT_BYTES + 6:]),
+                        pqid_a, {"error_kind": "DECRYPT_FAILED"}))
+    _write(VECTORS_DIR / "hybrid_ad_binding.json", records)
+
+
+def make_hybrid_peek_header_vectors():
+    """Hybrid header parsing — kem_ct_len should report 1600."""
+    _reset_kat_drbg()
+    records = []
+    suite = pqcrypt.SUITE_HYBRID_X25519_MLKEM1024_AESGCM
+    _, pub = pqcrypt.generate_keypair_from_seed(_hybrid_seed(200), suite=suite)
+    env = pqcrypt.encrypt(b"x", pub, suite=suite, associated_data=b"", sender_counter=0)
+    records.append({
+        "name": "hybrid_ctr0_ad0",
+        "op": "peek_header",
+        "header_hex": _hex(env[:pqcrypt.HEADER_BYTES]),
+        "expected": {
+            "timestamp_ms": KAT_TS_MS,
+            "variant": 0x04,
+            "suite": suite,
+            "counter": 0,
+            "kem_ct_len": 1600,
+            "ad_len": 0,
+        },
+    })
+    _write(VECTORS_DIR / "hybrid_peek_header.json", records)
+
+
 def main():
     VECTORS_DIR.mkdir(parents=True, exist_ok=True)
-    # Freeze the clock once for the whole run so every header.timestamp_ms
-    # is KAT_TS_MS and the wire bytes are reproducible. Individual generator
-    # functions that need a different ts can override via set_now_ms_for_testing.
     pqcrypt.set_now_ms_for_testing(KAT_TS_MS)
     try:
         make_decrypt_vectors()
@@ -452,6 +556,10 @@ def main():
         make_ad_binding_vectors()
         make_commitment_vectors()
         make_min_timestamp_vectors()
+        # v1.2 hybrid (PQCK-00021)
+        make_hybrid_decrypt_vectors()
+        make_hybrid_ad_binding_vectors()
+        make_hybrid_peek_header_vectors()
     finally:
         pqcrypt.set_now_ms_for_testing(None)
     print(f"\nAll vectors written under {VECTORS_DIR}.")

@@ -57,7 +57,8 @@ func suiteOf(r Record) byte {
 
 func runDecrypt(r Record, shouldFail bool) bool {
 	seed := unhex(r.PrivateKeySeedHex)
-	if len(seed) != 64 {
+	// 64 bytes = ML-KEM-1024 (suites 0x01/0x02); 96 bytes = hybrid (suite 0x06).
+	if len(seed) != 64 && len(seed) != 96 {
 		return false
 	}
 	priv, _, err := pqcrypt.GenerateKeypairFromSeed(seed, suiteOf(r))

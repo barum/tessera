@@ -13,8 +13,10 @@ package pqcrypt
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ecdh"
 	"crypto/hmac"
 	"crypto/mlkem"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"hash"
@@ -32,8 +34,9 @@ import (
 const (
 	VariantPQCrypt = 0x04
 
-	SuiteMLKEM1024AESGCM = 0x01
-	SuiteMLKEM1024ChaCha = 0x02
+	SuiteMLKEM1024AESGCM                = 0x01
+	SuiteMLKEM1024ChaCha                = 0x02
+	SuiteHybridX25519MLKEM1024AESGCM    = 0x06
 
 	HeaderBytes = 16
 
@@ -42,6 +45,15 @@ const (
 	MLKem1024CTBytes = 1568
 	MLKem1024SSBytes = 32
 	MLKem1024SeedBytes = 64 // FIPS 203 (d || z)
+
+	X25519PKBytes = 32
+	X25519SKBytes = 32
+	X25519SSBytes = 32
+
+	HybridPKBytes   = MLKem1024PKBytes + X25519PKBytes  // 1600
+	HybridSKBytes   = MLKem1024SKBytes + X25519SKBytes  // 3200
+	HybridCTBytes   = MLKem1024CTBytes + X25519PKBytes  // 1600
+	HybridSeedBytes = MLKem1024SeedBytes + X25519SKBytes // 96
 
 	AEADNonceBytes = 12
 	AEADTagBytes   = 16
@@ -68,12 +80,27 @@ const (
 
 // KDF domain separators — must match python/pqcrypt.py and c/pqcrypt.c.
 var (
-	saltLabel     = []byte("pqcrypt v1 header")
-	infoAEADKey   = []byte("pqcrypt v1 aead k")
-	infoAEADNonce = []byte("pqcrypt v1 aead n")
-	infoCommitKey = []byte("pqcrypt v1 commit")
-	infoTimingPad = []byte("pqcrypt v1 timing pad")
+	saltLabel            = []byte("pqcrypt v1 header")
+	infoAEADKey          = []byte("pqcrypt v1 aead k")
+	infoAEADNonce        = []byte("pqcrypt v1 aead n")
+	infoCommitKey        = []byte("pqcrypt v1 commit")
+	infoTimingPad        = []byte("pqcrypt v1 timing pad")
+	hybridCombinerLabel  = []byte("pqcrypt v1 hybrid combiner")
 )
+
+func isHybrid(suite uint8) bool   { return suite == SuiteHybridX25519MLKEM1024AESGCM }
+func suiteAllowed(suite uint8) bool {
+	return suite == SuiteMLKEM1024AESGCM || suite == SuiteMLKEM1024ChaCha || isHybrid(suite)
+}
+func aeadIsAESGCM(suite uint8) bool {
+	return suite == SuiteMLKEM1024AESGCM || suite == SuiteHybridX25519MLKEM1024AESGCM
+}
+func kemCTSizeFor(suite uint8) int {
+	if isHybrid(suite) {
+		return HybridCTBytes
+	}
+	return MLKem1024CTBytes
+}
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -132,61 +159,106 @@ func nowMs() uint64 {
 // Key wrappers (opaque-ish)
 // ---------------------------------------------------------------------------
 
-// PublicKey wraps an ML-KEM-1024 encapsulation key (1568 bytes).
+// PublicKey wraps an ML-KEM-1024 encapsulation key (1568 bytes), plus an
+// optional X25519 public key when Suite == SuiteHybridX25519MLKEM1024AESGCM.
 type PublicKey struct {
 	pk    [MLKem1024PKBytes]byte
+	xPub  []byte // 32 bytes for hybrid; nil otherwise
 	Suite uint8
 }
 
 // PrivateKey wraps an ML-KEM-1024 decapsulation key (3168 bytes, FIPS 203 form)
-// alongside the 64-byte seed (d || z) that produced it. Either field is
-// sufficient to reconstruct the KEM state via Go's stdlib mlkem package.
+// alongside the seed (d || z) — 64 bytes for non-hybrid, 96 bytes for hybrid
+// (ML-KEM seed || 32-byte X25519 scalar).
 type PrivateKey struct {
-	seed  [MLKem1024SeedBytes]byte
-	dk    *mlkem.DecapsulationKey1024
-	Suite uint8
+	seed   []byte // 64 or 96 bytes
+	dk     *mlkem.DecapsulationKey1024
+	xPriv  *ecdh.PrivateKey // non-nil for hybrid
+	Suite  uint8
 }
 
-// PublicBytes returns a copy of the 1568-byte ML-KEM-1024 encapsulation key.
+// PublicBytes returns a copy of the ML-KEM-1024 encapsulation key
+// (1568 bytes for non-hybrid; 1600 bytes — ML-KEM || X25519 — for hybrid).
 func (pk *PublicKey) PublicBytes() []byte {
+	if isHybrid(pk.Suite) {
+		out := make([]byte, HybridPKBytes)
+		copy(out, pk.pk[:])
+		copy(out[MLKem1024PKBytes:], pk.xPub)
+		return out
+	}
 	out := make([]byte, MLKem1024PKBytes)
 	copy(out, pk.pk[:])
 	return out
 }
 
-// Seed returns a copy of the 64-byte ML-KEM-1024 seed (d || z) the keypair
-// was constructed from. Useful for KAT round-trips.
+// Seed returns a copy of the seed (64 B non-hybrid, 96 B hybrid).
 func (sk *PrivateKey) Seed() []byte {
-	out := make([]byte, MLKem1024SeedBytes)
-	copy(out, sk.seed[:])
+	out := make([]byte, len(sk.seed))
+	copy(out, sk.seed)
 	return out
 }
 
-// GenerateKeypair creates a fresh ML-KEM-1024 keypair under `suite`.
+// GenerateKeypair creates a fresh keypair under `suite`.
 func GenerateKeypair(suite uint8) (*PrivateKey, *PublicKey, error) {
-	if suite != SuiteMLKEM1024AESGCM && suite != SuiteMLKEM1024ChaCha {
+	if !suiteAllowed(suite) {
 		return nil, nil, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, suite)
 	}
 	dk, err := mlkem.GenerateKey1024()
 	if err != nil {
 		return nil, nil, fmt.Errorf("pqcrypt: mlkem keygen: %w", err)
 	}
-	seed := dk.Bytes() // 64-byte seed (d || z)
-	if len(seed) != MLKem1024SeedBytes {
-		return nil, nil, fmt.Errorf("pqcrypt: unexpected seed length %d", len(seed))
+	mlkemSeed := dk.Bytes()
+	if len(mlkemSeed) != MLKem1024SeedBytes {
+		return nil, nil, fmt.Errorf("pqcrypt: unexpected seed length %d", len(mlkemSeed))
 	}
 	priv := &PrivateKey{Suite: suite, dk: dk}
-	copy(priv.seed[:], seed)
 	pub := &PublicKey{Suite: suite}
 	copy(pub.pk[:], dk.EncapsulationKey().Bytes())
+
+	if isHybrid(suite) {
+		xPriv, err := ecdh.X25519().GenerateKey(rand.Reader)
+		if err != nil {
+			return nil, nil, fmt.Errorf("pqcrypt: x25519 keygen: %w", err)
+		}
+		priv.xPriv = xPriv
+		priv.seed = make([]byte, HybridSeedBytes)
+		copy(priv.seed[:MLKem1024SeedBytes], mlkemSeed)
+		copy(priv.seed[MLKem1024SeedBytes:], xPriv.Bytes())
+		pub.xPub = xPriv.PublicKey().Bytes()
+	} else {
+		priv.seed = make([]byte, MLKem1024SeedBytes)
+		copy(priv.seed, mlkemSeed)
+	}
 	return priv, pub, nil
 }
 
-// GenerateKeypairFromSeed reconstructs the keypair from a 64-byte
-// ML-KEM-1024 seed (d || z, FIPS 203). Used by KAT consumers.
+// GenerateKeypairFromSeed reconstructs the keypair from a seed.
+//
+// Non-hybrid suites: 64-byte ML-KEM-1024 seed (d || z, FIPS 203).
+// Hybrid suite 0x06: 96-byte seed (64-byte ML-KEM seed || 32-byte X25519 scalar).
 func GenerateKeypairFromSeed(seed []byte, suite uint8) (*PrivateKey, *PublicKey, error) {
-	if suite != SuiteMLKEM1024AESGCM && suite != SuiteMLKEM1024ChaCha {
+	if !suiteAllowed(suite) {
 		return nil, nil, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, suite)
+	}
+	if isHybrid(suite) {
+		if len(seed) != HybridSeedBytes {
+			return nil, nil, fmt.Errorf("%w: hybrid seed must be %d bytes", ErrBadKey, HybridSeedBytes)
+		}
+		mlkemSeed := seed[:MLKem1024SeedBytes]
+		xScalar := seed[MLKem1024SeedBytes:]
+		dk, err := mlkem.NewDecapsulationKey1024(mlkemSeed)
+		if err != nil {
+			return nil, nil, fmt.Errorf("pqcrypt: mlkem rebuild: %w", err)
+		}
+		xPriv, err := ecdh.X25519().NewPrivateKey(xScalar)
+		if err != nil {
+			return nil, nil, fmt.Errorf("pqcrypt: x25519 rebuild: %w", err)
+		}
+		priv := &PrivateKey{Suite: suite, dk: dk, xPriv: xPriv, seed: append([]byte(nil), seed...)}
+		pub := &PublicKey{Suite: suite}
+		copy(pub.pk[:], dk.EncapsulationKey().Bytes())
+		pub.xPub = xPriv.PublicKey().Bytes()
+		return priv, pub, nil
 	}
 	if len(seed) != MLKem1024SeedBytes {
 		return nil, nil, fmt.Errorf("%w: seed must be %d bytes", ErrBadKey, MLKem1024SeedBytes)
@@ -195,17 +267,31 @@ func GenerateKeypairFromSeed(seed []byte, suite uint8) (*PrivateKey, *PublicKey,
 	if err != nil {
 		return nil, nil, fmt.Errorf("pqcrypt: mlkem rebuild: %w", err)
 	}
-	priv := &PrivateKey{Suite: suite, dk: dk}
-	copy(priv.seed[:], seed)
+	priv := &PrivateKey{Suite: suite, dk: dk, seed: append([]byte(nil), seed...)}
 	pub := &PublicKey{Suite: suite}
 	copy(pub.pk[:], dk.EncapsulationKey().Bytes())
 	return priv, pub, nil
 }
 
-// PublicKeyFromBytes wraps an existing 1568-byte ML-KEM-1024 encapsulation key.
+// PublicKeyFromBytes wraps an existing encapsulation key. For non-hybrid
+// suites pk must be 1568 bytes; for hybrid (0x06), pk must be 1600 bytes
+// (ML-KEM-1024 pk || X25519 pk).
 func PublicKeyFromBytes(pk []byte, suite uint8) (*PublicKey, error) {
-	if suite != SuiteMLKEM1024AESGCM && suite != SuiteMLKEM1024ChaCha {
+	if !suiteAllowed(suite) {
 		return nil, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, suite)
+	}
+	if isHybrid(suite) {
+		if len(pk) != HybridPKBytes {
+			return nil, fmt.Errorf("%w: hybrid pk must be %d bytes", ErrBadKey, HybridPKBytes)
+		}
+		out := &PublicKey{Suite: suite}
+		copy(out.pk[:], pk[:MLKem1024PKBytes])
+		out.xPub = append([]byte(nil), pk[MLKem1024PKBytes:]...)
+		// Validate the X25519 point by attempting to construct it.
+		if _, err := ecdh.X25519().NewPublicKey(out.xPub); err != nil {
+			return nil, fmt.Errorf("%w: x25519 pub: %v", ErrBadKey, err)
+		}
+		return out, nil
 	}
 	if len(pk) != MLKem1024PKBytes {
 		return nil, fmt.Errorf("%w: pk must be %d bytes", ErrBadKey, MLKem1024PKBytes)
@@ -213,6 +299,85 @@ func PublicKeyFromBytes(pk []byte, suite uint8) (*PublicKey, error) {
 	out := &PublicKey{Suite: suite}
 	copy(out.pk[:], pk)
 	return out, nil
+}
+
+// ---------------------------------------------------------------------------
+// Hybrid KEM helpers (suite 0x06)
+// ---------------------------------------------------------------------------
+
+func hybridCombine(ssMLKEM, xSS, mlKemCT, xEphPK []byte) []byte {
+	msg := make([]byte, 0, len(hybridCombinerLabel)+len(ssMLKEM)+len(xSS)+len(mlKemCT)+len(xEphPK))
+	msg = append(msg, hybridCombinerLabel...)
+	msg = append(msg, ssMLKEM...)
+	msg = append(msg, xSS...)
+	msg = append(msg, mlKemCT...)
+	msg = append(msg, xEphPK...)
+	return shake256(msg, 32)
+}
+
+// suiteEncaps runs the suite-aware KEM Encaps. Returns (ssSession, kemCT).
+// For hybrid 0x06 the kemCT is mlKemCT || x25519EphemeralPK (1600 bytes).
+func suiteEncaps(suite uint8, pub *PublicKey) ([]byte, []byte, error) {
+	ek, err := mlkem.NewEncapsulationKey1024(pub.pk[:])
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", ErrBadKey, err)
+	}
+	ssMLKEM, mlKemCT := ek.Encapsulate()
+	if len(mlKemCT) != MLKem1024CTBytes || len(ssMLKEM) != MLKem1024SSBytes {
+		return nil, nil, errors.New("pqcrypt: ML-KEM produced unexpected sizes")
+	}
+	if !isHybrid(suite) {
+		return ssMLKEM, mlKemCT, nil
+	}
+	if pub.xPub == nil {
+		return nil, nil, fmt.Errorf("%w: hybrid pub missing X25519 half", ErrBadKey)
+	}
+	xRecipient, err := ecdh.X25519().NewPublicKey(pub.xPub)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: x25519 recipient: %v", ErrBadKey, err)
+	}
+	ephPriv, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("pqcrypt: x25519 ephemeral: %w", err)
+	}
+	xSS, err := ephPriv.ECDH(xRecipient)
+	if err != nil {
+		return nil, nil, fmt.Errorf("pqcrypt: x25519 ECDH: %w", err)
+	}
+	ephPub := ephPriv.PublicKey().Bytes()
+	ssSession := hybridCombine(ssMLKEM, xSS, mlKemCT, ephPub)
+	kemCT := make([]byte, 0, HybridCTBytes)
+	kemCT = append(kemCT, mlKemCT...)
+	kemCT = append(kemCT, ephPub...)
+	return ssSession, kemCT, nil
+}
+
+// suiteDecaps runs the suite-aware KEM Decaps. Returns ssSession.
+func suiteDecaps(suite uint8, priv *PrivateKey, kemCT []byte) ([]byte, error) {
+	if !isHybrid(suite) {
+		return priv.dk.Decapsulate(kemCT)
+	}
+	if len(kemCT) != HybridCTBytes {
+		return nil, fmt.Errorf("%w: hybrid kem_ct must be %d bytes", ErrInvalidLength, HybridCTBytes)
+	}
+	mlKemCT := kemCT[:MLKem1024CTBytes]
+	xEphPK := kemCT[MLKem1024CTBytes:]
+	ssMLKEM, err := priv.dk.Decapsulate(mlKemCT)
+	if err != nil {
+		return nil, err
+	}
+	if priv.xPriv == nil {
+		return nil, fmt.Errorf("%w: hybrid priv missing X25519 half", ErrBadKey)
+	}
+	xRemote, err := ecdh.X25519().NewPublicKey(xEphPK)
+	if err != nil {
+		return nil, fmt.Errorf("%w: x25519 eph: %v", ErrInvalidLength, err)
+	}
+	xSS, err := priv.xPriv.ECDH(xRemote)
+	if err != nil {
+		return nil, fmt.Errorf("pqcrypt: x25519 ECDH: %w", err)
+	}
+	return hybridCombine(ssMLKEM, xSS, mlKemCT, xEphPK), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -270,7 +435,7 @@ func PeekHeader(env []byte) (DecodedHeader, error) {
 	if h.Variant != VariantPQCrypt {
 		return h, fmt.Errorf("%w: 0x%02x", ErrUnknownVariant, h.Variant)
 	}
-	if h.Suite != SuiteMLKEM1024AESGCM && h.Suite != SuiteMLKEM1024ChaCha {
+	if !suiteAllowed(h.Suite) {
 		return h, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, h.Suite)
 	}
 	if h.KEMCTLen > MaxKEMCTLen {
@@ -305,9 +470,15 @@ func ValidateMinTimestamp(env []byte, minMs uint64) bool {
 }
 
 // EnvelopeSize returns the exact number of bytes Encrypt would write for the
-// given plaintext and AD lengths.
+// given plaintext and AD lengths under the default (non-hybrid) suite.
+// Use EnvelopeSizeForSuite for hybrid envelopes.
 func EnvelopeSize(ptLen, adLen int) int {
-	return HeaderBytes + MLKem1024CTBytes + adLen +
+	return EnvelopeSizeForSuite(SuiteMLKEM1024AESGCM, ptLen, adLen)
+}
+
+// EnvelopeSizeForSuite returns the exact envelope length for the given suite.
+func EnvelopeSizeForSuite(suite uint8, ptLen, adLen int) int {
+	return HeaderBytes + kemCTSizeFor(suite) + adLen +
 		AEADNonceBytes + ptLen + AEADTagBytes + CommitBytes
 }
 
@@ -406,18 +577,17 @@ func deriveSyntheticKeys(headerBytes []byte) *sessionKeys {
 // ---------------------------------------------------------------------------
 
 func newAEAD(suite uint8, key []byte) (cipher.AEAD, error) {
-	switch suite {
-	case SuiteMLKEM1024AESGCM:
+	if aeadIsAESGCM(suite) {
 		blk, err := aes.NewCipher(key)
 		if err != nil {
 			return nil, err
 		}
 		return cipher.NewGCMWithNonceSize(blk, AEADNonceBytes)
-	case SuiteMLKEM1024ChaCha:
-		return chacha20poly1305.New(key)
-	default:
-		return nil, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, suite)
 	}
+	if suite == SuiteMLKEM1024ChaCha {
+		return chacha20poly1305.New(key)
+	}
+	return nil, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, suite)
 }
 
 // ---------------------------------------------------------------------------
@@ -446,11 +616,14 @@ func utcCommit(kCommit, header, kemCT, ad, aeadCT []byte) []byte {
 //   - tsMs: timestamp; pass 0 to use wall clock
 //   - counter: sender counter (0..0xFFFF)
 func Encrypt(pt []byte, pub *PublicKey, suite uint8, ad []byte, tsMs uint64, counter uint16) ([]byte, error) {
-	if suite != SuiteMLKEM1024AESGCM && suite != SuiteMLKEM1024ChaCha {
+	if !suiteAllowed(suite) {
 		return nil, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, suite)
 	}
 	if pub == nil {
 		return nil, ErrBadKey
+	}
+	if pub.Suite != suite {
+		return nil, fmt.Errorf("%w: recipient key suite mismatch", ErrBadKey)
 	}
 	if len(ad) > MaxADLen {
 		return nil, fmt.Errorf("%w: ad too large", ErrInvalidLength)
@@ -465,28 +638,24 @@ func Encrypt(pt []byte, pub *PublicKey, suite uint8, ad []byte, tsMs uint64, cou
 		return nil, fmt.Errorf("%w: ts overflow", ErrInvalidLength)
 	}
 
-	// 1. ML-KEM-1024 Encaps.
-	ek, err := mlkem.NewEncapsulationKey1024(pub.pk[:])
+	// 1. Suite-aware KEM Encaps.
+	ssSession, kemCT, err := suiteEncaps(suite, pub)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrBadKey, err)
-	}
-	ssMLKEM, kemCT := ek.Encapsulate()
-	if len(kemCT) != MLKem1024CTBytes || len(ssMLKEM) != MLKem1024SSBytes {
-		return nil, errors.New("pqcrypt: ML-KEM produced unexpected sizes")
+		return nil, err
 	}
 
 	// 2. Pack header.
 	header := make([]byte, HeaderBytes)
-	packHeader(header, tsMs, VariantPQCrypt, suite, counter, MLKem1024CTBytes, uint32(len(ad)))
+	packHeader(header, tsMs, VariantPQCrypt, suite, counter, uint16(len(kemCT)), uint32(len(ad)))
 
 	// 3. Derive K_aead, NONCE, K_commit.
-	sk, err := deriveSessionKeys(header, ssMLKEM)
+	sk, err := deriveSessionKeys(header, ssSession)
 	if err != nil {
 		return nil, err
 	}
 
 	// 4. AEAD AAD = header || kem_ct || ad.
-	aad := make([]byte, 0, HeaderBytes+MLKem1024CTBytes+len(ad))
+	aad := make([]byte, 0, HeaderBytes+len(kemCT)+len(ad))
 	aad = append(aad, header...)
 	aad = append(aad, kemCT...)
 	aad = append(aad, ad...)
@@ -507,7 +676,7 @@ func Encrypt(pt []byte, pub *PublicKey, suite uint8, ad []byte, tsMs uint64, cou
 	commit := utcCommit(sk.kCommit, header, kemCT, ad, aeadCT)
 
 	// 6. Concatenate the wire form.
-	envSize := EnvelopeSize(len(pt), len(ad))
+	envSize := EnvelopeSizeForSuite(suite, len(pt), len(ad))
 	out := make([]byte, 0, envSize)
 	out = append(out, header...)
 	out = append(out, kemCT...)
@@ -546,6 +715,9 @@ func Decrypt(env []byte, priv *PrivateKey, expectedAD []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if priv.Suite != h.Suite {
+		return nil, fmt.Errorf("%w: private key suite mismatch", ErrBadKey)
+	}
 
 	need := HeaderBytes + int(h.KEMCTLen) + int(h.ADLen) +
 		AEADNonceBytes + AEADTagBytes + CommitBytes
@@ -568,14 +740,15 @@ func Decrypt(env []byte, priv *PrivateKey, expectedAD []byte) ([]byte, error) {
 	p += AEADTagBytes
 	commitWire := env[p : p+CommitBytes]
 
-	// ML-KEM Decaps. Implicit-reject on bad ct -> pseudorandom ss.
-	ssMLKEM, decapsErr := priv.dk.Decapsulate(kemCT)
+	// Suite-aware KEM Decaps. ML-KEM half implicit-rejects on bad ct;
+	// hybrid combiner is verified downstream by the AEAD + commit checks.
+	ssSession, decapsErr := suiteDecaps(h.Suite, priv, kemCT)
 	ssOK := decapsErr == nil
 	if !ssOK {
-		ssMLKEM = make([]byte, MLKem1024SSBytes)
+		ssSession = make([]byte, MLKem1024SSBytes)
 	}
 
-	sk, kdfErr := deriveSessionKeys(headerBytes, ssMLKEM)
+	sk, kdfErr := deriveSessionKeys(headerBytes, ssSession)
 	kdfOK := kdfErr == nil
 
 	nonceMatch := hmac.Equal(nonceWire, sk.nonce)
@@ -634,7 +807,7 @@ type SenderContext struct {
 
 // NewSenderContext returns a fresh SenderContext for the given suite.
 func NewSenderContext(suite uint8) (*SenderContext, error) {
-	if suite != SuiteMLKEM1024AESGCM && suite != SuiteMLKEM1024ChaCha {
+	if !suiteAllowed(suite) {
 		return nil, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, suite)
 	}
 	return &SenderContext{Suite: suite}, nil

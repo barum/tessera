@@ -36,12 +36,20 @@ type HmacSha3_256 = Hmac<Sha3_256>;
 pub const VARIANT_PQCRYPT: u8 = 0x04;
 pub const SUITE_MLKEM1024_AESGCM: u8 = 0x01;
 pub const SUITE_MLKEM1024_CHACHA: u8 = 0x02;
+pub const SUITE_HYBRID_X25519_MLKEM1024_AESGCM: u8 = 0x06;
 pub const HEADER_BYTES: usize = 16;
 pub const MLKEM1024_PK_BYTES: usize = 1568;
 pub const MLKEM1024_SK_BYTES: usize = 3168;
 pub const MLKEM1024_CT_BYTES: usize = 1568;
 pub const MLKEM1024_SS_BYTES: usize = 32;
 pub const MLKEM1024_SEED_BYTES: usize = 64;
+pub const X25519_PK_BYTES: usize = 32;
+pub const X25519_SK_BYTES: usize = 32;
+pub const X25519_SS_BYTES: usize = 32;
+pub const HYBRID_PK_BYTES: usize = MLKEM1024_PK_BYTES + X25519_PK_BYTES;       // 1600
+pub const HYBRID_SK_BYTES: usize = MLKEM1024_SK_BYTES + X25519_SK_BYTES;       // 3200
+pub const HYBRID_CT_BYTES: usize = MLKEM1024_CT_BYTES + X25519_PK_BYTES;       // 1600
+pub const HYBRID_SEED_BYTES: usize = MLKEM1024_SEED_BYTES + X25519_SK_BYTES;   // 96
 pub const AEAD_NONCE_BYTES: usize = 12;
 pub const AEAD_TAG_BYTES: usize = 16;
 pub const COMMIT_BYTES: usize = 32;
@@ -54,6 +62,15 @@ const INFO_AEAD_KEY: &[u8] = b"pqcrypt v1 aead k";
 const INFO_AEAD_NONCE: &[u8] = b"pqcrypt v1 aead n";
 const INFO_COMMIT_KEY: &[u8] = b"pqcrypt v1 commit";
 const INFO_TIMING_PAD: &[u8] = b"pqcrypt v1 timing pad";
+const HYBRID_COMBINER_LABEL: &[u8] = b"pqcrypt v1 hybrid combiner";
+
+#[inline]
+fn is_hybrid(suite: u8) -> bool { suite == SUITE_HYBRID_X25519_MLKEM1024_AESGCM }
+
+#[inline]
+fn kem_ct_size_for(suite: u8) -> usize {
+    if is_hybrid(suite) { HYBRID_CT_BYTES } else { MLKEM1024_CT_BYTES }
+}
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -86,11 +103,19 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 fn check_suite(suite: u8) -> Result<(), Error> {
-    if suite == SUITE_MLKEM1024_AESGCM || suite == SUITE_MLKEM1024_CHACHA {
+    if suite == SUITE_MLKEM1024_AESGCM
+        || suite == SUITE_MLKEM1024_CHACHA
+        || suite == SUITE_HYBRID_X25519_MLKEM1024_AESGCM
+    {
         Ok(())
     } else {
         Err(Error::UnknownSuite(suite))
     }
+}
+
+#[inline]
+fn aead_is_aesgcm(suite: u8) -> bool {
+    suite == SUITE_MLKEM1024_AESGCM || suite == SUITE_HYBRID_X25519_MLKEM1024_AESGCM
 }
 
 // ---------------------------------------------------------------------------
@@ -116,40 +141,61 @@ fn now_ms() -> u64 {
 
 pub struct PublicKey {
     inner: EncapsulationKey1024,
+    /// X25519 public key, present iff `suite == SUITE_HYBRID_*`.
+    x_pub: Option<[u8; X25519_PK_BYTES]>,
     pub suite: u8,
 }
 
 pub struct PrivateKey {
     inner: DecapsulationKey1024,
-    seed: [u8; MLKEM1024_SEED_BYTES],
+    seed: Vec<u8>,
+    /// X25519 scalar, present iff `suite == SUITE_HYBRID_*`.
+    x_priv: Option<[u8; X25519_SK_BYTES]>,
     pub suite: u8,
 }
 
 impl PublicKey {
     pub fn to_bytes(&self) -> Vec<u8> {
-        self.inner.to_bytes().to_vec()
+        let mut out = self.inner.to_bytes().to_vec();
+        if let Some(xp) = self.x_pub { out.extend_from_slice(&xp); }
+        out
     }
     pub fn from_bytes(bytes: &[u8], suite: u8) -> Result<Self, Error> {
         check_suite(suite)?;
-        if bytes.len() != MLKEM1024_PK_BYTES {
-            return Err(Error::BadKey("ek must be 1568 bytes"));
+        if is_hybrid(suite) {
+            if bytes.len() != HYBRID_PK_BYTES {
+                return Err(Error::BadKey("hybrid ek must be 1600 bytes"));
+            }
+            let arr = Array::<u8, _>::try_from(&bytes[..MLKEM1024_PK_BYTES])
+                .map_err(|_| Error::BadKey("ek size"))?;
+            let inner = EncapsulationKey1024::new(&arr)
+                .map_err(|_| Error::BadKey("ek rebuild"))?;
+            let mut xp = [0u8; X25519_PK_BYTES];
+            xp.copy_from_slice(&bytes[MLKEM1024_PK_BYTES..]);
+            Ok(Self { inner, x_pub: Some(xp), suite })
+        } else {
+            if bytes.len() != MLKEM1024_PK_BYTES {
+                return Err(Error::BadKey("ek must be 1568 bytes"));
+            }
+            let arr = Array::<u8, _>::try_from(bytes)
+                .map_err(|_| Error::BadKey("ek size"))?;
+            let inner = EncapsulationKey1024::new(&arr)
+                .map_err(|_| Error::BadKey("ek rebuild"))?;
+            Ok(Self { inner, x_pub: None, suite })
         }
-        let arr = Array::<u8, _>::try_from(bytes)
-            .map_err(|_| Error::BadKey("ek size"))?;
-        let inner = EncapsulationKey1024::new(&arr)
-            .map_err(|_| Error::BadKey("ek rebuild"))?;
-        Ok(Self { inner, suite })
     }
 }
 
 impl PrivateKey {
-    pub fn seed(&self) -> [u8; MLKEM1024_SEED_BYTES] { self.seed }
+    /// Returns the seed bytes (64 for non-hybrid, 96 for hybrid).
+    pub fn seed(&self) -> &[u8] { &self.seed }
 }
 
 /// Generate a fresh keypair via OS CSPRNG.
 pub fn generate_keypair(suite: u8) -> Result<(PrivateKey, PublicKey), Error> {
     check_suite(suite)?;
-    let mut seed = [0u8; MLKEM1024_SEED_BYTES];
+    let seed_len = if is_hybrid(suite) { HYBRID_SEED_BYTES } else { MLKEM1024_SEED_BYTES };
+    let mut seed = vec![0u8; seed_len];
     fill_random(&mut seed)?;
     generate_keypair_from_seed(&seed, suite)
 }
@@ -163,21 +209,120 @@ fn fill_random(buf: &mut [u8]) -> Result<(), Error> {
     Ok(())
 }
 
-/// Deterministic keypair from a 64-byte seed (d || z, FIPS 203).
+/// Deterministic keypair from a seed.
+///
+/// Non-hybrid suites: 64-byte FIPS 203 seed (d || z).
+/// Hybrid suite 0x06: 96-byte seed (64-byte ML-KEM seed || 32-byte X25519 scalar).
 pub fn generate_keypair_from_seed(seed: &[u8], suite: u8) -> Result<(PrivateKey, PublicKey), Error> {
     check_suite(suite)?;
-    if seed.len() != MLKEM1024_SEED_BYTES {
-        return Err(Error::BadKey("seed must be 64 bytes"));
+    if is_hybrid(suite) {
+        if seed.len() != HYBRID_SEED_BYTES {
+            return Err(Error::BadKey("hybrid seed must be 96 bytes (64 ML-KEM || 32 X25519)"));
+        }
+        let mlkem_seed = &seed[..MLKEM1024_SEED_BYTES];
+        let x_scalar: [u8; X25519_SK_BYTES] = seed[MLKEM1024_SEED_BYTES..].try_into()
+            .map_err(|_| Error::BadKey("x25519 scalar size"))?;
+        let seed_arr = Array::<u8, _>::try_from(mlkem_seed)
+            .map_err(|_| Error::BadKey("ml-kem seed size"))?;
+        let (dk, ek) = MlKem1024::from_seed(&seed_arr);
+        // X25519 derives the public key from the scalar (with RFC 7748 clamping
+        // applied by x25519_dalek internally on use).
+        let x_priv = x25519_dalek::StaticSecret::from(x_scalar);
+        let x_pub_pt = x25519_dalek::PublicKey::from(&x_priv);
+        let x_pub_bytes = x_pub_pt.to_bytes();
+        Ok((
+            PrivateKey { inner: dk, seed: seed.to_vec(), x_priv: Some(x_scalar), suite },
+            PublicKey  { inner: ek, x_pub: Some(x_pub_bytes), suite },
+        ))
+    } else {
+        if seed.len() != MLKEM1024_SEED_BYTES {
+            return Err(Error::BadKey("seed must be 64 bytes"));
+        }
+        let seed_arr = Array::<u8, _>::try_from(seed)
+            .map_err(|_| Error::BadKey("seed size"))?;
+        let (dk, ek) = MlKem1024::from_seed(&seed_arr);
+        Ok((
+            PrivateKey { inner: dk, seed: seed.to_vec(), x_priv: None, suite },
+            PublicKey  { inner: ek, x_pub: None, suite },
+        ))
     }
-    let seed_arr = Array::<u8, _>::try_from(seed)
-        .map_err(|_| Error::BadKey("seed size"))?;
-    let (dk, ek) = MlKem1024::from_seed(&seed_arr);
-    let mut sc = [0u8; MLKEM1024_SEED_BYTES];
-    sc.copy_from_slice(seed);
-    Ok((
-        PrivateKey { inner: dk, seed: sc, suite },
-        PublicKey  { inner: ek, suite },
-    ))
+}
+
+// ---------------------------------------------------------------------------
+// Hybrid KEM helpers (suite 0x06)
+// ---------------------------------------------------------------------------
+
+fn hybrid_combine(ss_mlkem: &[u8], x_ss: &[u8], ml_kem_ct: &[u8], x_eph_pk: &[u8]) -> Vec<u8> {
+    let mut msg = Vec::with_capacity(
+        HYBRID_COMBINER_LABEL.len() + ss_mlkem.len() + x_ss.len()
+            + ml_kem_ct.len() + x_eph_pk.len()
+    );
+    msg.extend_from_slice(HYBRID_COMBINER_LABEL);
+    msg.extend_from_slice(ss_mlkem);
+    msg.extend_from_slice(x_ss);
+    msg.extend_from_slice(ml_kem_ct);
+    msg.extend_from_slice(x_eph_pk);
+    shake256(&msg, 32)
+}
+
+/// Suite-aware KEM Encaps. Returns `(ss_session_32, kem_ct)`. For hybrid,
+/// `kem_ct = ml_kem_ct || x25519_ephemeral_pk` (1600 bytes).
+fn suite_encaps(suite: u8, recipient_pub: &PublicKey) -> Result<(Vec<u8>, Vec<u8>), Error> {
+    // ML-KEM Encaps with fresh 32 bytes from the OS CSPRNG.
+    let mut m = [0u8; 32];
+    fill_random(&mut m)?;
+    let m_arr = Array::<u8, _>::try_from(&m[..])
+        .map_err(|_| Error::Internal("encaps randomness size"))?;
+    let (ct, ss) = recipient_pub.inner.encapsulate_deterministic(&m_arr);
+    let ml_kem_ct: Vec<u8> = ct.to_vec();
+    let ss_mlkem: Vec<u8> = ss.to_vec();
+    if ml_kem_ct.len() != MLKEM1024_CT_BYTES || ss_mlkem.len() != MLKEM1024_SS_BYTES {
+        return Err(Error::Internal("ML-KEM sizes"));
+    }
+    if !is_hybrid(suite) {
+        return Ok((ss_mlkem, ml_kem_ct));
+    }
+    let x_recipient = recipient_pub.x_pub
+        .ok_or(Error::BadKey("hybrid pub missing X25519 half"))?;
+    // Fresh ephemeral X25519 keypair via OS CSPRNG.
+    let mut eph_scalar = [0u8; X25519_SK_BYTES];
+    fill_random(&mut eph_scalar)?;
+    let eph_priv = x25519_dalek::StaticSecret::from(eph_scalar);
+    let eph_pub = x25519_dalek::PublicKey::from(&eph_priv);
+    let eph_pub_bytes = eph_pub.to_bytes();
+    let x_recipient_pt = x25519_dalek::PublicKey::from(x_recipient);
+    let x_ss = eph_priv.diffie_hellman(&x_recipient_pt);
+    let ss_session = hybrid_combine(&ss_mlkem, x_ss.as_bytes(), &ml_kem_ct, &eph_pub_bytes);
+
+    let mut kem_ct = Vec::with_capacity(HYBRID_CT_BYTES);
+    kem_ct.extend_from_slice(&ml_kem_ct);
+    kem_ct.extend_from_slice(&eph_pub_bytes);
+    Ok((ss_session, kem_ct))
+}
+
+/// Suite-aware KEM Decaps. Returns the 32-byte session shared secret.
+fn suite_decaps(suite: u8, priv_key: &PrivateKey, kem_ct: &[u8]) -> Result<Vec<u8>, Error> {
+    if !is_hybrid(suite) {
+        let ct_arr = Array::<u8, _>::try_from(kem_ct)
+            .map_err(|_| Error::InvalidLength("kem_ct size"))?;
+        let ss = priv_key.inner.decapsulate(&ct_arr);
+        return Ok(ss.to_vec());
+    }
+    if kem_ct.len() != HYBRID_CT_BYTES {
+        return Err(Error::InvalidLength("hybrid kem_ct must be 1600 bytes"));
+    }
+    let ml_kem_ct = &kem_ct[..MLKEM1024_CT_BYTES];
+    let x_eph_pk_bytes: [u8; X25519_PK_BYTES] = kem_ct[MLKEM1024_CT_BYTES..]
+        .try_into().map_err(|_| Error::InvalidLength("x eph pk size"))?;
+    let ct_arr = Array::<u8, _>::try_from(ml_kem_ct)
+        .map_err(|_| Error::InvalidLength("ml-kem ct size"))?;
+    let ss_mlkem = priv_key.inner.decapsulate(&ct_arr);
+    let x_scalar = priv_key.x_priv
+        .ok_or(Error::BadKey("hybrid priv missing X25519 half"))?;
+    let x_priv_pt = x25519_dalek::StaticSecret::from(x_scalar);
+    let x_eph_pub_pt = x25519_dalek::PublicKey::from(x_eph_pk_bytes);
+    let x_ss = x_priv_pt.diffie_hellman(&x_eph_pub_pt);
+    Ok(hybrid_combine(&ss_mlkem.to_vec(), x_ss.as_bytes(), ml_kem_ct, &x_eph_pk_bytes))
 }
 
 // ---------------------------------------------------------------------------
@@ -226,9 +371,7 @@ pub fn peek_header(env: &[u8]) -> Result<DecodedHeader, Error> {
     }
     let h = unpack_header(&env[..HEADER_BYTES]);
     if h.variant != VARIANT_PQCRYPT { return Err(Error::UnknownVariant(h.variant)); }
-    if h.suite != SUITE_MLKEM1024_AESGCM && h.suite != SUITE_MLKEM1024_CHACHA {
-        return Err(Error::UnknownSuite(h.suite));
-    }
+    check_suite(h.suite)?;
     if h.kem_ct_len as usize > MAX_KEM_CT_LEN { return Err(Error::InvalidLength("kem_ct_len")); }
     if h.ad_len as usize > MAX_AD_LEN { return Err(Error::InvalidLength("ad_len")); }
     Ok(h)
@@ -247,7 +390,11 @@ pub fn validate_min_timestamp(env: &[u8], min_ms: u64) -> bool {
 }
 
 pub fn envelope_size(pt_len: usize, ad_len: usize) -> usize {
-    HEADER_BYTES + MLKEM1024_CT_BYTES + ad_len + AEAD_NONCE_BYTES
+    envelope_size_for_suite(SUITE_MLKEM1024_AESGCM, pt_len, ad_len)
+}
+
+pub fn envelope_size_for_suite(suite: u8, pt_len: usize, ad_len: usize) -> usize {
+    HEADER_BYTES + kem_ct_size_for(suite) + ad_len + AEAD_NONCE_BYTES
         + pt_len + AEAD_TAG_BYTES + COMMIT_BYTES
 }
 
@@ -326,37 +473,33 @@ fn derive_synthetic_keys(header_bytes: &[u8]) -> SessionKeys {
 
 fn aead_encrypt(suite: u8, key: &[u8], nonce: &[u8], pt: &[u8], aad: &[u8]) -> Result<Vec<u8>, Error> {
     let payload = Payload { msg: pt, aad };
-    match suite {
-        SUITE_MLKEM1024_AESGCM => {
-            let k = AesKey::<Aes256Gcm>::from_slice(key);
-            Aes256Gcm::new(k).encrypt(nonce.into(), payload)
-                .map_err(|_| Error::Internal("AES-GCM encrypt"))
-        }
-        SUITE_MLKEM1024_CHACHA => {
-            ChaCha20Poly1305::new_from_slice(key)
-                .map_err(|_| Error::Internal("ChaCha key"))?
-                .encrypt(nonce.into(), payload)
-                .map_err(|_| Error::Internal("ChaCha encrypt"))
-        }
-        _ => Err(Error::UnknownSuite(suite)),
+    if aead_is_aesgcm(suite) {
+        let k = AesKey::<Aes256Gcm>::from_slice(key);
+        Aes256Gcm::new(k).encrypt(nonce.into(), payload)
+            .map_err(|_| Error::Internal("AES-GCM encrypt"))
+    } else if suite == SUITE_MLKEM1024_CHACHA {
+        ChaCha20Poly1305::new_from_slice(key)
+            .map_err(|_| Error::Internal("ChaCha key"))?
+            .encrypt(nonce.into(), payload)
+            .map_err(|_| Error::Internal("ChaCha encrypt"))
+    } else {
+        Err(Error::UnknownSuite(suite))
     }
 }
 
 fn aead_decrypt(suite: u8, key: &[u8], nonce: &[u8], ct_with_tag: &[u8], aad: &[u8]) -> Result<Vec<u8>, Error> {
     let payload = Payload { msg: ct_with_tag, aad };
-    match suite {
-        SUITE_MLKEM1024_AESGCM => {
-            let k = AesKey::<Aes256Gcm>::from_slice(key);
-            Aes256Gcm::new(k).decrypt(nonce.into(), payload)
-                .map_err(|_| Error::DecryptFailed)
-        }
-        SUITE_MLKEM1024_CHACHA => {
-            ChaCha20Poly1305::new_from_slice(key)
-                .map_err(|_| Error::Internal("ChaCha key"))?
-                .decrypt(nonce.into(), payload)
-                .map_err(|_| Error::DecryptFailed)
-        }
-        _ => Err(Error::UnknownSuite(suite)),
+    if aead_is_aesgcm(suite) {
+        let k = AesKey::<Aes256Gcm>::from_slice(key);
+        Aes256Gcm::new(k).decrypt(nonce.into(), payload)
+            .map_err(|_| Error::DecryptFailed)
+    } else if suite == SUITE_MLKEM1024_CHACHA {
+        ChaCha20Poly1305::new_from_slice(key)
+            .map_err(|_| Error::Internal("ChaCha key"))?
+            .decrypt(nonce.into(), payload)
+            .map_err(|_| Error::DecryptFailed)
+    } else {
+        Err(Error::UnknownSuite(suite))
     }
 }
 
@@ -399,30 +542,21 @@ fn ct_eq(a: &[u8], b: &[u8]) -> bool {
 pub fn encrypt(pt: &[u8], recipient_pub: &PublicKey, suite: u8, ad: &[u8],
                ts_ms: Option<u64>, counter: u16) -> Result<Vec<u8>, Error> {
     check_suite(suite)?;
+    if recipient_pub.suite != suite {
+        return Err(Error::BadKey("recipient key suite mismatch"));
+    }
     if ad.len() > MAX_AD_LEN { return Err(Error::InvalidLength("ad too large")); }
     if pt.len() as u64 > MAX_PLAINTEXT { return Err(Error::InvalidLength("pt too large")); }
     let ts_ms = ts_ms.unwrap_or_else(now_ms);
     if ts_ms >= (1u64 << 48) { return Err(Error::InvalidLength("ts overflow")); }
 
-    // ML-KEM Encaps with fresh 32 bytes from the OS CSPRNG. We use the
-    // deterministic API and supply our own randomness so the OS CSPRNG is
-    // the only source — matches the umbrella security invariant.
-    let mut m = [0u8; 32];
-    fill_random(&mut m)?;
-    let m_arr = Array::<u8, _>::try_from(&m[..])
-        .map_err(|_| Error::Internal("encaps randomness size"))?;
-    let (ct, ss) = recipient_pub.inner.encapsulate_deterministic(&m_arr);
-    let kem_ct: Vec<u8> = ct.to_vec();
-    let ss_mlkem: Vec<u8> = ss.to_vec();
-    if kem_ct.len() != MLKEM1024_CT_BYTES || ss_mlkem.len() != MLKEM1024_SS_BYTES {
-        return Err(Error::Internal("ML-KEM sizes"));
-    }
+    let (ss_session, kem_ct) = suite_encaps(suite, recipient_pub)?;
 
     let mut header = [0u8; HEADER_BYTES];
     pack_header(&mut header, ts_ms, VARIANT_PQCRYPT, suite, counter,
-                MLKEM1024_CT_BYTES as u16, ad.len() as u32);
+                kem_ct.len() as u16, ad.len() as u32);
 
-    let sk = derive_session_keys(&header, &ss_mlkem)?;
+    let sk = derive_session_keys(&header, &ss_session)?;
 
     let mut aad = Vec::with_capacity(HEADER_BYTES + MLKEM1024_CT_BYTES + ad.len());
     aad.extend_from_slice(&header);
@@ -438,7 +572,7 @@ pub fn encrypt(pt: &[u8], recipient_pub: &PublicKey, suite: u8, ad: &[u8],
 
     let commit = utc_commit(&sk.k_commit, &header, &kem_ct, ad, aead_ct);
 
-    let mut out = Vec::with_capacity(envelope_size(pt.len(), ad.len()));
+    let mut out = Vec::with_capacity(envelope_size_for_suite(suite, pt.len(), ad.len()));
     out.extend_from_slice(&header);
     out.extend_from_slice(&kem_ct);
     out.extend_from_slice(ad);
@@ -470,17 +604,22 @@ pub fn decrypt(env: &[u8], priv_key: &PrivateKey, expected_ad: &[u8]) -> Result<
     let aead_tag = &env[p..p + AEAD_TAG_BYTES]; p += AEAD_TAG_BYTES;
     let commit_wire = &env[p..p + COMMIT_BYTES];
 
-    // ML-KEM Decaps. ml-kem 0.3 returns Array<u8, U32> on the implicit-reject
-    // path too (FO transform). We accept any error from decapsulate() as a
-    // structural problem and surface DecryptFailed instead.
-    let ct_arr = Array::<u8, _>::try_from(kem_ct)
-        .map_err(|_| Error::InvalidLength("kem_ct size"))?;
-    // ML-KEM 0.3 Decaps returns SharedKey directly; FO transform implicit-
-    // rejects bad ct by producing a pseudorandom ss. AEAD verify catches it.
-    let ss = priv_key.inner.decapsulate(&ct_arr);
-    let ss_mlkem: Vec<u8> = ss.to_vec();
+    // Suite-aware KEM Decaps. For non-hybrid suites the FO transform implicit-
+    // rejects bad ML-KEM ct by producing a pseudorandom ss; the AEAD verify
+    // catches it. For hybrid 0x06, ml-kem half goes through the same FO path
+    // and the X25519 half can produce any 32-byte secret (small-subgroup /
+    // identity points yield zero — still authenticated by the combiner under
+    // SHAKE-256).
+    if priv_key.suite != h.suite {
+        return Err(Error::BadKey("private key suite mismatch"));
+    }
+    let ss_session = match suite_decaps(h.suite, priv_key, kem_ct) {
+        Ok(v) => v,
+        Err(Error::InvalidLength(_)) => return Err(Error::DecryptFailed),
+        Err(e) => return Err(e),
+    };
 
-    let sk = derive_session_keys(header_bytes, &ss_mlkem)?;
+    let sk = derive_session_keys(header_bytes, &ss_session)?;
 
     let nonce_match = ct_eq(nonce_wire, &sk.nonce);
     let ad_match = if ad.len() == expected_ad.len() {

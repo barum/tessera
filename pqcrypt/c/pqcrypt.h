@@ -48,6 +48,8 @@ extern "C" {
 #define PQCRYPT_VARIANT                   0x04
 #define PQCRYPT_SUITE_MLKEM1024_AESGCM    0x01
 #define PQCRYPT_SUITE_MLKEM1024_CHACHA    0x02
+/* Suite 0x03 (AEGIS-128L) reserved-future (PQCK-00017, deferred to v1.2+). */
+#define PQCRYPT_SUITE_HYBRID_X25519_MLKEM1024_AESGCM 0x06  /* v1.2 hybrid */
 
 /* Header layout offsets. */
 #define PQCRYPT_TS_OFFSET                 0
@@ -67,6 +69,17 @@ extern "C" {
 #define PQCRYPT_MLKEM1024_SK_BYTES        3168
 #define PQCRYPT_MLKEM1024_CT_BYTES        1568
 #define PQCRYPT_MLKEM1024_SS_BYTES        32
+
+/* X25519 sizes (RFC 7748). */
+#define PQCRYPT_X25519_PK_BYTES           32
+#define PQCRYPT_X25519_SK_BYTES           32
+#define PQCRYPT_X25519_SS_BYTES           32
+
+/* Hybrid (suite 0x06) sizes: pk = ML-KEM pk || X25519 pk; sk = ML-KEM sk
+ * || X25519 sk; KEM ciphertext = ML-KEM ct || X25519 ephemeral pk. */
+#define PQCRYPT_HYBRID_PK_BYTES           (PQCRYPT_MLKEM1024_PK_BYTES + PQCRYPT_X25519_PK_BYTES)
+#define PQCRYPT_HYBRID_SK_BYTES           (PQCRYPT_MLKEM1024_SK_BYTES + PQCRYPT_X25519_SK_BYTES)
+#define PQCRYPT_HYBRID_CT_BYTES           (PQCRYPT_MLKEM1024_CT_BYTES + PQCRYPT_X25519_PK_BYTES)
 
 /* AEAD field sizes. */
 #define PQCRYPT_AEAD_NONCE_BYTES          12
@@ -114,6 +127,13 @@ typedef struct {
     uint8_t suite;
     uint8_t sk[PQCRYPT_MLKEM1024_SK_BYTES];
 } pqcrypt_priv_t;
+
+/* Note: pqcrypt_pub_t and pqcrypt_priv_t hold non-hybrid (suite 0x01/0x02)
+ * keys only. The hybrid suite 0x06 keys (1600 B pk, 3200 B sk) require a
+ * larger struct and are not exposed by the v1.2 C ABI — full hybrid C
+ * support lands in v1.3. v1.2 C decoders accept hybrid envelopes only
+ * insofar as `pqcrypt_peek_header()` reports the suite byte; subsequent
+ * decrypt() returns PQCRYPT_E_UNKNOWN_SUITE. */
 
 /* ----- Decoded header -----
  *

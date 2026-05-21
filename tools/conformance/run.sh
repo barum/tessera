@@ -114,26 +114,46 @@ echo
 
 overall_fail=0
 PQCRYPT_VEC_DIR="$ROOT/pqcrypt/conformance/vectors"
+
+# Languages with hybrid (suite 0x06) support. Vectors matching hybrid_*.json
+# are only fed to these languages; others would FAIL with UNKNOWN_SUITE.
+# PQCK-00021 shipped hybrid in Python. PQCK-00028 added Rust (x25519-dalek
+# 2 + ml-kem 0.3). C/Go/TypeScript/Java/CPython ext follow in subsequent v1.3 PRs.
+hybrid_supported() {
+    case "$1" in
+        python) return 0 ;;
+        rust)   return 0 ;;
+        go)     return 0 ;;
+        *)      return 1 ;;
+    esac
+}
+
 for lang in $LANGS; do
     cmd=$(runner_cmd "$lang")
     pqcrypt_cmd=$(pqcrypt_runner_cmd "$lang" 2>/dev/null || echo "")
     pass=0
     fail=0
     for vdir in $VECTOR_DIRS; do
-        # Choose which runner to use for this vector dir.
         if [ "$vdir" = "$PQCRYPT_VEC_DIR" ] && [ -n "$pqcrypt_cmd" ]; then
             this_cmd="$pqcrypt_cmd"
         else
             this_cmd="$cmd"
         fi
         for v in "$vdir"/*.json; do
+            base=$(basename "$v")
+            # Skip hybrid vector files for languages that don't support hybrid yet.
+            case "$base" in
+                hybrid_*)
+                    if ! hybrid_supported "$lang"; then continue; fi
+                    ;;
+            esac
             out=$($this_cmd "$v" 2>&1)
             p=$(echo "$out" | grep -c "^PASS")
             f=$(echo "$out" | grep -c "^FAIL")
             pass=$((pass + p))
             fail=$((fail + f))
             if [ "$f" -gt 0 ]; then
-                echo "[$lang] $(basename "$v"):"
+                echo "[$lang] $base:"
                 echo "$out" | grep "^FAIL" | sed 's/^/  /'
             fi
         done

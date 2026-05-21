@@ -1,0 +1,20 @@
+PQCrypt C benchmarks (OpenSSL 3.5+ ML-KEM-1024 + AES-256-GCM)
+----------------------------------------------------------------------
+Run on:    Apple M4 Max, clang/Apple LLVM, OpenSSL 3.5 (Homebrew), v1.2
+Date:      2026-05-21
+Harness:   pqcrypt/c/bench_pqcrypt.c (custom clock_gettime CLOCK_MONOTONIC,
+           3 iterations, best-of-3 reported; matches Rust harness pattern).
+Build:     cd pqcrypt/c && make bench
+Note:      OpenSSL 3.5+ native EVP_KEM ML-KEM-1024. AES-256-GCM uses
+           ARMv8-A AES instructions on Apple Silicon. Decrypt cost dominated
+           by ML-KEM Decaps; encrypt benefits from cached Encaps path.
+           v1.2 hybrid (suite 0x06) is Python-only in this release.
+
+keygen (ML-KEM-1024)                              24921 ops/sec   (     40127 ns/op)
+encrypt_1KB (AES-256-GCM)                         20966 ops/sec   (     47696 ns/op)
+decrypt_1KB (AES-256-GCM)                          8689 ops/sec   (    115085 ns/op)
+encrypt_1MB (AES-256-GCM)                           447 ops/sec   (   2239055 ns/op)
+decrypt_1MB (AES-256-GCM)                           405 ops/sec   (   2468515 ns/op)
+peek_header                                   544365814 ops/sec   (         2 ns/op)
+encrypt_1KB (ChaCha20-Poly1305)                   20554 ops/sec   (     48653 ns/op)
+decrypt_1KB (ChaCha20-Poly1305)                    8627 ops/sec   (    115920 ns/op)

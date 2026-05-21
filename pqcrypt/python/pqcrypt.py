@@ -42,6 +42,8 @@ VARIANT_PQCRYPT = 0x04
 
 SUITE_MLKEM1024_AESGCM = 0x01  # mandatory v1 suite
 SUITE_MLKEM1024_CHACHA = 0x02  # optional v1 suite (software-only AEAD callers)
+# Suite 0x03 (AEGIS-128L) is reserved-future (PQCK-00017 evaluation deferred to v1.2).
+SUITE_HYBRID_X25519_MLKEM1024_AESGCM = 0x06  # v1.2 hybrid (X-Wing-style combiner)
 
 # Header offsets (16-byte fixed header). See whitepaper §3.
 TS_OFFSET = 0
@@ -62,6 +64,18 @@ MLKEM1024_SK_BYTES = 3168
 MLKEM1024_CT_BYTES = 1568
 MLKEM1024_SS_BYTES = 32
 
+# X25519 sizes (RFC 7748).
+X25519_PK_BYTES = 32
+X25519_SK_BYTES = 32
+X25519_SS_BYTES = 32
+
+# Hybrid sizes (suite 0x06): public key = ML-KEM-1024 pk || X25519 pk;
+# private key = ML-KEM-1024 sk || X25519 sk; KEM ciphertext = ML-KEM-1024 ct
+# || X25519 ephemeral pk.
+HYBRID_PK_BYTES = MLKEM1024_PK_BYTES + X25519_PK_BYTES   # 1568 + 32 = 1600
+HYBRID_SK_BYTES = MLKEM1024_SK_BYTES + X25519_SK_BYTES   # 3168 + 32 = 3200
+HYBRID_CT_BYTES = MLKEM1024_CT_BYTES + X25519_PK_BYTES   # 1568 + 32 = 1600
+
 # AEAD field sizes (suite-independent for v1).
 AEAD_NONCE_BYTES = 12
 AEAD_TAG_BYTES = 16
@@ -78,6 +92,9 @@ _INFO_AEAD_KEY = b"pqcrypt v1 aead k"
 _INFO_AEAD_NONCE = b"pqcrypt v1 aead n"
 _INFO_COMMIT_KEY = b"pqcrypt v1 commit"
 _INFO_TIMING_PAD = b"pqcrypt v1 timing pad"  # synthetic-key path on structural failure
+# Hybrid combiner label (suite 0x06). X-Wing-style: hash both shared secrets,
+# both halves of the KEM ciphertext, and a fixed protocol label.
+_HYBRID_COMBINER_LABEL = b"pqcrypt v1 hybrid combiner"
 
 # Test-only clock override.
 _NOW_MS_OVERRIDE: Optional[int] = None
@@ -135,18 +152,46 @@ class DecryptionError(PQCryptError):
 # ---------------------------------------------------------------------------
 
 
+def _is_hybrid(suite: int) -> bool:
+    return suite == SUITE_HYBRID_X25519_MLKEM1024_AESGCM
+
+
+def _pk_size_for(suite: int) -> int:
+    return HYBRID_PK_BYTES if _is_hybrid(suite) else MLKEM1024_PK_BYTES
+
+
+def _sk_size_for(suite: int) -> int:
+    return HYBRID_SK_BYTES if _is_hybrid(suite) else MLKEM1024_SK_BYTES
+
+
+def _ct_size_for(suite: int) -> int:
+    return HYBRID_CT_BYTES if _is_hybrid(suite) else MLKEM1024_CT_BYTES
+
+
+_ALLOWED_SUITES = (
+    SUITE_MLKEM1024_AESGCM,
+    SUITE_MLKEM1024_CHACHA,
+    SUITE_HYBRID_X25519_MLKEM1024_AESGCM,
+)
+
+
 class PublicKey:
-    """Opaque ML-KEM-1024 public (encapsulation) key, 1568 bytes."""
+    """Opaque ML-KEM-1024 or hybrid public (encapsulation) key.
+
+    - Suites 0x01, 0x02:  1568 bytes (ML-KEM-1024 pk).
+    - Suite 0x06:         1600 bytes (ML-KEM-1024 pk || X25519 pk).
+    """
 
     __slots__ = ("_ek", "suite")
 
     def __init__(self, ek: bytes, suite: int = SUITE_MLKEM1024_AESGCM) -> None:
-        if not isinstance(ek, (bytes, bytearray)) or len(ek) != MLKEM1024_PK_BYTES:
+        if suite not in _ALLOWED_SUITES:
+            raise UnknownSuite(f"suite 0x{suite:02x} is not allocated")
+        expected = _pk_size_for(suite)
+        if not isinstance(ek, (bytes, bytearray)) or len(ek) != expected:
             raise PQCryptError(
-                f"public key must be {MLKEM1024_PK_BYTES} bytes for ML-KEM-1024"
+                f"public key for suite 0x{suite:02x} must be {expected} bytes (got {len(ek)})"
             )
-        if suite not in (SUITE_MLKEM1024_AESGCM, SUITE_MLKEM1024_CHACHA):
-            raise UnknownSuite(f"suite 0x{suite:02x} is not allocated in v1")
         self._ek = bytes(ek)
         self.suite = suite
 
@@ -160,7 +205,10 @@ class PublicKey:
 
 class PrivateKey:
     """
-    Opaque ML-KEM-1024 private (decapsulation) key, 3168 bytes.
+    Opaque private (decapsulation) key.
+
+    - Suites 0x01, 0x02:  3168 bytes (ML-KEM-1024 sk).
+    - Suite 0x06:         3200 bytes (ML-KEM-1024 sk || X25519 sk).
 
     The Python reference does not zeroize the underlying byte buffer on
     deletion — Python's memory model makes that promise hollow. Production
@@ -171,12 +219,13 @@ class PrivateKey:
     __slots__ = ("_dk", "suite")
 
     def __init__(self, dk: bytes, suite: int = SUITE_MLKEM1024_AESGCM) -> None:
-        if not isinstance(dk, (bytes, bytearray)) or len(dk) != MLKEM1024_SK_BYTES:
+        if suite not in _ALLOWED_SUITES:
+            raise UnknownSuite(f"suite 0x{suite:02x} is not allocated")
+        expected = _sk_size_for(suite)
+        if not isinstance(dk, (bytes, bytearray)) or len(dk) != expected:
             raise PQCryptError(
-                f"private key must be {MLKEM1024_SK_BYTES} bytes for ML-KEM-1024"
+                f"private key for suite 0x{suite:02x} must be {expected} bytes (got {len(dk)})"
             )
-        if suite not in (SUITE_MLKEM1024_AESGCM, SUITE_MLKEM1024_CHACHA):
-            raise UnknownSuite(f"suite 0x{suite:02x} is not allocated in v1")
         self._dk = bytes(dk)
         self.suite = suite
 
@@ -192,15 +241,33 @@ def generate_keypair(
     suite: int = SUITE_MLKEM1024_AESGCM,
 ) -> Tuple[PrivateKey, PublicKey]:
     """
-    Generate a fresh ML-KEM-1024 keypair. Returns (private, public).
+    Generate a fresh keypair.
 
-    `suite` selects the symmetric AEAD; the same keypair can be used with
-    any v1 suite because the KEM is suite-independent.
+    For suites 0x01/0x02, returns an ML-KEM-1024 keypair (1568 / 3168 bytes).
+    For suite 0x06 (hybrid), returns ML-KEM-1024 || X25519 keypair (1600 /
+    3200 bytes) — the same keypair handles both halves of the hybrid KEM.
     """
-    if suite not in (SUITE_MLKEM1024_AESGCM, SUITE_MLKEM1024_CHACHA):
-        raise UnknownSuite(f"suite 0x{suite:02x} is not allocated in v1")
-    ek, dk = MLKem1024.keygen()
-    return PrivateKey(dk, suite=suite), PublicKey(ek, suite=suite)
+    if suite not in _ALLOWED_SUITES:
+        raise UnknownSuite(f"suite 0x{suite:02x} is not allocated")
+    ek_pq, dk_pq = MLKem1024.keygen()
+    if not _is_hybrid(suite):
+        return PrivateKey(dk_pq, suite=suite), PublicKey(ek_pq, suite=suite)
+    # Hybrid path: derive an X25519 keypair too.
+    from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding, PrivateFormat, PublicFormat, NoEncryption,
+    )
+    x_priv = X25519PrivateKey.generate()
+    x_sk = x_priv.private_bytes(
+        encoding=Encoding.Raw, format=PrivateFormat.Raw, encryption_algorithm=NoEncryption()
+    )
+    x_pk = x_priv.public_key().public_bytes(
+        encoding=Encoding.Raw, format=PublicFormat.Raw
+    )
+    return (
+        PrivateKey(dk_pq + x_sk, suite=suite),
+        PublicKey(ek_pq + x_pk, suite=suite),
+    )
 
 
 # FIPS 203 keypair seed length (d || z, 32 + 32 bytes). The same seed yields
@@ -209,6 +276,7 @@ def generate_keypair(
 # vectors via the seed; ports that expose the expanded sk (Python, C, Rust)
 # consume the full 3168-byte form. Both forms are emitted by the KAT generator.
 KEYPAIR_SEED_BYTES = 64
+HYBRID_SEED_BYTES = KEYPAIR_SEED_BYTES + 32  # ML-KEM seed || X25519 scalar
 
 
 def generate_keypair_from_seed(
@@ -216,14 +284,39 @@ def generate_keypair_from_seed(
     suite: int = SUITE_MLKEM1024_AESGCM,
 ) -> Tuple[PrivateKey, PublicKey]:
     """
-    Deterministic ML-KEM-1024 keypair from a 64-byte seed (d || z, FIPS 203).
+    Deterministic keypair from a seed.
 
-    Used by the conformance-vector generator so each language port can
-    reconstruct the same keypair from the same seed. Production callers
-    should use generate_keypair() instead.
+    Non-hybrid suites: 64-byte FIPS 203 seed (d || z).
+    Hybrid suite 0x06: 96-byte seed (FIPS 203 d || z || X25519 scalar). The
+    X25519 scalar is clamped per RFC 7748 by the library.
     """
-    if suite not in (SUITE_MLKEM1024_AESGCM, SUITE_MLKEM1024_CHACHA):
-        raise UnknownSuite(f"suite 0x{suite:02x} is not allocated in v1")
+    if suite not in _ALLOWED_SUITES:
+        raise UnknownSuite(f"suite 0x{suite:02x} is not allocated")
+    if _is_hybrid(suite):
+        if not isinstance(seed, (bytes, bytearray)) or len(seed) != HYBRID_SEED_BYTES:
+            raise PQCryptError(
+                f"hybrid seed must be {HYBRID_SEED_BYTES} bytes "
+                f"(64 ML-KEM seed || 32 X25519 scalar)"
+            )
+        pq_seed = bytes(seed[:KEYPAIR_SEED_BYTES])
+        x_scalar = bytes(seed[KEYPAIR_SEED_BYTES:])
+        ek_pq, dk_pq = MLKem1024.key_derive(pq_seed)
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding, PrivateFormat, PublicFormat, NoEncryption,
+        )
+        x_priv = X25519PrivateKey.from_private_bytes(x_scalar)
+        x_sk = x_priv.private_bytes(
+            encoding=Encoding.Raw, format=PrivateFormat.Raw, encryption_algorithm=NoEncryption()
+        )
+        x_pk = x_priv.public_key().public_bytes(
+            encoding=Encoding.Raw, format=PublicFormat.Raw
+        )
+        return (
+            PrivateKey(dk_pq + x_sk, suite=suite),
+            PublicKey(ek_pq + x_pk, suite=suite),
+        )
+    # Non-hybrid path.
     if not isinstance(seed, (bytes, bytearray)) or len(seed) != KEYPAIR_SEED_BYTES:
         raise PQCryptError(
             f"seed must be {KEYPAIR_SEED_BYTES} bytes (32 d || 32 z)"
@@ -307,8 +400,8 @@ def peek_header(envelope: bytes) -> DecodedHeader:
         raise UnknownVariant(
             f"variant byte 0x{h.variant:02x} is not PQCrypt (0x04)"
         )
-    if h.suite not in (SUITE_MLKEM1024_AESGCM, SUITE_MLKEM1024_CHACHA):
-        raise UnknownSuite(f"suite byte 0x{h.suite:02x} is not allocated in v1")
+    if h.suite not in _ALLOWED_SUITES:
+        raise UnknownSuite(f"suite byte 0x{h.suite:02x} is not allocated")
     if h.kem_ct_len > MAX_KEM_CT_LEN:
         raise InvalidLength(f"kem_ct_len {h.kem_ct_len} exceeds {MAX_KEM_CT_LEN}")
     if h.ad_len > MAX_AD_LEN:
@@ -384,6 +477,9 @@ def _synthetic_decrypt_keys(header_bytes: bytes) -> Tuple[bytes, bytes, bytes]:
 # ---------------------------------------------------------------------------
 
 
+_AESGCM_SUITES = (SUITE_MLKEM1024_AESGCM, SUITE_HYBRID_X25519_MLKEM1024_AESGCM)
+
+
 def _aead_encrypt(
     suite: int, key: bytes, nonce: bytes, plaintext: bytes, aad: bytes
 ) -> bytes:
@@ -391,7 +487,7 @@ def _aead_encrypt(
     Returns ciphertext concatenated with the 16-byte AEAD tag. (cryptography's
     AESGCM and ChaCha20Poly1305 both follow this convention.)
     """
-    if suite == SUITE_MLKEM1024_AESGCM:
+    if suite in _AESGCM_SUITES:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
         return AESGCM(key).encrypt(nonce, plaintext, aad)
@@ -399,14 +495,14 @@ def _aead_encrypt(
         from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
         return ChaCha20Poly1305(key).encrypt(nonce, plaintext, aad)
-    raise UnknownSuite(f"suite 0x{suite:02x} is not allocated in v1")
+    raise UnknownSuite(f"suite 0x{suite:02x} is not allocated")
 
 
 def _aead_decrypt(
     suite: int, key: bytes, nonce: bytes, ct_with_tag: bytes, aad: bytes
 ) -> bytes:
     """Raises cryptography.exceptions.InvalidTag on auth failure."""
-    if suite == SUITE_MLKEM1024_AESGCM:
+    if suite in _AESGCM_SUITES:
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
         return AESGCM(key).decrypt(nonce, ct_with_tag, aad)
@@ -414,7 +510,7 @@ def _aead_decrypt(
         from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
         return ChaCha20Poly1305(key).decrypt(nonce, ct_with_tag, aad)
-    raise UnknownSuite(f"suite 0x{suite:02x} is not allocated in v1")
+    raise UnknownSuite(f"suite 0x{suite:02x} is not allocated")
 
 
 # ---------------------------------------------------------------------------
@@ -446,8 +542,8 @@ class SenderContext:
     """
 
     def __init__(self, suite: int = SUITE_MLKEM1024_AESGCM) -> None:
-        if suite not in (SUITE_MLKEM1024_AESGCM, SUITE_MLKEM1024_CHACHA):
-            raise UnknownSuite(f"suite 0x{suite:02x} is not allocated in v1")
+        if suite not in _ALLOWED_SUITES:
+            raise UnknownSuite(f"suite 0x{suite:02x} is not allocated")
         self.suite = suite
         self._lock = threading.Lock()
         self._last_ts: int = 0
@@ -492,6 +588,75 @@ _DEFAULT_SENDER = SenderContext(suite=SUITE_MLKEM1024_AESGCM)
 # ---------------------------------------------------------------------------
 
 
+def _hybrid_combine(
+    ss_mlkem: bytes, x_ss: bytes, ml_kem_ct: bytes, x_ephemeral_pk: bytes
+) -> bytes:
+    """X-Wing-style combiner: SHAKE-256 over both shared secrets, both halves
+    of the KEM ciphertext, and a fixed protocol label. Produces 32 bytes."""
+    msg = (
+        _HYBRID_COMBINER_LABEL
+        + ss_mlkem
+        + x_ss
+        + ml_kem_ct
+        + x_ephemeral_pk
+    )
+    return _shake256(msg, 32)
+
+
+def _encaps(suite: int, recipient_pub: PublicKey) -> Tuple[bytes, bytes]:
+    """Suite-aware KEM Encaps. Returns (ss_session_32, kem_ct).
+
+    For suite 0x06 the kem_ct is `ml_kem_ct || x25519_ephemeral_pk` (1600 B).
+    """
+    if not _is_hybrid(suite):
+        ss_mlkem, kem_ct = MLKem1024.encaps(recipient_pub.to_bytes())
+        if len(kem_ct) != MLKEM1024_CT_BYTES or len(ss_mlkem) != MLKEM1024_SS_BYTES:
+            raise PQCryptError("ML-KEM-1024 produced unexpected sizes")
+        return ss_mlkem, kem_ct
+    # Hybrid: split pk, run both KEMs, combine.
+    from cryptography.hazmat.primitives.asymmetric.x25519 import (
+        X25519PrivateKey, X25519PublicKey,
+    )
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+    pk_bytes = recipient_pub.to_bytes()
+    ml_kem_pk = pk_bytes[:MLKEM1024_PK_BYTES]
+    x_recipient_pk = pk_bytes[MLKEM1024_PK_BYTES:]
+    ss_mlkem, ml_kem_ct = MLKem1024.encaps(ml_kem_pk)
+    if len(ml_kem_ct) != MLKEM1024_CT_BYTES or len(ss_mlkem) != MLKEM1024_SS_BYTES:
+        raise PQCryptError("ML-KEM-1024 produced unexpected sizes")
+    eph_priv = X25519PrivateKey.generate()
+    eph_pk = eph_priv.public_key().public_bytes(
+        encoding=Encoding.Raw, format=PublicFormat.Raw
+    )
+    x_recipient = X25519PublicKey.from_public_bytes(x_recipient_pk)
+    x_ss = eph_priv.exchange(x_recipient)
+    if len(x_ss) != X25519_SS_BYTES:
+        raise PQCryptError("X25519 produced unexpected shared-secret size")
+    ss_session = _hybrid_combine(ss_mlkem, x_ss, ml_kem_ct, eph_pk)
+    return ss_session, ml_kem_ct + eph_pk
+
+
+def _decaps(suite: int, recipient_priv: PrivateKey, kem_ct: bytes) -> bytes:
+    """Suite-aware KEM Decaps. Returns 32-byte session shared secret."""
+    if not _is_hybrid(suite):
+        return MLKem1024.decaps(recipient_priv.to_bytes(), bytes(kem_ct))
+    if len(kem_ct) != HYBRID_CT_BYTES:
+        raise PQCryptError(f"hybrid kem_ct must be {HYBRID_CT_BYTES} bytes")
+    ml_kem_ct = kem_ct[:MLKEM1024_CT_BYTES]
+    x_ephemeral_pk = kem_ct[MLKEM1024_CT_BYTES:]
+    sk_bytes = recipient_priv.to_bytes()
+    ml_kem_sk = sk_bytes[:MLKEM1024_SK_BYTES]
+    x_sk = sk_bytes[MLKEM1024_SK_BYTES:]
+    ss_mlkem = MLKem1024.decaps(ml_kem_sk, ml_kem_ct)
+    from cryptography.hazmat.primitives.asymmetric.x25519 import (
+        X25519PrivateKey, X25519PublicKey,
+    )
+    x_priv = X25519PrivateKey.from_private_bytes(x_sk)
+    x_remote = X25519PublicKey.from_public_bytes(x_ephemeral_pk)
+    x_ss = x_priv.exchange(x_remote)
+    return _hybrid_combine(ss_mlkem, x_ss, ml_kem_ct, x_ephemeral_pk)
+
+
 def _encrypt(
     plaintext: bytes,
     recipient_pub: PublicKey,
@@ -502,8 +667,8 @@ def _encrypt(
     counter: Optional[int],
     sender_ctx: Optional[SenderContext],
 ) -> bytes:
-    if suite not in (SUITE_MLKEM1024_AESGCM, SUITE_MLKEM1024_CHACHA):
-        raise UnknownSuite(f"suite 0x{suite:02x} is not allocated in v1")
+    if suite not in _ALLOWED_SUITES:
+        raise UnknownSuite(f"suite 0x{suite:02x} is not allocated")
     if not isinstance(plaintext, (bytes, bytearray)):
         raise PQCryptError("plaintext must be bytes-like")
     if len(plaintext) > MAX_PLAINTEXT:
@@ -522,10 +687,8 @@ def _encrypt(
         ctx = sender_ctx if sender_ctx is not None else _DEFAULT_SENDER
         ts_ms, counter = ctx._next_ts_ctr()
 
-    # 2. ML-KEM-1024 encapsulation.
-    ss_mlkem, kem_ct = MLKem1024.encaps(recipient_pub.to_bytes())
-    if len(kem_ct) != MLKEM1024_CT_BYTES or len(ss_mlkem) != MLKEM1024_SS_BYTES:
-        raise PQCryptError("ML-KEM-1024 produced unexpected ciphertext/secret size")
+    # 2. KEM encapsulation (hybrid-aware).
+    ss_session, kem_ct = _encaps(suite, recipient_pub)
 
     # 3. Pack header. KEM_CT_LEN is the actual ciphertext length so the format
     # can accommodate future suite bytes that use shorter/longer KEMs.
@@ -538,8 +701,10 @@ def _encrypt(
         ad_len=len(associated_data),
     )
 
-    # 4. Derive session keys + deterministic nonce.
-    k_aead, nonce, k_commit = _derive_session_keys(header, ss_mlkem)
+    # 4. Derive session keys + deterministic nonce. For hybrid suites the
+    # session shared secret is the X-Wing-style combiner output; for non-
+    # hybrid suites it is the ML-KEM-1024 ss directly.
+    k_aead, nonce, k_commit = _derive_session_keys(header, ss_session)
 
     # 5. Build AEAD AAD = header || KEM_CT || AD. (The header alone would
     # already authenticate AD_LEN, but we additionally bind the bytes.)
@@ -678,15 +843,16 @@ def decrypt(
     if cursor != len(envelope):
         raise InvalidLength("trailing garbage after commit tag")
 
-    # 4. ML-KEM-1024 decapsulation. ML-KEM's FO transform implicitly rejects
-    # malformed ciphertext by returning a pseudorandom shared secret; the
-    # subsequent AEAD/commit verification will fail in constant time.
+    # 4. KEM Decaps (hybrid-aware). ML-KEM's FO transform implicit-rejects
+    # malformed ciphertext (pseudorandom ss); for the hybrid suite, both halves
+    # contribute to the combiner, so an attacker-substituted X25519 ephemeral
+    # also yields a wrong session key. The subsequent AEAD/commit verify
+    # catches both cases in constant time.
     try:
-        ss_mlkem = MLKem1024.decaps(recipient_priv.to_bytes(), bytes(kem_ct))
+        ss_session = _decaps(h.suite, recipient_priv, kem_ct)
     except Exception:
-        # Even on a library-level error, run the synthetic schedule and
-        # synthetic AEAD verify to keep the timing flat, then raise the
-        # generic decrypt error.
+        # Run synthetic schedule + synthetic AEAD verify to keep timing flat,
+        # then raise the generic decrypt error.
         k_aead_s, nonce_s, k_commit_s = _synthetic_decrypt_keys(header_bytes)
         _ = _utc_commit(k_commit_s, header_bytes, kem_ct, ad, aead_ct)
         try:
@@ -698,7 +864,7 @@ def decrypt(
         raise DecryptionError("envelope failed authentication") from None
 
     # 5. Derive session keys.
-    k_aead, derived_nonce, k_commit = _derive_session_keys(header_bytes, ss_mlkem)
+    k_aead, derived_nonce, k_commit = _derive_session_keys(header_bytes, ss_session)
 
     # 6. Verify the nonce on the wire matches the deterministic derivation.
     # We do the comparison in constant time but treat a mismatch identically

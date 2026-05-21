@@ -452,6 +452,57 @@ class TestCrossSuiteInterop:
 # ---------------------------------------------------------------------------
 
 
+class TestHybridSuite:
+    """Hybrid (X25519 + ML-KEM-1024) suite 0x06 tests (PQCK-00021)."""
+
+    SUITE = pqcrypt.SUITE_HYBRID_X25519_MLKEM1024_AESGCM
+
+    def test_keypair_sizes(self):
+        priv, pub = pqcrypt.generate_keypair(suite=self.SUITE)
+        assert len(priv.to_bytes()) == pqcrypt.HYBRID_SK_BYTES == 3200
+        assert len(pub.to_bytes()) == pqcrypt.HYBRID_PK_BYTES == 1600
+
+    def test_seed_form_roundtrip(self):
+        seed = bytes(range(pqcrypt.HYBRID_SEED_BYTES))
+        priv1, pub1 = pqcrypt.generate_keypair_from_seed(seed, suite=self.SUITE)
+        priv2, pub2 = pqcrypt.generate_keypair_from_seed(seed, suite=self.SUITE)
+        # Deterministic: same seed -> same keypair bytes.
+        assert priv1.to_bytes() == priv2.to_bytes()
+        assert pub1.to_bytes() == pub2.to_bytes()
+
+    def test_encrypt_decrypt(self):
+        priv, pub = pqcrypt.generate_keypair(suite=self.SUITE)
+        pt = b"hybrid-suite payload"
+        env = pqcrypt.encrypt(pt, pub, suite=self.SUITE)
+        assert pqcrypt.decrypt(env, priv, expected_ad=b"") == pt
+
+    def test_kem_ct_len_in_header(self):
+        priv, pub = pqcrypt.generate_keypair(suite=self.SUITE)
+        env = pqcrypt.encrypt(b"x", pub, suite=self.SUITE)
+        h = pqcrypt.peek_header(env)
+        assert h.suite == 0x06
+        assert h.kem_ct_len == pqcrypt.HYBRID_CT_BYTES == 1600
+
+    def test_ad_binding(self):
+        priv, pub = pqcrypt.generate_keypair(suite=self.SUITE)
+        ad = bytes(range(41))
+        env = pqcrypt.encrypt(b"with ad", pub, suite=self.SUITE, associated_data=ad)
+        assert pqcrypt.decrypt(env, priv, expected_ad=ad) == b"with ad"
+        with pytest.raises(DecryptionError):
+            pqcrypt.decrypt(env, priv, expected_ad=ad[:-1])
+
+    def test_tamper_x25519_ephemeral(self):
+        """Flip a byte in the X25519 half of KEM_CT; decrypt MUST fail."""
+        priv, pub = pqcrypt.generate_keypair(suite=self.SUITE)
+        env = pqcrypt.encrypt(b"x", pub, suite=self.SUITE, associated_data=b"a")
+        # X25519 ephemeral pk lives at offset HEADER + MLKEM1024_CT_BYTES.
+        idx = pqcrypt.HEADER_BYTES + pqcrypt.MLKEM1024_CT_BYTES + 5
+        tampered = bytearray(env)
+        tampered[idx] ^= 0x01
+        with pytest.raises(DecryptionError):
+            pqcrypt.decrypt(bytes(tampered), priv, expected_ad=b"a")
+
+
 class TestKeyWrappers:
     def test_public_key_size(self):
         with pytest.raises(PQCryptError):

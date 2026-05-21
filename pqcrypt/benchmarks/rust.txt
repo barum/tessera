@@ -1,0 +1,23 @@
+PQCrypt Rust benchmarks (release build, RustCrypto ml-kem 0.3 + aes-gcm 0.10 + x25519-dalek 2)
+----------------------------------------------------------------------
+Run on:    Apple M4 Max, rustc stable (cargo --release), v1.3 (hybrid)
+Date:      2026-05-21
+Harness:   pqcrypt/rust/benches/bench_bin.rs (custom Instant::now() timing,
+           3 iterations, best-of-3 reported; matches pqid/rust pattern).
+Note:      RustCrypto ml-kem 0.3 is pure-Rust constant-time. ~40x faster than
+           pure-Python kyber-py at keygen. AES-256-GCM uses aes-gcm 0.10
+           portable backend on Apple Silicon (ARMv8 AES intrinsics deferred
+           to v1.3 — see PQCK-00027). Hybrid suite 0x06 adds one X25519
+           keygen + one DH per envelope (~30 us amortized).
+
+keygen (ML-KEM-1024)                              11530 ops/sec   (     86728 ns/op)
+encrypt_1KB (AES-256-GCM)                          9372 ops/sec   (    106705 ns/op)
+decrypt_1KB (AES-256-GCM)                         17686 ops/sec   (     56541 ns/op)
+encrypt_1MB (AES-256-GCM)                           131 ops/sec   (   7608996 ns/op)
+decrypt_1MB (AES-256-GCM)                           135 ops/sec   (   7418829 ns/op)
+peek_header                                   561584792 ops/sec   (         2 ns/op)
+encrypt_1KB (ChaCha20-Poly1305)                   10373 ops/sec   (     96405 ns/op)
+decrypt_1KB (ChaCha20-Poly1305)                   19662 ops/sec   (     50860 ns/op)
+keygen (hybrid X25519+ML-KEM-1024)                 8073 ops/sec   (    123871 ns/op)
+encrypt_1KB (hybrid suite 0x06)                    4653 ops/sec   (    214921 ns/op)
+decrypt_1KB (hybrid suite 0x06)                   11485 ops/sec   (     87073 ns/op)
