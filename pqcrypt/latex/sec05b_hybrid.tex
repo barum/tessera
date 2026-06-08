@@ -1,0 +1,50 @@
+\section{Hybrid Suite \texttt{0x06} (Optional)}
+\label{sec:hybrid}
+
+Suite \code{0x06} (v1.2, PQCK-00021) is the opt-in hybrid alternative to the pure-PQ suites. It is a \emph{separate suite-byte allocation}, never an in-place modification of \code{0x01} or \code{0x02}: callers who want the unambiguous PQ-only brand promise of \cref{sec:threat-model} keep using \code{0x01}/\code{0x02}; callers who want a classical safety net against a Module-LWE structural break opt in to \code{0x06}. Both promises remain available, and the wire is unambiguous about which one a given envelope makes.
+
+\subsection{Construction}
+
+Suite \code{0x06} runs ML-KEM-1024 and X25519 \citep{rfc7748} as independent KEMs, then combines them with a SHAKE-256 \citep{fips202} combiner inspired by X-Wing \citep{xwing-draft}:
+\begin{align*}
+(K_{\mathrm{mlkem}}, c_{\mathrm{mlkem}}) &\leftarrow \mathrm{ML\text{-}KEM\text{-}1024.Encaps}(pk_{\mathrm{mlkem}}) \\
+(sk_{\mathrm{eph}}, pk_{\mathrm{eph}}) &\leftarrow \mathrm{X25519.GenerateKeypair}() \\
+K_{X} &\leftarrow \mathrm{X25519.ECDH}(sk_{\mathrm{eph}}, pk_{\mathrm{x}})
+\end{align*}
+The session shared secret is:
+$$
+K_{\mathrm{session}} = \mathrm{SHAKE\text{-}256}\!\left(\text{``pqcrypt v1 hybrid combiner''} \,\|\, K_{\mathrm{mlkem}} \,\|\, K_{X} \,\|\, c_{\mathrm{mlkem}} \,\|\, pk_{\mathrm{eph}},\ 32\ \mathrm{bytes}\right)
+$$
+$K_{\mathrm{session}}$ replaces \code{ss\_mlkem} as the IKM for the HKDF schedule of \cref{sec:kdf-nonce}; the rest of the wire format and AEAD path is unchanged. \code{KEM\_CT} on the wire carries $c_{\mathrm{mlkem}} \,\|\, pk_{\mathrm{eph}}$, total 1600 bytes (1568 + 32).
+
+\subsection{Sizes}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lrl@{}}
+\toprule
+\textbf{Object} & \textbf{Size (bytes)} & \textbf{Composition} \\
+\midrule
+Hybrid public key  & 1\,600 & ML-KEM-1024 \code{pk} (1568) $\,\|\,$ X25519 \code{pk} (32) \\
+Hybrid private key & 3\,200 & ML-KEM-1024 \code{sk} (3168) $\,\|\,$ X25519 scalar (32) \\
+Hybrid \code{KEM\_CT} & 1\,600 & ML-KEM-1024 \code{ct} (1568) $\,\|\,$ X25519 ephemeral \code{pk} (32) \\
+Hybrid seed (KAT reproducibility) & 96 & FIPS 203 $(d \,\|\, z)$ (64) $\,\|\,$ X25519 scalar (32) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Security argument}
+
+The combiner is an IND-CCA2 KEM iff \emph{either} component KEM is IND-CCA2-secure under the assumption that SHAKE-256 is a random oracle for the combiner's input. This is the conservative ``OR-style'' hybrid: an attacker must break \emph{both} ML-KEM-1024 \emph{and} X25519 to recover $K_{\mathrm{session}}$. The conservative direction matches X-Wing \citep{xwing-draft} and is the consensus design for transport hybrids (TLS 1.3 \code{X25519MLKEM768}, OpenSSH \code{mlkem768x25519-sha256}, MLS RFC 9420 \code{X25519MLKEM768}). Including \emph{both} ciphertext halves ($c_{\mathrm{mlkem}}$ and $pk_{\mathrm{eph}}$) in the combiner input prevents an attacker who controls one half from forcing a known $K_{\mathrm{session}}$ even with full control of the other half.
+
+\subsection{Cost}
+
+One additional X25519 keygen plus one X25519 ECDH per envelope on encrypt; one X25519 ECDH per envelope on decrypt. On Apple M4 Max with the Go stdlib \code{crypto/ecdh}, the per-envelope amortized cost is approximately 50\,\textmu{}s on top of the ML-KEM-1024 baseline (\cref{sec:comparison}). \code{KEM\_CT} grows by 32 bytes per envelope.
+
+\subsection{Constant-time and supply-chain posture}
+
+The X25519 implementation must be constant-time on the scalar multiplication. Verified per language: \texttt{x25519-dalek} v2 (Rust, \texttt{\#![forbid(unsafe\_code)]}), Go stdlib \texttt{crypto/ecdh} (constant-time on aarch64 and x86\_64), Python \texttt{cryptography} (libsodium-backed). Hybrid-capable language ports: Python (PQCK-00021, v1.2), Rust (PQCK-00028, v1.3), Go (PQCK-00029, v1.3); C, C++, TypeScript, Java, and the CPython extension reject suite \code{0x06} as \code{UNKNOWN\_SUITE} until their v1.4 ports land. See \cref{sec:conformance} for the harness-level skip discipline.
+
+\begin{calloutinfo}[When to opt in to suite \code{0x06}]
+Use suite \code{0x06} when the deployment's threat model includes ``Module-LWE may turn out to be structurally weaker than believed'' and the operator wants belt-and-suspenders coverage. Use suites \code{0x01}/\code{0x02} when the deployment wants an unambiguous post-quantum confidentiality promise (FIPS 203 NIST level 5 alone) and treats the residual Module-LWE risk as acceptable (\cref{sec:threat-model}). Both promises remain on the wire; the suite byte names which one the envelope makes.
+\end{calloutinfo}

@@ -342,7 +342,7 @@ func suiteEncaps(suite uint8, pub *PublicKey) ([]byte, []byte, error) {
 	}
 	xSS, err := ephPriv.ECDH(xRecipient)
 	if err != nil {
-		return nil, nil, fmt.Errorf("pqcrypt: x25519 ECDH: %w", err)
+		return nil, nil, fmt.Errorf("pqcrypt: x25519 key agreement: %w", err)
 	}
 	ephPub := ephPriv.PublicKey().Bytes()
 	ssSession := hybridCombine(ssMLKEM, xSS, mlKemCT, ephPub)
@@ -375,7 +375,7 @@ func suiteDecaps(suite uint8, priv *PrivateKey, kemCT []byte) ([]byte, error) {
 	}
 	xSS, err := priv.xPriv.ECDH(xRemote)
 	if err != nil {
-		return nil, fmt.Errorf("pqcrypt: x25519 ECDH: %w", err)
+		return nil, fmt.Errorf("pqcrypt: x25519 key agreement: %w", err)
 	}
 	return hybridCombine(ssMLKEM, xSS, mlKemCT, xEphPK), nil
 }

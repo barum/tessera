@@ -8,23 +8,27 @@ PQCrypt is the third project in the pqtoolkit family, alongside [pqid](../pqid/)
 
 Wraps a plaintext into an envelope that **only the intended recipient's ML-KEM-1024 private key can open**, with:
 
-- **One suite, no negotiation**: ML-KEM-1024 + AES-256-GCM + 32-byte UtC commitment tag + HKDF-SHA3-256.
-- **Pure post-quantum**: no X25519 hybrid, no classical fallback. Residual risk acknowledged explicitly in the [whitepaper appendix](latex/sec14_appendices.tex).
+- **Core promise — pure post-quantum, no negotiation**: ML-KEM-1024 + AES-256-GCM + 32-byte UtC commitment tag + HKDF-SHA3-256. v1 suite `0x01` is mandatory; suite `0x02` swaps the AEAD for ChaCha20-Poly1305 (software-only callers).
+- **Optional hybrid**: v1.2 added suite `0x06` (X25519 + ML-KEM-1024 + AES-256-GCM + UtC) for defense-in-depth callers. Hybrid is a *separate* suite byte allocation, never a modification of `0x01`/`0x02`. The Module-LWE residual-risk acknowledgment in the [whitepaper appendix](latex/sec14_appendices.tex) still stands for the core suites.
 - **Key-committing**: multi-recipient confusion attacks (the class age still has open) are closed by the UtC tag.
 - **PQID-as-AD pattern**: bind a 41-byte PQID as the AEAD's associated data; envelopes fail closed if rebound to a different PQID.
-- **Plugin protocol**: key-on-disk format lives in plugins (à la age), not in the core spec. Reference plugin `pqcrypt-plugin-file` ships in v1.
+- **Plugin protocol**: key-on-disk format lives in plugins (à la age), not in the core spec. Reference plugin `pqcrypt-plugin-file` (Argon2id + AES-256-GCM key wrap, `.pqck-key-v1.1` format) ships with PQCrypt.
+- **CLI**: `python -m pqcrypt.cli {keygen,pubkey,encrypt,decrypt,info}` — uses the plugin protocol via subprocess for key custody (PQCK-00022, v1.2).
 
-## v1 alpha status
+## Status (v1.3, 2026-05-21)
 
-Whitepaper LaTeX scaffold complete (this PR, PQCK-00001). Reference implementations follow:
+| Language     | Suites `0x01`/`0x02` | Hybrid `0x06` | Notes |
+|--------------|----------------------|---------------|-------|
+| Python       | ✓ (PQCK-00003)       | ✓ (PQCK-00021, v1.2) | Readable canonical reference; `kyber-py >= 1.0`; 62+ tests |
+| C            | ✓ (PQCK-00005)       | — v1.4 (PQCK-00030)  | OpenSSL 3.5+ `EVP_PKEY` ML-KEM (encapsulate/decapsulate); pins canonical ABI; 20 tests |
+| Go           | ✓ (PQCK-00006)       | ✓ (PQCK-00029, v1.3) | Stdlib `crypto/mlkem` + `crypto/ecdh`; no external dep |
+| Rust         | ✓ (PQCK-00007)       | ✓ (PQCK-00028, v1.3) | RustCrypto `ml-kem` 0.3 + `x25519-dalek` 2; `#![forbid(unsafe_code)]`; 21 tests |
+| C++          | ✓ (v1.1 wrapper)     | — v1.4 (PQCK-00031)  | Header-only wrapper of the C library |
+| TypeScript   | ✓ (v1.1)             | — v1.4 (PQCK-00032)  | `@noble/post-quantum`; browser path uses WebCrypto for AEAD |
+| Java         | ✓ (v1.1)             | — v1.4 (PQCK-00033)  | SunJCE JEP 452 ML-KEM (no BouncyCastle); JDK 24+ |
+| CPython ext  | ✓ (v1.1)             | — v1.4 (PQCK-00034)  | Wraps the C reference (`cpython/pqcrypt_ext.c` → `../c/pqcrypt.c`); a `pqcrypt_fast.py` mirror is a planned v1.1 optimization, not yet written |
 
-| Language | Status | Tracking |
-|----------|--------|----------|
-| Python   | scaffold | PQCK-00003 |
-| C        | scaffold | PQCK-00005 |
-| Go       | scaffold | PQCK-00006 |
-| Rust     | scaffold | PQCK-00007 |
-| C++, TypeScript, Java, CPython ext | placeholders | v1.1+ |
+Latest conformance run: **Python 265 / Rust 265 / Go 265 / C 256 PASS, 0 FAIL** across all 3 projects (pqid + pqhash + pqcrypt). The 9-record gap on non-hybrid-capable languages is the `hybrid_*.json` skip — see [tools/conformance/run.sh:hybrid_supported()](../tools/conformance/run.sh).
 
 ## Wire format at a glance
 
@@ -32,17 +36,25 @@ Whitepaper LaTeX scaffold complete (this PR, PQCK-00001). Reference implementati
 Offset  Size  Field                                               AD?
 0       6     TS         (timestamp_ms; provenance, not auth)     yes
 6       1     VAR        (0x04 = PQCrypt v1)                      yes
-7       1     SUITE      (0x01 = ML-KEM-1024 + AES-256-GCM + UtC) yes
+7       1     SUITE      (0x01 / 0x02 / 0x06; see suite table)    yes
 8       2     CTR        (counter, monotonic per sender)          yes
-10      2     KEM_CT_LEN (≤ 4096)                                   yes
-12      4     AD_LEN     (≤ 65536)                                   yes
-16      N     KEM_CT     (ML-KEM-1024 ciphertext = 1568 B for suite 0x01)
+10      2     KEM_CT_LEN (≤ 4096; 1568 for suites 0x01/0x02; 1600 for hybrid 0x06) yes
+12      4     AD_LEN     (≤ 65536)                                yes
+16      N     KEM_CT     (ML-KEM-1024 ct; hybrid 0x06: ml_kem_ct || x25519_eph_pk = 1600 B)
 16+N    A     AD         (caller AD; the canonical pattern is a PQID)
 16+N+A  12    AEAD_NONCE (derived from K_session via HKDF-Expand; deterministic)
 …       M     AEAD_CT
-…       16    AEAD_TAG   (128-bit AES-256-GCM tag)
+…       16    AEAD_TAG   (128-bit AES-256-GCM or ChaCha20-Poly1305 tag)
 …       32    COMMIT     (UtC commitment tag, HMAC-SHA3-256)
 ```
+
+Suite table:
+
+| Suite | KEM(s)                       | AEAD              | KDF/Commit              | Status |
+|-------|------------------------------|-------------------|-------------------------|--------|
+| 0x01  | ML-KEM-1024                  | AES-256-GCM       | HKDF-SHA3-256 + UtC     | v1 mandatory |
+| 0x02  | ML-KEM-1024                  | ChaCha20-Poly1305 | HKDF-SHA3-256 + UtC     | v1 optional |
+| 0x06  | X25519 + ML-KEM-1024 (combiner = SHAKE-256 over both shared secrets + both ciphertext halves + fixed label) | AES-256-GCM | HKDF-SHA3-256 + UtC | v1.2 optional (hybrid) |
 
 Full normative spec: [latex/sec03_wire_format.tex](latex/sec03_wire_format.tex).
 
@@ -51,19 +63,36 @@ Full normative spec: [latex/sec03_wire_format.tex](latex/sec03_wire_format.tex).
 - [latex/PQCrypt_Whitepaper.pdf](latex/PQCrypt_Whitepaper.pdf) — normative spec (built from LaTeX).
 - [CLAUDE.md](CLAUDE.md) — project invariants for contributors.
 - [docs/side-channel-disclaimer.md](docs/side-channel-disclaimer.md) — what v1 mitigates, what it does not.
+- [docs/security-audit-v1.2.md](docs/security-audit-v1.2.md) — internal pre-external-audit threat-model walk-through.
 - [docs/release-notes/CHANGELOG.md](docs/release-notes/CHANGELOG.md) — reverse-chronological release index.
 - [plugin/pqcrypt-plugin-protocol.md](plugin/pqcrypt-plugin-protocol.md) — plugin wire protocol.
 
-## Quick start (when ports land)
+## Quick start
 
 ```python
 import pqid, pqcrypt
 
-priv, pub  = pqcrypt.generate_keypair(suite=pqcrypt.SUITE_MLKEM1024_AESGCM)
+# Non-hybrid (default, suite 0x01)
+priv, pub  = pqcrypt.generate_keypair()
 record_id  = pqid.new_hlc()
 envelope   = pqcrypt.encrypt(b"hello", pub, associated_data=record_id)
 plaintext  = pqcrypt.decrypt(envelope, priv, expected_ad=record_id)
 assert plaintext == b"hello"
+
+# Hybrid (suite 0x06) — opt-in defense-in-depth (X25519 + ML-KEM-1024)
+priv_h, pub_h = pqcrypt.generate_keypair(suite=pqcrypt.SUITE_HYBRID_X25519_MLKEM1024_AESGCM)
+env_h         = pqcrypt.encrypt(b"hello", pub_h, suite=pqcrypt.SUITE_HYBRID_X25519_MLKEM1024_AESGCM)
+pt_h          = pqcrypt.decrypt(env_h, priv_h, expected_ad=b"")
+```
+
+CLI:
+
+```bash
+python -m pqcrypt.cli keygen  --out alice.pqck-key-v1.1
+python -m pqcrypt.cli pubkey  --keyfile alice.pqck-key-v1.1 > alice.pub
+python -m pqcrypt.cli encrypt --pubkey alice.pub --in secret.bin --out secret.pqck
+python -m pqcrypt.cli decrypt --keyfile alice.pqck-key-v1.1 --in secret.pqck --out secret.out
+python -m pqcrypt.cli info    --in secret.pqck
 ```
 
 ## License

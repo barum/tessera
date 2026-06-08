@@ -24,14 +24,18 @@ The full state machine, including handshake and pipelining rules, is defined in 
 \subsection{Reference plugin: \texttt{pqcrypt-plugin-file}}
 \label{sec:plugin-protocol:reference}
 
-\texttt{pqcrypt-plugin-file} stores a passphrase-wrapped ML-KEM-1024 private key on disk. Construction:
+\texttt{pqcrypt-plugin-file} stores a passphrase-wrapped ML-KEM-1024 private key on disk. The current on-disk format is \texttt{pqck-key-v1.1} (PQCK-00018, v1.1); the older \texttt{pqck-key-v1} format remains readable for backwards compatibility. Construction:
 
 \begin{enumerate}
 \item Read the passphrase from the terminal (no echo) or from \code{\$PQCRYPT\_PASSPHRASE}.
 \item Derive a 32-byte symmetric key: \code{K\_wrap = Argon2id(passphrase, salt, m=64MiB, t=3, p=1, 32 bytes)} \citep{rfc9106}.
-\item Wrap the ML-KEM-1024 private key ($\sim$3168 B) under AES-256-GCM: \code{wrapped = AES-256-GCM-Encrypt(K\_wrap, nonce, sk)} where \code{nonce} is 12 fresh CSPRNG bytes.
-\item Serialize: \texttt{pqck-key-v1\textbackslash{}n\textless{}base64url(salt || nonce || wrapped || tag)\textgreater\textbackslash{}n}.
+\item Wrap the ML-KEM-1024 private key ($\sim$3168 B; or 3200 B for a hybrid keypair, \cref{sec:hybrid}) under AES-256-GCM: \code{wrapped = AES-256-GCM-Encrypt(K\_wrap, nonce, sk)} where \code{nonce} is 12 fresh CSPRNG bytes.
+\item Serialize: \texttt{pqck-key-v1.1\textbackslash{}n\textless{}base64url(salt $\|$ nonce $\|$ wrapped $\|$ tag $\|$ public\_key)\textgreater\textbackslash{}n}.
 \end{enumerate}
+
+\textbf{Why v1.1 embeds the public key.} A v1.0 keyfile required passphrase unwrap before the plugin could answer a \texttt{pubkey} query, which the CLI binary (PQCK-00022, see below) exercises on every recipient lookup. v1.1 stores the unencrypted public key alongside the wrapped private key so plugins can answer \texttt{pubkey} without prompting for a passphrase. The public key was never secret; only the private-key wrap is.
+
+\textbf{Reference CLI.} A reference CLI binary ships in v1.2 (PQCK-00022): \code{python -m pqcrypt.cli \{keygen,pubkey,encrypt,decrypt,info\}}. It invokes \texttt{pqcrypt-plugin-file} via subprocess for every key-custody operation; no private key material is ever read from \code{argv}.
 
 The reference plugin is not part of the v1 normative wire format; only the plugin \emph{protocol} is. Other plugins (\texttt{pqcrypt-plugin-yubikey}, hypothetical) may wrap keys however they want.
 

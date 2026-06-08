@@ -14,8 +14,9 @@ Cross-language Known-Answer-Test (KAT) vectors for PQCrypt v1. Generated against
 | `invalid.json` | Bad variant byte (covering 0x00, 0x01, 0x02, 0x03, 0x05–0xFF), bad suite, truncated KEM_CT, bad AEAD tag, bad commit, bad AD |
 | `ad_binding.json` | PQID-as-AD positive + negative cases |
 | `commitment.json` | UtC commit tag KATs independent of the AEAD path |
-| `kyberslash_regression.json` | Known-bad ML-KEM-1024 inputs that exercised KyberSlash 1/2 |
 | `min_timestamp.json` | `MIN_TIMESTAMP_MS` helper parity with PQID and PQHash |
+
+A `kyberslash_regression.json` vector (known-bad ML-KEM-1024 inputs from KyberSlash 1/2) is **planned/backlog — not yet shipped and not loaded by any runner.** Until it lands, KyberSlash mitigation rests on the pinned post-patch ML-KEM libraries plus the manual timing-histogram check tracked in [`../docs/security-audit-v1.2.md`](../docs/security-audit-v1.2.md). Do not list it as existing coverage.
 
 Schema documented in this README at vector-landing time.
 

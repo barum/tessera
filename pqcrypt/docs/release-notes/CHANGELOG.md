@@ -2,6 +2,7 @@
 
 Reverse-chronological. One entry per PR (or per logical change shipped together).
 
+- 2026-06-08 — [PQCK-00035 — BadKey suite/key consistency in the Python + C references (sec)](2026-06-08-pqcrypt-00035-badkey-suite-consistency.md)
 - 2026-05-21 — [PQCK-00027..00029 — v1.3 PARTIAL (Rust + Go hybrid, AES-NI deferred)](2026-05-21-pqcrypt-v1.3-partial.md)
 - 2026-05-21 — [PQCK-00029 — Hybrid suite 0x06 in Go](2026-05-21-pqcrypt-00029-hybrid-go.md)
 - 2026-05-21 — [PQCK-00027 + PQCK-00028 — Hybrid suite 0x06 in Rust (+ AES-NI deferral)](2026-05-21-pqcrypt-00028-hybrid-rust.md)

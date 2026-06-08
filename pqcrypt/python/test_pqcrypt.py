@@ -25,6 +25,7 @@ from pqcrypt import (
     HEADER_BYTES,
     InvalidLength,
     MLKEM1024_CT_BYTES,
+    BadKey,
     MLKEM1024_PK_BYTES,
     MLKEM1024_SK_BYTES,
     MLKEM1024_SS_BYTES,
@@ -445,6 +446,34 @@ class TestCrossSuiteInterop:
         assert (
             pqcrypt.decrypt(env_c, priv_c, expected_ad=b"") == small_plaintext
         )
+
+
+class TestSuiteKeyConsistency:
+    """Whitepaper §2/§9 BadKey: a suite/key mismatch is a *structural* error,
+    distinguishable from — and never collapsed into — DecryptionError.
+    Go/Rust enforced this from v1.0; Python/C added it in PQCK-00035."""
+
+    def test_encrypt_rejects_mismatched_pub_suite(self, small_plaintext):
+        _, pub = pqcrypt.generate_keypair(suite=SUITE_MLKEM1024_AESGCM)
+        # pub is tagged 0x01; requesting 0x02 must reject before any KEM work.
+        with pytest.raises(BadKey):
+            pqcrypt.encrypt(small_plaintext, pub, suite=SUITE_MLKEM1024_CHACHA)
+
+    def test_decrypt_rejects_mismatched_priv_suite(self, small_plaintext):
+        priv, pub = pqcrypt.generate_keypair(suite=SUITE_MLKEM1024_CHACHA)
+        env = pqcrypt.encrypt(small_plaintext, pub, suite=SUITE_MLKEM1024_CHACHA)
+        # Re-tag the same raw key as 0x01; the envelope header is 0x02.
+        priv_mismatch = pqcrypt.PrivateKey(
+            priv.to_bytes(), suite=SUITE_MLKEM1024_AESGCM
+        )
+        with pytest.raises(BadKey):
+            pqcrypt.decrypt(env, priv_mismatch, expected_ad=b"")
+
+    def test_badkey_is_distinguishable_not_auth_class(self):
+        # Must NOT be a DecryptionError subclass (no distinguishing-oracle risk:
+        # the check is on the public suite byte, not secret-correlated bytes).
+        assert not issubclass(BadKey, pqcrypt.DecryptionError)
+        assert issubclass(BadKey, PQCryptError)
 
 
 # ---------------------------------------------------------------------------

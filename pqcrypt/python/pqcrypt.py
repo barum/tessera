@@ -3,8 +3,10 @@ pqcrypt.py — Readable Python reference for PQCrypt v1.
 
 PQCrypt is a pure post-quantum encryption envelope: ML-KEM-1024 + AES-256-GCM
 with a 32-byte UtC commitment tag, deterministic AEAD nonce derived via
-HKDF-SHA3-256. No hybrid X25519 fallback. See the whitepaper at
-../latex/PQCrypt_Whitepaper.pdf and ../CLAUDE.md for the project invariants.
+HKDF-SHA3-256. An opt-in hybrid suite (0x06, X25519 + ML-KEM-1024, X-Wing-style
+combiner) is available as a separate suite-byte allocation; suites 0x01/0x02
+remain pure post-quantum. See the whitepaper at ../latex/PQCrypt_Whitepaper.pdf
+and ../CLAUDE.md for the project invariants.
 
 This file is the **readable canonical source**. Cross-language ports must
 produce byte-identical envelopes for the same input. If you change observable
@@ -132,6 +134,21 @@ class UnknownSuite(PQCryptError):
 
 class InvalidLength(PQCryptError):
     """Envelope is truncated or declares impossible field lengths."""
+
+
+class BadKey(PQCryptError):
+    """
+    Suite/key consistency failure (whitepaper §2, §9 — BAD_KEY).
+
+    Raised when ``encrypt()`` is given a recipient public key whose suite tag
+    does not match the requested suite, or when ``decrypt()`` is given a
+    private key whose suite tag does not match the envelope header's suite.
+    This is a **structural** error, caught before the authentication-class
+    path. It is intentionally distinguishable from DecryptionError because it
+    does not depend on secret-correlated bytes — see whitepaper §9. It is NOT
+    a DecryptionError subclass; splitting auth-class failures is forbidden, but
+    a suite/key mismatch is a caller/configuration error, not an auth failure.
+    """
 
 
 class DecryptionError(PQCryptError):
@@ -669,6 +686,14 @@ def _encrypt(
 ) -> bytes:
     if suite not in _ALLOWED_SUITES:
         raise UnknownSuite(f"suite 0x{suite:02x} is not allocated")
+    # Suite/key consistency (whitepaper §2, §9). Reject a recipient key whose
+    # suite tag does not match the requested suite — structural BadKey, before
+    # any KEM work. Defends the documented suite-confusion attack.
+    if recipient_pub.suite != suite:
+        raise BadKey(
+            f"recipient public key suite 0x{recipient_pub.suite:02x} "
+            f"!= requested suite 0x{suite:02x}"
+        )
     if not isinstance(plaintext, (bytes, bytearray)):
         raise PQCryptError("plaintext must be bytes-like")
     if len(plaintext) > MAX_PLAINTEXT:
@@ -789,6 +814,7 @@ def decrypt(
       - UnknownVariant   (variant byte != 0x04 at offset 6)
       - UnknownSuite     (suite byte not allocated in v1)
       - InvalidLength    (envelope truncated or declared lengths impossible)
+      - BadKey           (private key suite tag != envelope header suite)
       - DecryptionError  (every authentication-class failure — see class doc)
 
     `expected_ad` is the AD that MUST match what encrypt() bound. The
@@ -808,6 +834,16 @@ def decrypt(
     # 1. Header parse + structural validation. These are the only error
     # classes we expose distinctly — they don't leak per-bit information.
     h = peek_header(envelope)
+
+    # 1b. Suite/key consistency (whitepaper §2, §9). Reject a private key whose
+    # suite tag does not match the envelope header's suite — structural BadKey,
+    # before any KEM/AEAD work. Distinguishable-but-safe: the check is on the
+    # public suite byte, not on secret-correlated bytes.
+    if recipient_priv.suite != h.suite:
+        raise BadKey(
+            f"private key suite 0x{recipient_priv.suite:02x} "
+            f"!= envelope header suite 0x{h.suite:02x}"
+        )
 
     # 2. Verify total length matches what the header declares.
     expected_len = (

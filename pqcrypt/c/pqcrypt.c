@@ -529,6 +529,10 @@ int pqcrypt_encrypt(const uint8_t *pt, size_t pt_len,
         return PQCRYPT_E_UNKNOWN_SUITE;
     }
     if (!pub) return PQCRYPT_E_BAD_KEY;
+    /* Suite/key consistency (whitepaper sec02/sec09): reject a recipient key
+     * whose suite tag does not match the requested suite. Structural BAD_KEY,
+     * before any KEM work. Defends the documented suite-confusion attack. */
+    if (pub->suite != suite) return PQCRYPT_E_BAD_KEY;
     if (ad_len > PQCRYPT_MAX_AD_LEN) return PQCRYPT_E_INVALID_LEN;
     if (pt_len > PQCRYPT_MAX_PLAINTEXT) return PQCRYPT_E_INVALID_LEN;
     if (!pt && pt_len > 0) return PQCRYPT_E_INTERNAL;
@@ -638,6 +642,12 @@ int pqcrypt_decrypt(const uint8_t *env, size_t env_len,
     pqcrypt_header_t h;
     int rc = pqcrypt_peek_header(env, env_len, &h);
     if (rc != PQCRYPT_OK) return rc;
+
+    /* Suite/key consistency (whitepaper sec02/sec09): reject a private key
+     * whose suite tag does not match the envelope header's suite. Structural
+     * BAD_KEY, before any KEM/AEAD work — the check is on the public suite
+     * byte, not on secret-correlated bytes, so it is distinguishable-safe. */
+    if (priv->suite != h.suite) return PQCRYPT_E_BAD_KEY;
 
     size_t fixed = (size_t)PQCRYPT_HEADER_BYTES
                  + (size_t)h.kem_ct_len

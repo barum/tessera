@@ -8,15 +8,15 @@
 \item \textbf{PQShield power-analysis disclosure} \citep{pqshield2024}, Mar 2024: SPA on Cortex-M4 ML-KEM \texttt{Decaps} recovering the secret in fewer than 1000 traces. Mitigations live in \texttt{mlkem-native}'s masking branch; not used by default in v1.
 \item \textbf{SPA-CCA on ML-KEM} \citep{guo2024spa}, ePrint 2024/2051: single-trace CCA on unmasked Cortex-M4. Masked implementations unaffected.
 \item \textbf{CVE-2024-39427} (liboqs $<$ 0.10.1, Jul 2024): ML-KEM \texttt{Decaps} timing on certain platforms. Fixed pre-v1.
-\item \textbf{CVE-2025-1432} (Bouncy Castle 1.78, Feb 2025): ML-KEM rejection-sampling bias on malformed public keys. Fixed in 1.79; v1 alpha does not yet include the Java port but the v1.1 Java port requires Bouncy Castle 1.79+.
+\item \textbf{CVE-2025-1432} (Bouncy Castle 1.78, Feb 2025): ML-KEM rejection-sampling bias on malformed public keys. Fixed in BouncyCastle 1.79+. The v1.1 Java port avoids the surface entirely by using SunJCE JEP 452 (JDK 24+) as the ML-KEM source rather than BouncyCastle (\cref{sec:mlkem}); a BouncyCastle-backed alternative remains usable but must pin $\geq$ 1.79.
 \end{itemize}
 
 \subsection{What v1 mitigates}
 
-PQCrypt v1 mitigates software-timing side channels by:
+PQCrypt v1.x mitigates software-timing side channels by:
 
 \begin{itemize}
-\item Vendoring constant-time ML-KEM-1024 implementations per language (\cref{sec:mlkem}).
+\item Vendoring constant-time ML-KEM-1024 implementations per language (\cref{sec:mlkem}). For hybrid suite \code{0x06} (\cref{sec:hybrid}), the X25519 source is similarly pinned per language to a constant-time implementation: \texttt{x25519-dalek} v2 in Rust (\texttt{\#![forbid(unsafe\_code)]}), Go stdlib \texttt{crypto/ecdh} (constant-time on aarch64 and x86\_64), Python \texttt{cryptography} (libsodium-backed). Small-subgroup / low-order point inputs are rejected structurally by the X25519 library and surface as \texttt{DecryptionError} via the constant-time decrypt wrapper.
 \item Constant-time AEAD tag and commitment tag verification (\cref{sec:aead-commitment,sec:failure-modes}).
 \item A single \texttt{DecryptionError} class covering every authentication-related failure.
 \item Timing-histogram regression vectors in conformance (\cref{sec:failure-modes}).
@@ -32,4 +32,4 @@ The companion document \texttt{pqcrypt/docs/side-channel-disclaimer.md} restates
 
 \subsection{Forward path}
 
-A future suite byte (likely \code{0x05} or beyond) could pin a masked ML-KEM-1024 implementation as mandatory for ``high-assurance'' deployments. The variant-byte allocation discipline supports this without breaking v1 envelopes (\cref{sec:appendices}).
+A future suite byte (drawn from the remaining reserved-future range; suite \code{0x06} is now taken for hybrid, \cref{sec:hybrid}) could pin a masked ML-KEM-1024 implementation as mandatory for high-assurance deployments where power-analysis is in scope. The variant-byte and suite-byte allocation discipline supports this without breaking v1.x envelopes (\cref{sec:appendices}).

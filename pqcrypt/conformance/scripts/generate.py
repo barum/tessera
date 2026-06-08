@@ -240,7 +240,11 @@ def make_invalid_vectors():
         )
 
     # 2. Headers representing non-allocated suites (variant=0x04, suite invalid).
-    for suite in [0x00, 0x03, 0x04, 0x10, 0x7F, 0xFE, 0xFF]:
+    # 0x05 is the first reserved-future suite byte (boundary-adjacent to the
+    # 0x01/0x02 allocations); every decoder MUST reject it as UNKNOWN_SUITE.
+    # (0x06 is NOT listed here: it is the hybrid suite, accepted by hybrid-
+    # capable languages, so it cannot be a universal-rejection vector.)
+    for suite in [0x00, 0x03, 0x04, 0x05, 0x10, 0x7F, 0xFE, 0xFF]:
         header = bytes(
             [
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -316,6 +320,37 @@ def make_invalid_vectors():
                 "error_kind": "DECRYPT_FAILED",
             }
         )
+
+    # 5. Suite/key consistency (whitepaper sec02/sec09, BAD_KEY). A well-formed
+    # suite 0x02 (ChaCha) envelope decrypted with a private key TAGGED as suite
+    # 0x01 must reject as BAD_KEY (structural), not auth-class. The key bytes
+    # are valid for the envelope (same seed-derived ML-KEM-1024 key); ONLY the
+    # suite tag mismatches the header, so the lone reason for rejection is the
+    # suite/key-consistency check. Every port's runner tags the reconstructed
+    # private key with the record's `suite` field, so the mismatch is exercised
+    # uniformly. Go/Rust already enforced this; Python/C now enforce it too.
+    _reset_kat_drbg()
+    bk_seed = _kp_seed(250)
+    bk_priv, bk_pub = pqcrypt.generate_keypair_from_seed(
+        bk_seed, suite=pqcrypt.SUITE_MLKEM1024_CHACHA
+    )
+    bk_env = pqcrypt.encrypt(
+        b"suite-key-mismatch", bk_pub,
+        suite=pqcrypt.SUITE_MLKEM1024_CHACHA, associated_data=b"",
+    )
+    records.append(
+        {
+            "name": "bad_key_suite_mismatch",
+            "op": "decrypt_should_fail",
+            # Key tagged 0x01; the envelope header is 0x02 -> BAD_KEY.
+            "suite": pqcrypt.SUITE_MLKEM1024_AESGCM,
+            "private_key_seed_hex": _hex(bk_seed),
+            "private_key_hex": _hex(bk_priv.to_bytes()),
+            "envelope_hex": _hex(bk_env),
+            "expected_ad_hex": "",
+            "error_kind": "BAD_KEY",
+        }
+    )
 
     _write(VECTORS_DIR / "invalid.json", records)
 

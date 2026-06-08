@@ -187,6 +187,13 @@ static int handle_decrypt(const char *obj_start, const char *obj_end, int should
     if (extract_str(obj_start, obj_end, "name", name, sizeof(name)) != 0) {
         printf("FAIL <no-name>: missing name\n"); g_fail++; return -1;
     }
+    /* Optional: suite tag for the reconstructed private key (default 0x01).
+     * The library now enforces priv->suite == header.suite (BAD_KEY), so the
+     * runner MUST tag the key with the record's suite (e.g. 0x02 for ChaCha
+     * vectors, a deliberately mismatched suite for bad_key vectors). */
+    long long rec_suite_ll = PQCRYPT_SUITE_MLKEM1024_AESGCM;
+    (void)extract_long(obj_start, obj_end, "suite", &rec_suite_ll);
+    uint8_t rec_suite = (uint8_t)rec_suite_ll;
     /* Optional: private_key_hex */
     static uint8_t sk[PQCRYPT_MLKEM1024_SK_BYTES];
     size_t sk_len = 0;
@@ -210,7 +217,7 @@ static int handle_decrypt(const char *obj_start, const char *obj_end, int should
             printf("FAIL %s: no expected_plaintext_hex\n", name); g_fail++; return -1;
         }
         pqcrypt_priv_t priv = {0};
-        priv.suite = PQCRYPT_SUITE_MLKEM1024_AESGCM;
+        priv.suite = rec_suite;
         memcpy(priv.sk, sk, PQCRYPT_MLKEM1024_SK_BYTES);
         static uint8_t out[2048];
         size_t out_len = sizeof(out);

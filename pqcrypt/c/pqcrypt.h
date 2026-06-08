@@ -130,10 +130,10 @@ typedef struct {
 
 /* Note: pqcrypt_pub_t and pqcrypt_priv_t hold non-hybrid (suite 0x01/0x02)
  * keys only. The hybrid suite 0x06 keys (1600 B pk, 3200 B sk) require a
- * larger struct and are not exposed by the v1.2 C ABI — full hybrid C
- * support lands in v1.3. v1.2 C decoders accept hybrid envelopes only
- * insofar as `pqcrypt_peek_header()` reports the suite byte; subsequent
- * decrypt() returns PQCRYPT_E_UNKNOWN_SUITE. */
+ * larger struct and are not exposed by the C ABI — full hybrid C support
+ * is backlog (PQCK-00030, targeting v1.4). Current C decoders accept hybrid
+ * envelopes only insofar as `pqcrypt_peek_header()` reports the suite byte;
+ * subsequent decrypt() returns PQCRYPT_E_UNKNOWN_SUITE. */
 
 /* ----- Decoded header -----
  *

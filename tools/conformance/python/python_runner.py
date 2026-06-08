@@ -283,7 +283,7 @@ def run_pqcrypt_decrypt_should_fail(rec):
         try:
             pqcrypt.decrypt(env, _pqc_priv(rec), expected_ad=ad)
         except (pqcrypt.DecryptionError, pqcrypt.UnknownVariant,
-                pqcrypt.UnknownSuite, pqcrypt.InvalidLength):
+                pqcrypt.UnknownSuite, pqcrypt.InvalidLength, pqcrypt.BadKey):
             return True, ""
         except Exception as e:
             return False, f"non-PQCryptError: {type(e).__name__}: {e}"

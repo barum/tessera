@@ -268,6 +268,39 @@ done:
     pqcrypt_zeroize_priv(&priv);
 }
 
+static void test_bad_key_suite_mismatch(void) {
+    /* Whitepaper sec02/sec09 BAD_KEY: a suite/key mismatch is a *structural*
+     * error, distinct from the auth-class DECRYPT_FAILED. Checked on the
+     * public suite byte (not secret-correlated bytes), so it is safe to
+     * distinguish. Go/Rust enforced this from v1.0; C added it in PQCK-00035. */
+    const char *name = "bad_key_suite_mismatch";
+    pqcrypt_priv_t priv;
+    pqcrypt_pub_t  pub;
+    ASSERT_OK(pqcrypt_generate_keypair(PQCRYPT_SUITE_MLKEM1024_CHACHA, &priv, &pub), name);
+
+    uint8_t env[2048]; size_t env_len = sizeof(env);
+    ASSERT_OK(pqcrypt_encrypt((const uint8_t *)"x", 1, &pub, PQCRYPT_SUITE_MLKEM1024_CHACHA,
+                              NULL, 0, UINT64_MAX, 0,
+                              env, sizeof(env), &env_len), name);
+
+    /* Encrypt-side: pub is tagged 0x02; requesting suite 0x01 must reject. */
+    uint8_t enc_out[2048]; size_t enc_len = sizeof(enc_out);
+    ASSERT_RC(pqcrypt_encrypt((const uint8_t *)"x", 1, &pub, PQCRYPT_SUITE_MLKEM1024_AESGCM,
+                              NULL, 0, UINT64_MAX, 0,
+                              enc_out, sizeof(enc_out), &enc_len),
+              PQCRYPT_E_BAD_KEY, name);
+
+    /* Decrypt-side: re-tag the private key as 0x01; the envelope header is
+     * 0x02, so decrypt must reject with BAD_KEY before any KEM/AEAD work. */
+    priv.suite = PQCRYPT_SUITE_MLKEM1024_AESGCM;
+    uint8_t out[1024]; size_t out_len = sizeof(out);
+    ASSERT_RC(pqcrypt_decrypt(env, env_len, &priv, NULL, 0, out, sizeof(out), &out_len),
+              PQCRYPT_E_BAD_KEY, name);
+    PASS(name);
+done:
+    pqcrypt_zeroize_priv(&priv);
+}
+
 static void test_peek_header(void) {
     const char *name = "peek_header";
     pqcrypt_priv_t priv;
@@ -333,14 +366,17 @@ static void test_kat_decrypt(void) {
             g_fail++;
             continue;
         }
-        priv.suite = PQCRYPT_SUITE_MLKEM1024_AESGCM;  /* placeholder; ignored on decrypt */
-
         uint8_t env[8192]; size_t env_len = sizeof(env);
         if (hex_decode(env_hex_p, env_hex_l, env, &env_len) != 0) {
             fprintf(stderr, "FAIL kat:%s: envelope too large or bad hex\n", rec_name);
             g_fail++;
             continue;
         }
+        /* Tag the key with the envelope's own suite byte (offset 7) so this
+         * valid-decrypt KAT key matches its header. decrypt now enforces
+         * priv.suite == header.suite (BAD_KEY otherwise), and decrypt.json
+         * mixes 0x01 (AES-GCM) and 0x02 (ChaCha) records. */
+        priv.suite = env[PQCRYPT_SUITE_OFFSET];
 
         uint8_t ad[1024]; size_t ad_len = sizeof(ad);
         if (ad_hex_l == 0) {
@@ -478,6 +514,7 @@ int main(void) {
     test_ad_binding_wrong_ad();
     test_unknown_variant();
     test_unknown_suite();
+    test_bad_key_suite_mismatch();
     test_peek_header();
     test_kat_decrypt();
     test_kat_ad_binding();

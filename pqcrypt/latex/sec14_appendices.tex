@@ -1,17 +1,17 @@
 \section{Appendices}
 \label{sec:appendices}
 
-\subsection*{A. Residual-risk acknowledgment for PQ-only}
+\subsection*{A. Residual-risk acknowledgment for the pure-PQ core promise}
 
-PQCrypt v1 ships one mandatory suite (ML-KEM-1024 + AES-256-GCM + UtC) and no hybrid. If ML-KEM-1024 is later structurally broken (a sub-exponential Module-LWE attack), every v1 envelope loses confidentiality with no classical fallback. This is a 30--50 year risk we accept in exchange for an unambiguous PQ-only promise. The forward-only mitigation path:
+PQCrypt's core promise (suites \code{0x01} and \code{0x02}) is post-quantum-only. If ML-KEM-1024 is later structurally broken (a sub-exponential Module-LWE attack), every \code{0x01}/\code{0x02} envelope loses confidentiality with no classical fallback. This is a 30--50 year risk accepted in exchange for the unambiguous PQ-only promise. The mitigation path is now operational rather than aspirational:
 
 \begin{enumerate}
-\item Future suite byte \code{0x06} introduces a hybrid suite (ML-KEM-1024 + X25519 + AES-256-GCM + UtC) once user demand signals.
-\item Long-lived ciphertexts are re-encrypted under the v2 suite within a defined window.
-\item v1 decoders remain available indefinitely (variant bytes are immutable post-allocation, matching the \pqid{} and \pqhash{} discipline).
+\item Suite byte \code{0x06} (PQCK-00021, v1.2; \cref{sec:hybrid}) is the opt-in hybrid suite (X25519 + ML-KEM-1024 + AES-256-GCM + UtC). Callers who want belt-and-suspenders coverage select \code{0x06} at \code{encrypt} time. The wire byte at offset 7 records which promise the envelope makes.
+\item Long-lived ciphertexts written under suites \code{0x01}/\code{0x02} can be re-encrypted under \code{0x06} (or a future suite) within a defined window. PQCrypt v1.x is not an archive format; long-lived storage should plan re-encryption.
+\item Suite \code{0x01}/\code{0x02} decoders remain available indefinitely (suite bytes are immutable post-allocation, matching the variant-byte discipline of \pqid{} and \pqhash{}).
 \end{enumerate}
 
-We do \emph{not} mitigate by hedging the v1 spec.
+We do \emph{not} mitigate by hedging suites \code{0x01}/\code{0x02} themselves. The pure-PQ promise of those suites is preserved verbatim from v1.0; the hybrid escape valve sits in a separate suite-byte allocation. This is the design choice that lets the same wire format carry two distinct guarantees without diluting either.
 
 \subsection*{B. Variant byte allocation across pqtoolkit}
 
@@ -42,18 +42,19 @@ Cross-rejection is normative: \pqid{} and \pqhash{} decoders MUST reject \code{0
 \toprule
 \textbf{Suite} & \textbf{Algorithms} & \textbf{Status} \\
 \midrule
-\code{0x01} & ML-KEM-1024 + AES-256-GCM + UtC commit + HKDF-SHA3-256 & v1 mandatory \\
-\code{0x02} & ML-KEM-1024 + ChaCha20-Poly1305 + UtC commit + HKDF-SHA3-256 & v1 optional \\
-\code{0x03}--\code{0xFF} & Reserved-future & MUST reject \\
+\code{0x01} & ML-KEM-1024 + AES-256-GCM + UtC commit + HKDF-SHA3-256                & v1.0 mandatory (pure PQ) \\
+\code{0x02} & ML-KEM-1024 + ChaCha20-Poly1305 + UtC commit + HKDF-SHA3-256          & v1.0 optional (pure PQ) \\
+\code{0x06} & X25519 + ML-KEM-1024 + AES-256-GCM + UtC commit + HKDF-SHA3-256       & v1.2 optional (hybrid) \\
+\code{0x00}, \code{0x03}--\code{0x05}, \code{0x07}--\code{0xFF} & Reserved-future   & MUST reject \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-Earmarked future suites (not normative in v1):
+Earmarked future suites (not normative in v1.x):
 \begin{itemize}
-\item \code{0x03}: ML-KEM-1024 + AEGIS-128L + UtC commit (once verified AEGIS implementations land).
-\item \code{0x06}: ML-KEM-1024 + X25519 + AES-256-GCM + UtC commit (hybrid).
-\item \code{0x07}: HQC + AES-256-GCM + UtC commit (lattice-fatigue backup).
+\item \code{0x03}: ML-KEM-1024 + AEGIS-128L + UtC commit. Evaluated and deferred in PQCK-00020 (Nov 2026): AEGIS libraries not yet polyglot-ready. The byte remains reserved-future; revisit when libcrux, OpenSSL, and Go stdlib all ship verified AEGIS implementations.
+\item \code{0x07}: HQC + AES-256-GCM + UtC commit (lattice-fatigue backup, would only land if Module-LWE confidence falters).
+\item Hardened-implementation variants (masked ML-KEM, side-channel-protected X25519) would each take a new suite byte rather than modify \code{0x01}/\code{0x02}/\code{0x06}.
 \end{itemize}
 
 \subsection*{D. Test-vector schema}
@@ -76,4 +77,38 @@ Full schema in \texttt{pqcrypt/conformance/README.md}.
 
 \subsection*{E. Acknowledgments}
 
-\pqid{} and \pqhash{} for the polyglot-spec-first discipline this whitepaper inherits. Bellare and Hoang for the UtC construction \citep{bellare2022commitment}. The \texttt{mlkem-native} \citep{cryspen2025mlkem}, RustCrypto \texttt{ml-kem}, and \texttt{filippo.io/mlkem} maintainers for the verified ML-KEM-1024 implementations PQCrypt v1 vendors. The KyberSlash \citep{kyberslash}, PQShield \citep{pqshield2024}, and GoFetch \citep{gofetch} disclosure teams, whose findings shape the side-channel disclaimer.
+\pqid{} and \pqhash{} for the polyglot-spec-first discipline this whitepaper inherits. Bellare and Hoang for the UtC construction \citep{bellare2022commitment}. The OpenSSL maintainers for the ML-KEM-1024 \texttt{EVP\_KEM} integration shipped in OpenSSL 3.5; the RustCrypto \texttt{ml-kem} authors for the pinned Rust source; the Go core team for landing \texttt{crypto/mlkem} in the 1.26 stdlib; the \texttt{kyber-py} maintainers (NCC Group audit, Q2 2024); and the Cryspen team for \texttt{mlkem-native} \citep{cryspen2025mlkem}, retained as the embedded-target fallback. The X25519 sources used by hybrid suite \code{0x06}: \texttt{x25519-dalek} v2 (Rust), Go stdlib \texttt{crypto/ecdh}, and \texttt{cryptography} (Python). The X-Wing draft authors \citep{xwing-draft} for the combiner design idiom. The KyberSlash \citep{kyberslash}, PQShield \citep{pqshield2024}, SPA-CCA \citep{guo2024spa}, and GoFetch \citep{gofetch} disclosure teams, whose findings shape the side-channel disclaimer.
+
+\subsection*{F. Release timeline (v1.0 -- v1.3)}
+\label{sec:appendix:timeline}
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}lllX@{}}
+\toprule
+\textbf{Release} & \textbf{Date} & \textbf{Tickets} & \textbf{Headline} \\
+\midrule
+v1.0 alpha   & 2026-05-20 & PQCK-00001--00010 & Spec + Python/C/Go/Rust references + plugin protocol + cross-language conformance harness. Suites \code{0x01}/\code{0x02} only. \\
+v1.1         & 2026-05-21 & PQCK-00011--00019 & C++ / TypeScript / Java / CPython ext ports; \texttt{.pqck-key-v1.1} keyfile format (embeds pubkey); CSPRNG path rewire; AEGIS-128L evaluation (deferred). C switched from \texttt{mlkem-native} to OpenSSL 3.5 \texttt{EVP\_KEM}; Java switched from BouncyCastle 1.79+ to SunJCE JEP 452; Go switched from \texttt{filippo.io/mlkem} to stdlib \texttt{crypto/mlkem}. \\
+v1.2         & 2026-05-21 & PQCK-00020--00026 & \textbf{Hybrid suite \code{0x06}} (Python only); reference CLI binary; GitHub Actions matrix; bench sweep; internal security audit doc; AEGIS deferral recorded. \\
+v1.3 partial & 2026-05-21 & PQCK-00027--00029 & Hybrid suite \code{0x06} ports to Rust (PQCK-00028) and Go (PQCK-00029). AES-NI/ARMv8 intrinsics deferral for Rust (PQCK-00027). \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+v1.4 backlog (not normative in this document): hybrid suite \code{0x06} ports to C (PQCK-00030), TypeScript (PQCK-00031), Java (PQCK-00032), CPython ext (PQCK-00033); Rust AES-NI/ARMv8 intrinsics reopen (PQCK-00034); CI timing-histogram regression test (PQCK-00035).
+
+\subsection*{G. Author and document provenance}
+\label{sec:appendix:provenance}
+
+\textbf{Author:} Bahram Samani, \texttt{pqtoolkit} monorepo maintainer.
+
+This document is built from LaTeX sources under \texttt{pqcrypt/latex/} (\texttt{main.tex} + \texttt{secNN\_*.tex}); the build chain is \texttt{pdflatex $\rightarrow$ bibtex $\rightarrow$ pdflatex $\times$ 2} per the Makefile. The artifact at \texttt{pqcrypt/latex/PQCrypt\_Whitepaper.pdf} is regenerated and committed alongside any normative change.
+
+\textbf{Authority order} (when sources disagree): this whitepaper, then the Python reference at \texttt{pqcrypt/python/pqcrypt.py}, then the canonical C ABI at \texttt{pqcrypt/c/pqcrypt.h}, then every other language. A cross-language disagreement is never resolved by changing the spec to match an outlier; the outlier is fixed.
+
+\textbf{Threat-model checklist}: the internal pre-external-audit walk-through is at \texttt{pqcrypt/docs/security-audit-v1.2.md} (PQCK-00025). It enumerates open items for an external auditor (CI timing histogram, FIPS 140-3 path, synthetic-key timing-pad invariant testing, hybrid C port, plugin protocol fuzz harness, memory-zeroization audit).
+
+\textbf{Side-channel posture}: this document and the companion \texttt{pqcrypt/docs/side-channel-disclaimer.md} are normative. v1.x mitigates software-timing side channels only; not power, EM, frequency-scaling, or prefetcher attacks.
+
+\textbf{Conformance gate}: \texttt{tools/conformance/run.sh} is the branch-protection check. Latest run (2026-05-21, Apple M4 Max alpha quick loop): 1051 PASS, 0 FAIL across pqid + pqhash + pqcrypt, four alpha languages (\cref{sec:conformance}).

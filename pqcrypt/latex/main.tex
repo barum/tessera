@@ -1,6 +1,8 @@
 % ============================================================================
-%  PQCrypt — A Pure Post-Quantum Encryption Envelope
-%  Whitepaper, version 1
+%  PQCrypt — A Post-Quantum Encryption Envelope
+%  Whitepaper, version 1.3 (2026-05-21)
+%
+%  Author: Bahram Samani
 %
 %  Build:  make
 %          (or: pdflatex main && bibtex main && pdflatex main && pdflatex main)
@@ -102,6 +104,7 @@
 \newcommand{\pqcrypt}{\textsf{PQCrypt}}
 \newcommand{\pqid}{\textsf{PQID}}
 \newcommand{\pqhash}{\textsf{PQHash}}
+\newcommand{\pqtoolkit}{\textsf{pqtoolkit}}
 \newcommand{\code}[1]{\texttt{#1}}
 
 % ============================================================================
@@ -112,21 +115,29 @@
 \input{_buildinfo.tex}
 \begin{titlepage}
   \centering
-  \vspace*{2.5cm}
+  \vspace*{2.0cm}
   {\Huge\bfseries PQCrypt\par}
   \vspace{0.6cm}
-  {\Large A Pure Post-Quantum Encryption Envelope\par}
-  \vspace{2cm}
-  {\large\itshape Whitepaper, Version 1\par}
-  \vspace{2cm}
-  \begin{tcolorbox}[colback=gray!5,colframe=black!30,width=0.7\textwidth]
+  {\Large A Post-Quantum Encryption Envelope\par}
+  \vspace{0.3cm}
+  {\large\itshape with optional X25519 hybrid (suite \texttt{0x06})\par}
+  \vspace{1.6cm}
+  {\large\bfseries Bahram Samani\par}
+  \vspace{0.4em}
+  {\small\itshape \texttt{pqtoolkit} monorepo maintainer\par}
+  \vspace{1.6cm}
+  {\large\itshape Whitepaper, Version 1.3\par}
+  \vspace{0.3em}
+  {\small Released 2026-05-21\par}
+  \vspace{1.6cm}
+  \begin{tcolorbox}[colback=gray!5,colframe=black!30,width=0.78\textwidth]
     \centering\small
-    \textbf{Build date:} \buildDate\\[0.3em]
-    \textbf{Build time:} \buildTime\\[0.3em]
-    \textbf{Source:} \texttt{pqcrypt/latex/main.tex}
+    \textbf{Build date:} \buildDate \quad\textbf{Build time:} \buildTime\\[0.4em]
+    \textbf{Source:} \texttt{pqcrypt/latex/main.tex}\\[0.4em]
+    \textbf{Spec version:} v1.3 \quad\textbf{Wire variant:} \texttt{0x04} \quad\textbf{Suites:} \texttt{0x01}, \texttt{0x02}, \texttt{0x06}
   \end{tcolorbox}
   \vfill
-  {\small This document is the canonical reference for PQCrypt v1.\par}
+  {\small This document is the canonical reference for PQCrypt v1.x. It supersedes the v1 (2026-05-20) and v1.2 (2026-05-21 Python-only hybrid) drafts. See \cref{sec:appendices}, Appendix F, for the v1.0--v1.3 release timeline.\par}
   \vspace{0.5cm}
 \end{titlepage}
 
@@ -139,6 +150,7 @@
 \input{sec03_wire_format.tex}
 \input{sec04_suites.tex}
 \input{sec05_mlkem_binding.tex}
+\input{sec05b_hybrid.tex}
 \input{sec06_aead_commitment.tex}
 \input{sec07_kdf_and_nonce.tex}
 \input{sec08_ad_binding.tex}
