@@ -117,8 +117,9 @@ PQCRYPT_VEC_DIR="$ROOT/pqcrypt/conformance/vectors"
 
 # Languages with hybrid (suite 0x06) support. Vectors matching hybrid_*.json
 # are only fed to these languages; others would FAIL with UNKNOWN_SUITE.
-# PQCK-00021 shipped hybrid in Python. PQCK-00028 added Rust (x25519-dalek
-# 2 + ml-kem 0.3). C/Go/TypeScript/Java/CPython ext follow in subsequent v1.3 PRs.
+# Hybrid (suite 0x06) shipped in Python (PQCK-00021), Rust (PQCK-00028), and
+# Go (PQCK-00029). C/C++/TypeScript/Java/CPython ext remain on the v1.4 hybrid
+# backlog (PQCK-00030) and reject 0x06 as UNKNOWN_SUITE for now.
 hybrid_supported() {
     case "$1" in
         python) return 0 ;;
@@ -134,8 +135,17 @@ for lang in $LANGS; do
     pass=0
     fail=0
     for vdir in $VECTOR_DIRS; do
-        if [ "$vdir" = "$PQCRYPT_VEC_DIR" ] && [ -n "$pqcrypt_cmd" ]; then
-            this_cmd="$pqcrypt_cmd"
+        if [ "$vdir" = "$PQCRYPT_VEC_DIR" ]; then
+            if [ -n "$pqcrypt_cmd" ]; then
+                this_cmd="$pqcrypt_cmd"
+            else
+                # cpp/typescript/java/cpython have NO pqcrypt runner. Skip the
+                # PQCrypt vector dir entirely for them — feeding pqcrypt vectors
+                # to their pqid/pqhash runner would FAIL with "unknown op".
+                # (There is no Python-runner fallback.) These languages run
+                # pqid + pqhash only until their v1.4 pqcrypt ports land.
+                continue
+            fi
         else
             this_cmd="$cmd"
         fi

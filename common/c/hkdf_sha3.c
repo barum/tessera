@@ -1,10 +1,11 @@
 /*
  * hkdf_sha3.c — Implementation of SHA3-256, HMAC-SHA3-256, and HKDF-SHA3-256.
  *
- * Derived from FIPS 202 (SHA-3 standard) and RFC 5869 (HKDF). The Keccak-f
- * permutation is reused from `keccak.c` via a private absorb-then-squeeze
- * routine; SHA3-256 differs from SHAKE-256 only in the suffix byte (0x06
- * vs 0x1F) and a fixed 32-byte output length.
+ * Derived from FIPS 202 (SHA-3 standard) and RFC 5869 (HKDF). This file
+ * intentionally keeps a self-contained copy of the Keccak-f permutation
+ * (re-defined inline below) to isolate the SHA3 0x06 suffix without exposing
+ * keccak.c's internals; SHA3-256 differs from SHAKE-256 only in the suffix
+ * byte (0x06 vs 0x1F) and a fixed 32-byte output length.
  *
  * No dynamic allocation. Constant-time HMAC inner/outer key derivation
  * (no secret-dependent branches; loops are length-only).

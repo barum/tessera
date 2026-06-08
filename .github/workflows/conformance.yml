@@ -7,10 +7,12 @@ on:
     branches: [main]
 
 # Cross-language conformance gate: builds every implementation on a single
-# runner and runs the harness end-to-end against vectors from BOTH pqid/
-# and pqhash/. This is the single check branch protection should require —
-# the per-language workflows (python.yml, c.yml, …) cover per-OS and
-# per-toolchain variants independently.
+# runner and runs the harness end-to-end against vectors from pqid/, pqhash/,
+# and pqcrypt/. The blocking gate is the alpha step below (python + c + go +
+# rust, which have pqcrypt runners); the full-8 step is informational
+# (continue-on-error) because cpp/typescript/java/cpython have no pqcrypt
+# runner yet and run pqid + pqhash only. The per-language workflows
+# (python.yml, c.yml, …) cover per-OS and per-toolchain variants independently.
 jobs:
   cross-language:
     runs-on: ubuntu-latest

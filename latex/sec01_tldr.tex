@@ -1,0 +1,20 @@
+\section*{TL;DR}
+\addcontentsline{toc}{section}{TL;DR}
+
+\pqtoolkit{} is a specification-first, polyglot monorepo housing three post-quantum-era data formats:
+
+\begin{itemize}
+\item \pqid{} (variant bytes \code{0x01}/\code{0x02}, 41 B): a sortable, post-quantum-era \textbf{identifier}. Pairs a 48-bit ms timestamp with 256 bits of CSPRNG-supplied randomness; the smallest random field that retains 128-bit second-preimage security against Grover's algorithm \citep{grover1996}. Two variants: Standard (wall-clock) and HLC (Hybrid Logical Clock) \citep{kulkarni2014hlc}.
+\item \pqhash{} (variant byte \code{0x03}, 73 B): a SHAKE-256-based \textbf{content identifier}. Pairs the same 9-byte provenance header with a 64-byte (512-bit) SHAKE-256 \citep{fips202} tail. $2^{256}$ classical collision, $\sim 2^{170}$ BHT \citep{bht1998} quantum collision. Not a hash function; a wire format built on one.
+\item \pqcrypt{} (variant byte \code{0x04}, 16-byte header + variable body): an \textbf{encryption envelope}. v1 mandatory suite is ML-KEM-1024 \citep{fips203} + AES-256-GCM + 32-byte UtC commitment tag + HKDF-SHA3-256. v1.2 added the opt-in hybrid suite \code{0x06} (X25519 + ML-KEM-1024) for callers who want a classical safety net.
+\end{itemize}
+
+The three projects share one variant-byte namespace, one 9-byte header layout (\code{TS(6) || VARIANT(1) || CTR(2)}), one cross-language conformance harness at \texttt{tools/conformance/run.sh}, one Keccak/SHAKE-256 implementation under \texttt{common/}, and one author. Per-project normative content lives in the per-project whitepapers; this document is the cross-project overview.
+
+\begin{calloutinfo}[The integration story]
+When a record needs a stable identifier, use \pqid{}. When a record's content needs an integrity commitment, use \pqhash{}. When a record's content needs confidentiality, wrap it in \pqcrypt{} with the \pqid{} (or the \pqhash{}) as AEAD associated data. The three formats compose without coupling: a \pqcrypt{} envelope can carry a \pqid{} or a \pqhash{} as AD; a \pqhash{} can be the AD that binds a \pqcrypt{} envelope to specific content; a \pqid{} can identify a record whose serialized form a \pqhash{} commits to and a \pqcrypt{} envelope encrypts. The three projects exist as siblings, not as a layered cake.
+\end{calloutinfo}
+
+\begin{calloutwarning}[Scope of this umbrella document]
+This whitepaper does \emph{not} restate the normative content of any per-project whitepaper. It documents only the relationships, shared infrastructure, and canonical cross-project patterns. For \pqid{}'s 14-section spec, \pqhash{}'s 10-section spec, or \pqcrypt{}'s 14-section spec, refer to the project-specific PDFs.
+\end{calloutwarning}

@@ -3,6 +3,9 @@
 debug
 target
 
+# Claude Code harness runtime files (only .claude/skills/**/SKILL.md is tracked)
+.claude/*.lock
+
 # Python
 __pycache__/
 *.py[cod]
@@ -23,7 +26,10 @@ pqcrypt/c/test_pqcrypt
 pqcrypt/c/bench_pqcrypt
 common/c/test_common
 tools/conformance/c/conformance_runner
+tools/conformance/c/pqcrypt_runner
 tools/conformance/go/conformance_runner
+tools/conformance/go/pqcrypt_runner/pqcrypt_runner
+pqcrypt/cpp/test_pqcrypt
 
 # Go workspace lockfile
 go.work.sum
@@ -50,6 +56,10 @@ Cargo.lock
 target/
 pqid/rust/target/
 pqhash/rust/target/
+# Go pqcrypt_runner build output (rebuilt by tools/conformance/run.sh; the
+# pattern `target/` does not match `target-go/` — gitignore matches whole
+# path components, so list it explicitly).
+target-go/
 tools/conformance/rust/target/
 
 # Node / TypeScript
@@ -66,6 +76,14 @@ dist/
 *.fdb_latexmk
 *.fls
 *.synctex.gz
+
+# Root-level whitepaper PDFs: only PQID is a tracked published artifact at the
+# repo root (per CLAUDE.md authority order). The canonical PQCrypt / PQHash /
+# PQToolkit PDFs live in their own latex/ dirs; the root copies are transient
+# build byproducts.
+/PQCrypt_Whitepaper.pdf
+/PQHash_Whitepaper.pdf
+/PQToolkit_Whitepaper.pdf
 
 # OS
 .DS_Store

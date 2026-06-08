@@ -1,0 +1,54 @@
+\section{The Three Projects}
+\label{sec:three-projects}
+
+Each project under \pqtoolkit{} is independent on the wire: a consumer can adopt one without adopting any other, and a downstream system that cares about only identifiers (\pqid{}) need not pull in SHAKE-256 (\pqhash{}) or ML-KEM-1024 (\pqcrypt{}). The projects share discipline (Section~\ref{sec:polyglot}), tooling (Section~\ref{sec:conformance}), and a few load-bearing infrastructure pieces (Section~\ref{sec:shared-namespace}), but their wire formats commit to nothing about each other beyond non-collision of variant bytes.
+
+\subsection{\pqid{}: post-quantum-era identifier}
+
+\textbf{Project root:} \texttt{pqid/}. \textbf{Whitepaper:} \texttt{pqid/latex/PQID\_Whitepaper.pdf} (or repo-root \texttt{PQID\_Whitepaper.pdf}).
+
+\pqid{} is a 41-byte, lexicographically-sortable identifier. Layout: \code{TS(6) || VARIANT(1) || COUNTER(2) || RANDOM(32)}, big-endian. The 32-byte random tail is the security claim: $2^{128}$ second-preimage even against an attacker running Grover's algorithm \citep{grover1996} --- the same security target NIST uses for ML-KEM-1024 \citep{fips203} (which \pqcrypt{} uses; see below). The 16-bit per-millisecond counter and 48-bit timestamp make the format sortable and traceable without coordination.
+
+\pqid{} v1 ships two variants:
+\begin{itemize}
+\item \code{0x01} (Standard): wall-clock-driven. Not internally locked; one generator per thread, or caller-locks.
+\item \code{0x02} (HLC): Hybrid Logical Clock \citep{kulkarni2014hlc}. Internally locked. 60-second drift bound: a peer HLC more than 60 s ahead of local physical time is a hard error.
+\end{itemize}
+
+Canonical text encodings: 55-character Base64URL \citep{rfc4648} (no padding) and 66-character Crockford Base32 \citep{crockford} (case-insensitive on decode, \code{I/L $\to$ 1} and \code{O $\to$ 0} confusables accepted). Both round-trip byte-identical with the binary. Crockford ASCII sort preserves generation-time order.
+
+\subsection{\pqhash{}: SHAKE-256 content hash}
+
+\textbf{Project root:} \texttt{pqhash/}. \textbf{Whitepaper:} \texttt{pqhash/latex/PQHash\_Whitepaper.pdf}.
+
+\pqhash{} is a 73-byte content identifier. Layout: \code{TS(6) || VARIANT(1) || COUNTER(2) || TAIL(64)}, big-endian. The 64-byte tail is \code{SHAKE-256(content, 64 bytes)} \citep{fips202}; the 9-byte header is layout-identical to \pqid{}'s header. The security argument is the SHAKE-256 collision-resistance assumption: $2^{256}$ classical collision, $\sim 2^{170}$ Brassard--H{\o}yer--Tapp \citep{bht1998} quantum collision, $2^{256}$ Grover second-preimage.
+
+\pqhash{} v1 ships one variant: \code{0x03}. Canonical text encodings: 98-character Base64URL and 117-character Crockford Base32. \pqhash{} is keyless; it provides no authentication, no confidentiality, and no producer non-repudiation (its threat model is closely tied to ``the SHAKE-256 sponge is what NIST says it is''). Two callers hashing the same content produce identifiers that share the 64-byte tail and differ only in the 9-byte header.
+
+\subsection{\pqcrypt{}: ML-KEM-1024 encryption envelope}
+
+\textbf{Project root:} \texttt{pqcrypt/}. \textbf{Whitepaper:} \texttt{pqcrypt/latex/PQCrypt\_Whitepaper.pdf}.
+
+\pqcrypt{} is a 16-byte-header variable-body encryption envelope. Header layout: \code{TS(6) || VARIANT(1) || SUITE(1) || COUNTER(2) || KEM\_CT\_LEN(2) || AD\_LEN(4)}; body: \code{KEM\_CT || AD || NONCE(12) || AEAD\_CT || AEAD\_TAG(16) || COMMIT(32)}. The first 9 bytes are layout-compatible with \pqid{}'s and \pqhash{}'s headers; bytes 9--15 are PQCrypt-specific.
+
+\pqcrypt{} v1.x ships three suites:
+\begin{itemize}
+\item \code{0x01} (mandatory, pure PQ): ML-KEM-1024 + AES-256-GCM + 32-byte UtC commitment tag \citep{bellare2022commitment} + HKDF-SHA3-256.
+\item \code{0x02} (optional, pure PQ): ML-KEM-1024 + ChaCha20-Poly1305 + UtC + HKDF-SHA3-256. For software-only callers without AES hardware.
+\item \code{0x06} (optional, hybrid; v1.2, PQCK-00021): X25519 \citep{rfc7748} + ML-KEM-1024 + AES-256-GCM + UtC + HKDF-SHA3-256. Opt-in defense-in-depth; uses an X-Wing--style \citep{xwing-draft} SHAKE-256 combiner over both shared secrets.
+\end{itemize}
+
+The suites \code{0x01}/\code{0x02} carry an unambiguous pure-PQ confidentiality promise: residual risk (a structural break of Module-LWE) is accepted in exchange. Suite \code{0x06} is the opt-in alternative that adds a classical safety net via X25519. The wire byte at header offset 7 records which promise the envelope makes; a single envelope never makes both.
+
+\subsection{Common infrastructure}
+
+\textbf{Project root:} \texttt{common/}. Not a normative wire format; a shared library directory whose contents are used by more than one project.
+
+\begin{itemize}
+\item \texttt{common/c/keccak.\{h,c\}} (and \texttt{common/java/com/pqtoolkit/common/Keccak.java}): SHAKE-256/Keccak. Used by \pqhash{} (tail computation) and \pqcrypt{} (HKDF salt derivation; hybrid suite combiner). Python and Go use stdlib (\texttt{hashlib.shake\_256}, \texttt{golang.org/x/crypto/sha3}); Rust and TypeScript use audited crates. The \texttt{common/} copy is the source of truth for C, C++, and Java.
+\item \texttt{common/c/pqtk\_header.h}: shared offset constants for the 9-byte header layout (\code{TS}, \code{VARIANT}, \code{COUNTER}). All three projects parse the same first nine bytes the same way.
+\item \texttt{common/c/random.\{h,c\}}: OS CSPRNG wrapper. Used by \pqid{} (random tail) and \pqcrypt{} (ML-KEM \texttt{Encaps} randomness, X25519 ephemeral keygen).
+\item \texttt{common/c/hkdf\_sha3.\{h,c\}}: HMAC-SHA3-256 and HKDF-SHA3-256. \pqcrypt{}-only as of v1.3, vendored alongside the Keccak source.
+\end{itemize}
+
+The discipline: code lives under \texttt{common/} only if more than one project depends on it today. The Keccak source moved to \texttt{common/} when \pqcrypt{} became its second consumer (\pqhash{} alone could vendor it inside the project). The HKDF-SHA3 wrapper has not moved out of \texttt{common/}-\pqcrypt{}-territory because no other project uses it.

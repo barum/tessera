@@ -1,18 +1,20 @@
 ---
 name: pqtoolkit-security
-description: This skill should be used when the user wants to "do a security review", "audit pqtoolkit for vulnerabilities", "check CSPRNG usage", "review variant byte handling", "audit HLC drift handling", "check for timing side-channels", "review supply-chain dependencies", "review FFI boundaries", "audit Crockford decode for malleability", "assess post-quantum claims", or any security-focused review, threat-model question, or hardening request that spans PQID and/or PQHash in the pqtoolkit monorepo.
-version: 1.0.0
+description: This skill should be used when the user wants to "do a security review", "audit pqtoolkit for vulnerabilities", "check CSPRNG usage", "review variant byte handling", "audit HLC drift handling", "check for timing side-channels", "review supply-chain dependencies", "review FFI boundaries", "audit Crockford decode for malleability", "assess post-quantum claims", "audit PQCrypt", "review the UtC commitment construction", "audit the hybrid suite 0x06", "review ML-KEM-1024 library choices", or any security-focused review, threat-model question, or hardening request that spans PQID, PQHash, and/or PQCrypt in the pqtoolkit monorepo.
+version: 1.3.0
 created: 2026-05-20T00:00:00Z
-updated: 2026-05-20T00:00:00Z
+updated: 2026-06-08T00:00:00Z
 ---
 
 # pqtoolkit-security — Security review and hardening playbook
 
-This skill is the reference for security-relevant work that spans the pqtoolkit monorepo: PQID, PQHash, `common/`, and the cross-language conformance harness. The umbrella discipline lives in [../../../CLAUDE.md](../../../CLAUDE.md); per-project mechanics live in [pqid-impl](../pqid-impl/SKILL.md) and [pqhash-impl](../pqhash-impl/SKILL.md).
+This skill is the reference for security-relevant work that spans the pqtoolkit monorepo: PQID, PQHash, **PQCrypt**, `common/`, and the cross-language conformance harness. The umbrella discipline lives in [../../../CLAUDE.md](../../../CLAUDE.md); per-project mechanics live in [pqid-impl](../pqid-impl/SKILL.md), [pqhash-impl](../pqhash-impl/SKILL.md), and [pqcrypt-impl](../pqcrypt-impl/SKILL.md).
 
 ## Threat model in one paragraph
 
 PQID is a 41-byte sortable identifier that derives its post-quantum claim from a 256-bit OS-CSPRNG random tail. PQHash is a 73-byte content hash anchored on SHAKE-256 (Keccak-f[1600]). Both formats are **public artifacts** — assume an attacker sees every byte, can replay them, and controls peers in HLC time-sync exchanges. The format is *not* a credential and carries no secret. The security goals are: (a) unguessability of the random tail in PQID, (b) collision resistance of SHAKE-256 in PQHash, (c) malleability resistance of both wire-form encodings, and (d) monotonicity protection in HLC under bounded peer drift.
+
+PQCrypt is a different threat model: the envelope **carries a confidential payload**. Attacker is computationally bounded by IND-CCA2 of ML-KEM-1024 (FIPS 203) and AEAD confidentiality/integrity, sees every byte on the wire, controls delivery, has a decryption oracle on *other* ciphertexts under the same recipient key, may flip suite/variant bytes, and may attempt multi-recipient AEAD-key confusion (mitigated by the 32-byte UtC commitment tag). The recipient's long-term ML-KEM private key (and the X25519 half for hybrid `0x06`) is custody scope of the plugin protocol, not the core wire spec. **Residual risk explicitly accepted for suites `0x01`/`0x02`:** Module-LWE structural break ⇒ confidentiality loss with no classical fallback. **Suite `0x06`** (X25519 + ML-KEM-1024, v1.2) is the opt-in alternative that adds a classical safety net. See [pqcrypt/docs/security-audit-v1.2.md](../../../pqcrypt/docs/security-audit-v1.2.md) for the full threat-model checklist + known-attacks table.
 
 ## Review checklist
 
@@ -95,7 +97,25 @@ Add missing negative vectors as part of any security PR.
 
 ### 9. Whitepaper coherence
 
-After a security-relevant change, re-read the affected section of the whitepaper LaTeX (`pqid/latex/secNN_*.tex` or `pqhash/latex/`) and confirm it still matches the code. If the spec lags the code, the spec is the bug — but a "security fix" that diverges from the spec without a spec update is itself a bug.
+After a security-relevant change, re-read the affected section of the whitepaper LaTeX (`pqid/latex/secNN_*.tex`, `pqhash/latex/`, or `pqcrypt/latex/secNN_*.tex`) and confirm it still matches the code. If the spec lags the code, the spec is the bug — but a "security fix" that diverges from the spec without a spec update is itself a bug.
+
+### 10. PQCrypt-specific checks
+
+Touching `pqcrypt/`? Run this PQCrypt block in addition to 1–9 above.
+
+- **Suite byte rejection.** Decoders accept only `0x01` and `0x02` (pure PQ). Hybrid-capable languages additionally accept `0x06`. Any other suite byte → `UNKNOWN_SUITE`. Languages without hybrid MUST reject `0x06` until they flip their entry in [tools/conformance/run.sh:hybrid_supported()](../../../tools/conformance/run.sh).
+- **Single DecryptionError class.** All authentication-class failures (bad AEAD tag, bad commit tag, bad KEM ciphertext, AD mismatch, derived nonce mismatch) map to one error code in every language. Structural errors (truncation, unknown variant/suite, suite/key mismatch) ARE distinguishable and that's fine — they don't touch secret-correlated bytes.
+- **Constant-time decrypt path.** Every failure path executes the AEAD verify (with a synthetic key on structural failures) to keep timing flat. Verify by code review *and* by spot-checking the per-language source.
+- **UtC commitment tag present.** Every envelope carries the 32-byte `HMAC-SHA3-256(K_commit, header ‖ KEM_CT ‖ AD ‖ AEAD_CT)` tail, including hybrid `0x06`.
+- **Deterministic AEAD nonce.** Derived from `K_session` via `HKDF-Expand(prk, "pqcrypt v1 aead n", 12)`. Never random. For hybrid, `K_session` is the SHAKE-256 combiner output (fresh per envelope).
+- **Suite/key consistency check at API boundary.** `encrypt()` MUST reject `pub.suite != suite`; `decrypt()` MUST reject `priv.suite != header.suite`. Either is `BadKey`-class.
+- **No "Kyber" in public API.** Grep: `rg -n '\bKyber\b' pqcrypt/{python,c,go,rust,typescript,java,cpython}/{*.py,*.h,*.c,*.go,*.rs,*.ts,*.java}` should return nothing in user-facing identifiers. Use `ML-KEM-1024`. Hybrid surface uses `X25519` and `ML-KEM-1024` only; never "Curve25519" / "ECDH" in user-facing names.
+- **ML-KEM library version pin per language.** Verify against the table in [../pqcrypt-impl/SKILL.md](../pqcrypt-impl/SKILL.md). Current pins: **OpenSSL 3.5+ `EVP_PKEY` ML-KEM (encapsulate/decapsulate)** for C (NOT mlkem-native), **RustCrypto `ml-kem` 0.3** for Rust, **Go 1.26 stdlib `crypto/mlkem`**, **`kyber-py >= 1.0`** for Python (plus generator-only **`pycryptodome >= 3.20`** for the deterministic DRBG), **SunJCE JEP 452** for Java (NOT BouncyCastle), **`@noble/post-quantum`** for TS. Hybrid X25519 pins: **`x25519-dalek` 2** (Rust), **stdlib `crypto/ecdh`** (Go), **`cryptography`** (Python).
+- **KyberSlash posture.** A `pqcrypt/conformance/vectors/kyberslash_regression.json` timing-regression vector is **planned/backlog, not yet shipped** — do not assume an automated KyberSlash regression net exists. The actual mitigation today is (a) the pinned post-patch ML-KEM libraries (kyber-py 1.0, OpenSSL 3.5, Go 1.26, ml-kem 0.3, @noble; SunJCE JEP 452) and (b) the manual timing-histogram check tracked as an open item in `security-audit-v1.2.md`. Confirm the library pins are post-patch; flag the missing regression vector as an open item, do not claim it as coverage.
+- **Hybrid combiner integrity (suite `0x06`).** The combiner is fixed: `K_session = SHAKE-256("pqcrypt v1 hybrid combiner" ‖ ss_mlkem ‖ x_ss ‖ ml_kem_ct ‖ x_eph_pk, 32)`. Verify by grepping for the exact label string in each hybrid-capable language; flipping the order is a polyglot KAT break.
+- **Side-channel disclaimer present and unchanged.** [pqcrypt/docs/side-channel-disclaimer.md](../../../pqcrypt/docs/side-channel-disclaimer.md) is normative. v1 mitigates software timing only — not power, EM, DVFS (Hertzbleed), prefetcher (GoFetch). Any PR that relaxes this is a security-claim change requiring whitepaper update.
+- **Plugin protocol surface.** Keyfile format `.pqck-key-v1.1` uses Argon2id (m=64MB, t=3, p=1) + AES-256-GCM. v1.0 keyfiles still readable; downgrades intentional.
+- **Internal audit doc current.** [pqcrypt/docs/security-audit-v1.2.md](../../../pqcrypt/docs/security-audit-v1.2.md) is the canonical threat-model checklist + known-attacks table. Refresh after any v1.x release with security-relevant content (PQCK-00025 shape).
 
 ## Workflow for a security-relevant change
 
@@ -110,18 +130,35 @@ After a security-relevant change, re-read the affected section of the whitepaper
 
 ```bash
 # Fast scan for the most common anti-patterns
-rg -n 'Math\.random|java\.util\.Random|rand\(\)\b|thread_rng\(\)' pqid pqhash
-rg -n 'unsafe\s*[{(]'        pqid/rust pqhash/rust
-rg -n 'import\s+"C"'         pqid/go  pqhash/go
-rg -n 'cgo'                   pqid     pqhash
+rg -n 'Math\.random|java\.util\.Random|rand\(\)\b|thread_rng\(\)' pqid pqhash pqcrypt
+rg -n 'unsafe\s*[{(]'        pqid/rust pqhash/rust pqcrypt/rust
+rg -n 'import\s+"C"'         pqid/go  pqhash/go  pqcrypt/go
+rg -n 'cgo'                   pqid     pqhash    pqcrypt
 
-# Confirm Crockford 2-bit guard exists per language
+# Confirm Crockford 2-bit guard exists per language (PQID/PQHash only; PQCrypt is binary)
 rg -n 'high.?bits|top.?2.?bits|0xC0|330'  pqid pqhash
 
 # Confirm HLC drift constant and error path
 rg -n 'HLC_MAX_DRIFT_MS|HLCDriftError'    pqid
 
-# Run the cross-language gate
+# PQCrypt: "Kyber" naming MUST NOT leak into public APIs (kyber-py as a dep name is OK)
+rg -n '\bKyber\b' pqcrypt/{python,c,go,rust,typescript,java,cpython}/{*.py,*.h,*.c,*.go,*.rs,*.ts,*.java} 2>/dev/null | rg -v '^\s*#|//|\\*'
+
+# PQCrypt: single DecryptionError class (no per-cause splitting)
+rg -n 'DecryptionError|DECRYPT_FAILED|ErrDecrypt|DecryptFailed' pqcrypt
+
+# PQCrypt: hybrid combiner label MUST be identical across hybrid-capable languages
+rg -n 'pqcrypt v1 hybrid combiner' pqcrypt/{python,rust,go}
+
+# PQCrypt: confirm suite-byte rejection is symmetric (0x00-0x05 except 0x01/0x02; 0x07+; hybrid-capable also accepts 0x06)
+rg -n 'UNKNOWN_SUITE|ErrUnknownSuite|UnknownSuite|unknown suite' pqcrypt
+
+# PQCrypt: hybrid-supported language matrix in the harness (Python/Rust/Go ✓ as of v1.3)
+grep -A 6 'hybrid_supported()' tools/conformance/run.sh
+
+# Run the cross-language gate (PQCrypt v1.x alpha quick loop)
+PQTK_CONFORMANCE_SKIP="cpp typescript java cpython" bash tools/conformance/run.sh
+# Full gate (all 8 languages × all 3 projects)
 bash tools/conformance/run.sh
 ```
 

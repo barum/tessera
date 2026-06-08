@@ -1,0 +1,90 @@
+\section{Canonical Cross-Project Patterns}
+\label{sec:patterns}
+
+The three projects are designed to compose. This section documents the canonical patterns and the reasoning behind each.
+
+\subsection{Pattern 1: \pqid{}-as-AD (record-level confidentiality binding)}
+
+\textbf{Use when:} a record has a stable \pqid{} identifier and the record's content needs confidentiality and integrity tied to that identifier.
+
+\begin{lstlisting}[language=Pseudocode]
+record_id  = pqid.new_hlc()                              # 41 bytes, variant 0x02
+envelope   = pqcrypt.encrypt(plaintext, recipient_pub,
+                             associated_data=record_id)  # bind PQID as AEAD AD
+# ... after delivery ...
+plaintext  = pqcrypt.decrypt(envelope, recipient_priv,
+                             expected_ad=record_id)      # MUST match
+\end{lstlisting}
+
+\textbf{What it defends:} an attacker who reroutes the envelope under a different \pqid{} (e.g., to make a leaked envelope appear to belong to a different record) gets AEAD-AD mismatch on decrypt, which produces \pqcrypt{}'s generic \texttt{DecryptionError}. The envelope is cryptographically bound to the identifier it was issued for.
+
+\textbf{Cost:} zero additional cryptography. The AEAD AD path is free in every AEAD construction. The PQID is 41 bytes; the AEAD AD field has a 64\,KiB cap (\pqcrypt{} \code{AD\_LEN $\leq 65{,}536$}).
+
+\textbf{Test coverage:} \texttt{pqcrypt/conformance/vectors/ad\_binding.json} exercises positive (matching AD decrypts) and negative (any AD bit-flip $\to$ \texttt{DECRYPT\_FAILED}) cases.
+
+This is the most-used cross-project pattern, named the ``canonical pattern'' in \pqcrypt{}'s normative whitepaper.
+
+\subsection{Pattern 2: \pqhash{}-as-AD (content-level confidentiality binding)}
+
+\textbf{Use when:} the encrypted payload must be bound to specific content bytes, not just ``some content this recipient can decrypt.''
+
+\begin{lstlisting}[language=Pseudocode]
+content_hash = pqhash.hash_only(plaintext)               # 64 bytes
+envelope     = pqcrypt.encrypt(plaintext, recipient_pub,
+                               associated_data=content_hash)
+# ... after delivery ...
+plaintext    = pqcrypt.decrypt(envelope, recipient_priv,
+                               expected_ad=content_hash)
+\end{lstlisting}
+
+\textbf{What it defends:} an attacker who substitutes the envelope with one carrying different content (but the same recipient key and structurally-valid wire form) fails decryption because the AEAD AD they would supply does not match the embedded content. The pattern composes with UtC commitment (\pqcrypt{}'s 32-byte commitment tag, \citep{bellare2022commitment}): UtC closes multi-recipient key confusion; \pqhash{}-as-AD closes content substitution. The two bindings are independent.
+
+\textbf{Variant:} instead of passing just the 64-byte SHAKE-256 tail, pass the full 73-byte \pqhash{} as AD. This carries provenance (the \pqhash{}'s timestamp and counter) alongside the content commitment. The choice depends on whether the AD-binding consumer needs the provenance metadata.
+
+\subsection{Pattern 3: \pqid{} + \pqhash{} (identifier + content commitment)}
+
+\textbf{Use when:} a record-keeping system tracks both record identity (which mutates rarely) and content (which mutates often).
+
+\begin{lstlisting}[language=Pseudocode]
+record_id    = pqid.new_hlc()           # immutable for the record's lifetime
+content_hash = pqhash.hash_only(...)    # rolls on every content update
+# Persist {record_id, content_hash, body} as the canonical record view.
+# Subscribers verify both: record_id pins identity, content_hash pins content.
+\end{lstlisting}
+
+\textbf{What it defends:} content-substitution attacks at the storage layer. An attacker who modifies a record's body without rolling the \pqhash{} produces inconsistent state that storage-level integrity checks detect. Independent of any cryptographic envelope.
+
+\subsection{Pattern 4: \pqhash{} of a \pqcrypt{} envelope (content-addressed ciphertext)}
+
+\textbf{Use when:} an object-storage system indexes by ciphertext rather than plaintext.
+
+\begin{lstlisting}[language=Pseudocode]
+envelope     = pqcrypt.encrypt(plaintext, recipient_pub)
+storage_key  = pqhash.hash_only(envelope)               # 64-byte SHAKE-256
+# Store at key=storage_key; lookup by key=pqhash.hash_only(known_envelope_bytes).
+\end{lstlisting}
+
+\textbf{What it defends:} accidental duplication of identical ciphertexts under different storage keys. \pqcrypt{} envelopes are deterministic in their inputs (plaintext, recipient key, AD, sender randomness): two envelopes with the same input randomness are byte-identical, so \pqhash{}-keying coalesces them. With different sender randomness, two envelopes for the same plaintext differ, so deduplication does not collapse them --- this is the right behavior for a system that wants per-encryption auditability.
+
+\subsection{Pattern 5: \pqid{}-tagged \pqhash{} (provenance-tagged content commitment)}
+
+\textbf{Use when:} content has multiple producers and the audit log needs to record ``producer X committed to content Y at time T.''
+
+\begin{lstlisting}[language=Pseudocode]
+record_id = pqid.new_hlc()              # who is committing
+content_h = pqhash.hash_only(content)   # what they are committing to
+audit_entry = sign(record_id || content_h, producer_signing_key)
+# Persist audit_entry. Note: PQCrypt is not involved if the content is public;
+# wrap with PQCrypt only when confidentiality is also required.
+\end{lstlisting}
+
+\textbf{Note:} \pqtoolkit{} does not (yet) ship a signature primitive. The signing step is performed with an external scheme: ML-DSA \citep{fips204} for FIPS-aligned PQ signing, Ed25519 \citep{rfc8032} for classical, or a hybrid via PASETO \citep{paseto-v4}. A future \texttt{pqsign}-style sibling project is outside v1.x scope.
+
+\subsection{Anti-patterns}
+
+\begin{itemize}
+\item \textbf{Using \pqid{} as the AEAD key.} \pqid{} is a public identifier, not a key. Anyone who has seen the \pqid{} can forge an envelope under it. Use a proper key from a plugin (\pqcrypt{}'s \texttt{pqcrypt-plugin-file} or an HSM-backed plugin).
+\item \textbf{Using \pqhash{} as a password.} \pqhash{}'s tail is content-deterministic and keyless. An attacker who can guess the content recomputes the tail. Use Argon2id \citep{rfc9106} or scrypt for password derivation; \pqhash{}'s threat model explicitly excludes secrecy of low-entropy content.
+\item \textbf{Truncating to fewer bytes than the wire format prescribes.} \pqid{} is exactly 41 bytes; \pqhash{} is exactly 73 bytes; \pqcrypt{}'s header is exactly 16 bytes. ``Optimizing'' by dropping fields breaks the wire contract and the cross-language harness.
+\item \textbf{Mixing variant bytes within an artifact.} A 41-byte buffer whose variant byte is \code{0x03} is not a \pqid{}; it is a malformed input that the \pqid{} decoder rejects (and the \pqhash{} decoder also rejects, because the length is wrong). Don't try to ``upgrade'' a \pqid{} into a \pqhash{} by editing one byte.
+\end{itemize}

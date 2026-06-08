@@ -86,17 +86,19 @@ These are cross-cutting and apply to every project in this monorepo:
 
 4. **Crockford 2-bit guard.** A 66-char Crockford string carries 330 bits; the high 2 must be zero. Removing this check accepts non-canonical inputs. (PQID only; PQHash uses a 117-char Crockford with analogous guard; PQCrypt v1 ships binary-only.)
 5. **HLC drift bound.** `HLC_MAX_DRIFT_MS = 60_000`. Peer HLC > 60s ahead → hard error (`HLCDriftError`), never clamp. Relaxing this defeats the monotonicity guarantee.
-6. **No unsafe Rust, no cgo, no FFI shortcuts.** Implementations are pure within their language. The CPython extension is implemented in C against `pqid_fast.py`'s / `pqcrypt_fast.py`'s API; do not add new FFI bridges without a security review note in the PR.
-7. **Supply-chain hygiene.** No new third-party crypto dependencies — SHAKE-256/Keccak must come from stdlib (Python, Go) or the vendored `common/` source (C, C++, Java). ML-KEM-1024 in PQCrypt comes from one pinned verified implementation per language (mlkem-native for C, RustCrypto `ml-kem` for Rust, `filippo.io/mlkem` for Go, `cryptography`/`kyber-py` for Python). New transitive dependencies on parsers, network clients, or randomness sources require explicit justification in the PR description.
+6. **No unsafe Rust, no cgo, no FFI shortcuts.** Implementations are pure within their language. The PQID CPython extension is implemented in C against `pqid_fast.py`'s API; the PQCrypt CPython extension currently wraps the C reference directly (`pqcrypt/cpython/pqcrypt_ext.c` compiles against `../c/pqcrypt.c`) — a `pqcrypt_fast.py` mirror is a planned v1.1 optimization, not an existing file. Do not add new FFI bridges without a security review note in the PR.
+7. **Supply-chain hygiene.** No new third-party crypto dependencies — SHAKE-256/Keccak must come from stdlib (Python, Go) or the vendored `common/` source (C, C++, Java). ML-KEM-1024 in PQCrypt comes from one pinned verified implementation per language: **OpenSSL 3.5+ `EVP_PKEY` ML-KEM (encapsulate/decapsulate)** for C (not vendored mlkem-native), **RustCrypto `ml-kem` 0.3** for Rust, **stdlib `crypto/mlkem`** for Go (1.26+), **`kyber-py` ≥ 1.0** for Python, **SunJCE JEP 452** for Java (not BouncyCastle), **`@noble/post-quantum`** for TypeScript. The Python reference also pins **`pycryptodome` ≥ 3.20.0** (generator-only — supplies the deterministic AES-256-CTR DRBG that `kyber-py`'s `set_drbg_seed` uses when emitting conformance vectors; production callers can omit it). Hybrid suite `0x06` adds one pinned X25519 source per language: **`x25519-dalek` 2** for Rust, **stdlib `crypto/ecdh`** for Go, **`cryptography`** for Python; C/TS/Java X25519 source pins land alongside their v1.4 hybrid ports. New transitive dependencies on parsers, network clients, or randomness sources require explicit justification in the PR description.
 8. **PQCrypt-specific invariants** (apply when touching `pqcrypt/`):
-   - **PQ-only.** No X25519, no hybrid construction in v1. Adding hybrid is a new suite byte, not a modification of `0x01`/`0x02`.
-   - **Key-committing AEAD.** Every PQCrypt envelope carries a 32-byte UtC commitment tag. Removing it is a spec break.
+   - **PQ-only core promise.** Suites `0x01` and `0x02` are pure ML-KEM-1024. The hybrid suite `0x06` (X25519 + ML-KEM-1024, PQCK-00021) is a *separate suite-byte allocation*, not a modification of `0x01`/`0x02`. Adding any further hybrid or PQ-only suite is *another* new suite byte, never an in-place change.
+   - **Key-committing AEAD.** Every PQCrypt envelope carries a 32-byte UtC commitment tag — including the hybrid suite `0x06`. Removing it is a spec break.
    - **Single `DecryptionError` class** for every authentication-class failure. No distinguishing-oracle splits.
    - **Constant-time decrypt path** even on structural errors (synthetic-key AEAD verify on every failure path).
-   - **Deterministic AEAD nonce** derived from `K_session` via HKDF-Expand. Never random.
-   - **No "Kyber" naming** leaking into public APIs. Use `ML-KEM-1024`.
-   - **Plugin protocol owns key-on-disk**, not the core wire spec.
+   - **Deterministic AEAD nonce** derived from `K_session` via HKDF-Expand. Never random. For hybrid `0x06`, `K_session` is the SHAKE-256 combiner output over both shared secrets (`ss_mlkem ‖ x_ss`) and both ciphertext halves (`ml_kem_ct ‖ x_eph_pk`) with the fixed label `"pqcrypt v1 hybrid combiner"`.
+   - **Suite/key consistency.** `encrypt()` MUST reject when `pub.suite != requested_suite`; `decrypt()` MUST reject when `priv.suite != header.suite`. Mismatch is `ErrBadKey`-class, not auth-class.
+   - **No "Kyber" naming** leaking into public APIs. Use `ML-KEM-1024`. Hybrid public surface uses `X25519` and `ML-KEM-1024`, never "Kyber" or "ECDH" or "Curve25519" in user-facing names.
+   - **Plugin protocol owns key-on-disk**, not the core wire spec. Reference keyfile format is `.pqck-key-v1.1` (Argon2id + AES-256-GCM key wrap, embeds the public key so plugins can answer `pubkey` queries without unwrapping).
    - **Side-channel disclaimer** ([pqcrypt/docs/side-channel-disclaimer.md](pqcrypt/docs/side-channel-disclaimer.md)) is normative: v1 mitigates software timing only; not power, EM, DVFS, prefetcher.
+   - **Polyglot hybrid coverage gate.** Hybrid suite `0x06` is a polyglot KAT contract: as of v1.3, Python, Rust, and Go decrypt hybrid envelopes byte-identically. C, C++, TypeScript, Java, and CPython ext MUST reject `0x06` as `UNKNOWN_SUITE` until their v1.4 hybrid ports land. Skip enforcement is wired in [tools/conformance/run.sh:hybrid_supported()](tools/conformance/run.sh). Adding a new hybrid-supported language flips that table entry AND requires byte-identical KAT consumption.
 
 A change that affects any of the above is a **security-relevant change**: tag the PR `sec(...)`, add a "Security considerations" section to the release-notes entry, and request explicit review.
 
@@ -111,7 +113,8 @@ A change that affects any of the above is a **security-relevant change**: tag th
 
 `.github/workflows/`:
 
-- `conformance.yml` — **branch-protection gate.** Runs `tools/conformance/run.sh` across all 8 languages × all 3 projects (pqid, pqhash, pqcrypt). If this is red, nothing else matters. During PQCrypt v1 alpha, the gate runs Python+C+Go+Rust against pqcrypt; the full 8-language run becomes the gate again once v1.1 lands.
+- `conformance.yml` — runs `tools/conformance/run.sh` across all 8 languages × all 3 projects (pqid, pqhash, pqcrypt). The **branch-protection gate** for PQCrypt is the 4-language alpha run (Python + C + Go + Rust — the four ports with their own pqcrypt_runner binaries). Those four are the only languages that run PQCrypt conformance; C++/TypeScript/Java/CPython ext have no pqcrypt runner and **skip** the PQCrypt vector directory (they implement pqid/pqhash only for now) — there is no Python-runner fallback for PQCrypt. The full-8-language step is informational (`continue-on-error`) until C++/TypeScript/Java/CPython ext gain pqcrypt support. Hybrid suite `0x06` vectors are filtered per language by [`tools/conformance/run.sh:hybrid_supported()`](tools/conformance/run.sh).
+- `pqcrypt.yml` — PQCrypt-only matrix (Python + C + Go + Rust + TS + Java + CPython ext + LaTeX) on Ubuntu and macOS where applicable. Added in v1.2 (PQCK-00023).
 - Per-language: `python.yml`, `c.yml`, `cpp.yml`, `go.yml`, `rust.yml`, `typescript.yml`, `java.yml`, `cpython.yml`.
 - `latex.yml` — builds `pqid/latex/main.tex`, `pqhash/latex/main.tex` (when ready), and `pqcrypt/latex/main.tex`.
 
@@ -119,8 +122,23 @@ Run the conformance harness locally before pushing wire/encoding/generator chang
 
 ```bash
 bash tools/conformance/run.sh                           # all languages × all projects
-PQTK_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh   # PQCrypt v1 alpha quick loop
+PQTK_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh   # PQCrypt v1.x alpha quick loop
 ```
+
+As of v1.3 (2026-06-08, PQCK-00035) the alpha quick loop reports:
+
+```
+language         PASS     FAIL
+python            267        0       (258 + 9 hybrid)
+c                 258        0       (no hybrid yet; PQCK-00030 backlog)
+go                267        0       (258 + 9 hybrid; PQCK-00029)
+rust              267        0       (258 + 9 hybrid; PQCK-00028)
+```
+
+The full 8-language run is also green: `cpp / typescript / java / cpython` each
+report `207 0` (pqid + pqhash; they skip the PQCrypt vector directory until
+their v1.4 pqcrypt ports land). The two new PQCrypt records (`suite_0x05_rejected`,
+`bad_key_suite_mismatch`) raised each alpha language by +2.
 
 ## Per-project quick reference
 

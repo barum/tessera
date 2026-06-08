@@ -1,9 +1,9 @@
 ---
 name: pqtoolkit-conformance
-description: This skill should be used when the user wants to "run the conformance harness", "regenerate KAT vectors", "add a new conformance test", "debug a cross-language mismatch", "fix a failing conformance runner", "skip a language in conformance", "update conformance for a new variant", or any task that touches tools/conformance/, the per-language runners, or the JSON KAT vectors under pqid/conformance/vectors/ and pqhash/conformance/vectors/.
-version: 1.0.0
+description: This skill should be used when the user wants to "run the conformance harness", "regenerate KAT vectors", "add a new conformance test", "debug a cross-language mismatch", "fix a failing conformance runner", "skip a language in conformance", "update conformance for a new variant", "add a hybrid_*.json vector", "flip a language to hybrid-supported", or any task that touches tools/conformance/, the per-language runners, or the JSON KAT vectors under pqid/conformance/vectors/, pqhash/conformance/vectors/, and pqcrypt/conformance/vectors/.
+version: 1.3.0
 created: 2026-05-20T00:00:00Z
-updated: 2026-05-20T00:00:00Z
+updated: 2026-06-08T00:00:00Z
 ---
 
 # pqtoolkit-conformance — Cross-language KAT harness
@@ -13,22 +13,63 @@ The conformance harness is the single quality signal that catches polyglot drift
 ## Layout
 
 - **Entrypoint**: [tools/conformance/run.sh](../../../tools/conformance/run.sh)
-- **Runners**: [tools/conformance/<lang>/](../../../tools/conformance/) — one per language: python, c, cpp, go, rust, typescript, java, cpython.
+- **Runners**: [tools/conformance/<lang>/](../../../tools/conformance/) — one per language: python, c, cpp, go, rust, typescript, java, cpython. PQCrypt has dedicated per-language runners **only** for python, c, go, rust at `tools/conformance/<lang>/pqcrypt_runner*`. C++/TypeScript/Java/CPython ext have **no** pqcrypt runner, so the harness **skips** the PQCrypt vector directory for them (they run pqid/pqhash only). There is no Python-runner fallback for PQCrypt.
 - **Vectors**:
   - PQID: [pqid/conformance/vectors/](../../../pqid/conformance/vectors/)
     - `decode.json` — 41-byte hex → field decomposition
     - `encode_b64url.json`, `decode_b64url.json` — Base64URL round-trip
     - `encode_crockford.json`, `decode_crockford.json` — Crockford Base32 round-trip
-    - `invalid.json` — malformed inputs, expected per-impl errors
+    - `invalid.json` — malformed inputs, expected per-impl errors (includes PQCrypt `0x04` cross-rejection)
     - `hlc_overflow.json` — HLC counter saturation regression (PQID-00001)
     - `min_timestamp.json` — `MIN_TIMESTAMP_MS` helper vectors (PQID-00013)
-  - PQHash: [pqhash/conformance/vectors/](../../../pqhash/conformance/vectors/) — analogous coverage.
-- **Schema docs**: [pqid/conformance/README.md](../../../pqid/conformance/README.md).
+  - PQHash: [pqhash/conformance/vectors/](../../../pqhash/conformance/vectors/) — analogous coverage. Includes PQCrypt `0x04` cross-rejection in `pqhash_invalid.json`.
+  - PQCrypt: [pqcrypt/conformance/vectors/](../../../pqcrypt/conformance/vectors/)
+    - `decrypt.json` — KAT round-trip for suites 0x01/0x02
+    - `ad_binding.json` — positive + negative AD binding
+    - `peek_header.json` — structural header parsing
+    - `invalid.json` — bad variant, bad suite, truncated, AD mismatch
+    - `commitment.json` — UtC tag KATs
+    - `min_timestamp.json` — shape-based helper vector
+
+    A `kyberslash_regression.json` KyberSlash-class timing-regression vector is **planned/backlog, not yet shipped** — the current set above does not include it. KyberSlash posture today rests on the pinned post-patch ML-KEM libraries plus the manual timing-histogram check (open item in `pqcrypt/docs/security-audit-v1.2.md`).
+    - `hybrid_decrypt.json` (4 records) — KAT round-trip for hybrid suite `0x06`
+    - `hybrid_ad_binding.json` (4 records) — hybrid AD binding positive + negative
+    - `hybrid_peek_header.json` (1 record) — hybrid header parse
+- **Schema docs**: [pqid/conformance/README.md](../../../pqid/conformance/README.md), [pqcrypt/conformance/README.md](../../../pqcrypt/conformance/README.md).
+
+## Hybrid suite `0x06` skip logic
+
+`tools/conformance/run.sh` filters `hybrid_*.json` vector files per language via [`hybrid_supported()`](../../../tools/conformance/run.sh):
+
+```bash
+hybrid_supported() {
+    case "$1" in
+        python) return 0 ;;   # PQCK-00021, v1.2
+        rust)   return 0 ;;   # PQCK-00028, v1.3
+        go)     return 0 ;;   # PQCK-00029, v1.3
+        *)      return 1 ;;   # C/C++/TS/Java/CPython ext — v1.4 backlog
+    esac
+}
+```
+
+Languages without hybrid skip the `hybrid_*.json` files entirely and must reject suite `0x06` as `UNKNOWN_SUITE` for non-hybrid envelopes. When porting hybrid to a new language: (1) implement hybrid in the language, (2) update the language's conformance runner to accept 96-byte seeds (the standard runners hard-coded `len(seed) != 64`), (3) flip the language's `hybrid_supported()` entry, (4) verify the language's PASS count rises by 9 (the three hybrid_*.json files).
+
+## Latest state (v1.3, 2026-06-08, PQCK-00035)
+
+```
+language         PASS     FAIL
+python            267        0       (258 standard + 9 hybrid)
+c                 258        0       (no hybrid yet; PQCK-00030 backlog)
+go                267        0       (258 + 9 hybrid; PQCK-00029)
+rust              267        0       (258 + 9 hybrid; PQCK-00028)
+```
+
+C++, TypeScript, Java, CPython ext have no pqcrypt runner, so they **skip the PQCrypt vector directory entirely** (they run pqid/pqhash only, `207 0` each). Only python/c/go/rust run PQCrypt conformance. The full 8-language run is green. The two new PQCrypt `invalid.json` records (`suite_0x05_rejected`, `bad_key_suite_mismatch`, PQCK-00035) raised each alpha language by +2.
 
 ## Run it
 
 ```bash
-# Full harness (8 languages × 2 projects)
+# Full harness (8 languages × 3 projects: pqid + pqhash + pqcrypt)
 bash tools/conformance/run.sh
 
 # Skip slow toolchains locally — useful when CPython ext or Java JDK isn't installed

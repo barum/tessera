@@ -1,0 +1,69 @@
+\section{Conformance and CI}
+\label{sec:conformance}
+
+The cross-language conformance harness is the single quality signal that catches polyglot drift. This section documents how it works at the umbrella level; per-project KAT vector inventories live in the per-project whitepapers.
+
+\subsection{Repository layout}
+
+\begin{center}
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Path} & \textbf{Contents} \\
+\midrule
+\texttt{pqid/conformance/vectors/}     & PQID KAT files (decode, encode/decode round-trip, invalid, HLC overflow, min timestamp) \\
+\texttt{pqhash/conformance/vectors/}   & PQHash KAT files (decode, hash\_only, encode/decode B64URL, encode/decode Crockford, verify, invalid) \\
+\texttt{pqcrypt/conformance/vectors/}  & PQCrypt KAT files (decrypt, ad\_binding, commitment, kyberslash\_regression, invalid, peek\_header, hybrid\_*) \\
+\texttt{tools/conformance/run.sh}      & Single cross-language entry point \\
+\texttt{tools/conformance/<lang>/}     & Per-language runner sources and binaries \\
+\texttt{.github/workflows/conformance.yml} & Branch-protection gate on \texttt{main} \\
+\texttt{.github/workflows/pqcrypt.yml}     & PQCrypt-only matrix CI (PQCK-00023) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{The hybrid suite \texorpdfstring{\code{0x06}}{0x06} skip discipline}
+
+\pqcrypt{}'s hybrid suite \code{0x06} (PQCK-00021, v1.2) is a polyglot KAT contract that some language ports have not yet caught up to as of v1.3. The harness filters \texttt{hybrid\_*.json} vector files per language via the \texttt{hybrid\_supported()} function in \texttt{tools/conformance/run.sh}:
+
+\begin{lstlisting}[language=bash]
+hybrid_supported() {
+    case "$1" in
+        python) return 0 ;;   # PQCK-00021, v1.2
+        rust)   return 0 ;;   # PQCK-00028, v1.3
+        go)     return 0 ;;   # PQCK-00029, v1.3
+        *)      return 1 ;;   # C / C++ / TS / Java / CPython ext: v1.4 backlog
+    esac
+}
+\end{lstlisting}
+
+Languages without hybrid skip the \texttt{hybrid\_*.json} files entirely and MUST reject suite \code{0x06} as \code{UNKNOWN\_SUITE} for any non-hybrid envelope they encounter. When porting hybrid to a new language: (i) implement hybrid in that language, (ii) update the language's conformance runner to accept 96-byte hybrid seeds (the standard runners hard-coded \texttt{len(seed) != 64}), (iii) flip the language's \texttt{hybrid\_supported()} entry, (iv) verify the language's PASS count rises by 9 (one per record across the three hybrid KAT files).
+
+\subsection{Latest cross-language state (2026-05-21, Apple M4 Max)}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lrrl@{}}
+\toprule
+\textbf{Language} & \textbf{PASS} & \textbf{FAIL} & \textbf{Notes} \\
+\midrule
+Python   & 265 & 0 & PQID + PQHash + PQCrypt v1.x including hybrid \code{0x06}. \\
+C        & 256 & 0 & PQCrypt hybrid skipped; PQCK-00030 backlog. \\
+Go       & 265 & 0 & PQCrypt hybrid via stdlib \texttt{crypto/ecdh} (PQCK-00029). \\
+Rust     & 265 & 0 & PQCrypt hybrid via \texttt{x25519-dalek} 2 (PQCK-00028). \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+C++, TypeScript, Java, and CPython ext consume PQCrypt vectors via the Python runner fallback (\texttt{pqcrypt\_runner\_cmd} empty case in \texttt{tools/conformance/run.sh}) and skip \texttt{hybrid\_*.json}. Their per-language test suites still cover PQID and PQHash directly.
+
+\subsection{How CI gates the work}
+
+Every PR to \texttt{main} runs the harness across all available language toolchains in the GitHub Actions matrix. The harness is non-flaky by design: KAT vectors are deterministic, the per-language runners do not call out to the network, and the toolchains are pinned. A red harness means one of two things:
+
+\begin{itemize}
+\item A language port produced a different byte sequence for the same input. The port is wrong; fix the port.
+\item The KAT vector itself changed. Re-running \texttt{<project>/conformance/scripts/generate.py} produces non-identical JSON. The Python reference's behavior changed; this is a spec change, requires a release-notes entry, and all other language ports must be updated to match before the PR merges.
+\end{itemize}
+
+The harness is what makes the spec-first methodology load-bearing. Without it, ``Python is right'' is just a slogan; with it, a language port that disagrees with Python is detectable in seconds.

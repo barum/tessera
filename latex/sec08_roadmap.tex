@@ -1,0 +1,58 @@
+\section{Roadmap and Scope Discipline}
+\label{sec:roadmap}
+
+This section documents what is in scope for v1.x, what is scheduled for v1.4/v2, and what is explicitly out of scope.
+
+\subsection{Per-project release state (as of 2026-05-21)}
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}lllX@{}}
+\toprule
+\textbf{Project} & \textbf{Version} & \textbf{Date} & \textbf{Major milestones} \\
+\midrule
+\pqid{}    & v1.1 & 2026-05-21 & Eight-language byte-identical implementations; HLC variant; cross-project variant-byte rejection contract pinned. \\
+\pqhash{}  & v1.0 & 2026-05-21 & Eight-language byte-identical implementations; SHAKE-256 tail; cross-rejection of cross-project bytes. \\
+\pqcrypt{} & v1.3 partial & 2026-05-21 & Eight-language alpha for suites \code{0x01}/\code{0x02}; hybrid \code{0x06} in Python, Rust, Go; plugin protocol + \texttt{.pqck-key-v1.1} keyfile; CLI binary. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Open backlog (v1.4 / v2)}
+
+\textbf{PQCrypt v1.4 (priority order):}
+
+\begin{enumerate}
+\item PQCK-00030: Hybrid suite \code{0x06} port to C (OpenSSL 3.5+ \texttt{EVP\_PKEY\_X25519}). Closes the largest single gap in the cross-language hybrid contract.
+\item PQCK-00031: Hybrid \code{0x06} in TypeScript (\texttt{@noble/curves/ed25519} X25519).
+\item PQCK-00032: Hybrid \code{0x06} in Java (SunJCE \texttt{XDH} keypair, JEP 339).
+\item PQCK-00033: Hybrid \code{0x06} in CPython extension (mirror Python).
+\item PQCK-00034: Rust AES-NI/ARMv8 intrinsics for 1\,MiB AEAD throughput. Currently regressed because \texttt{aes-gcm 0.10} does not enable ARMv8 intrinsics on stable Rust without a nightly cfg.
+\item PQCK-00035: CI timing-histogram regression test. Currently the histogram check is manual; automating it in CI closes open item \#1 from the v1.2 security audit doc.
+\end{enumerate}
+
+\textbf{PQID v1.x:} no open backlog. The format is stable; future work is operational (benchmarks, additional reference implementations, documentation polish).
+
+\textbf{PQHash v1.x:} CPython extension is the largest single gap; mirrors the Python API.
+
+\textbf{Cross-project:} sibling project \texttt{pqsign} (variant byte \code{0x05}? or further into the reserved-future range) is an explicit \emph{out-of-v1.x} candidate. The minimal scope would be ML-DSA \citep{fips204} signatures of a payload-with-context, using a \pqid{} or \pqhash{} as the canonical payload. Not committed; documented as a possibility so the reserved-future range is interpretable.
+
+\subsection{Scope discipline}
+
+\begin{itemize}
+\item \textbf{No new variant bytes without a whitepaper update.} \code{0x00} and \code{0xFF} are permanently reserved; \code{0x05}--\code{0xFE} are reserved-future. Any new allocation requires (a) a normative whitepaper update in the owning project, (b) conformance-vector additions to every existing project verifying cross-rejection, and (c) sign-off as a security-relevant change.
+\item \textbf{No third-party crypto dependencies without justification.} Each project's whitepaper pins per-language sources for its primitives. New dependencies require explicit justification in the PR description.
+\item \textbf{No unsafe Rust, no cgo, no FFI shortcuts.} Implementations stay pure within their language. The CPython extensions are C-against-CPython-API, not FFI bridges.
+\item \textbf{No format-version mutations of an existing variant.} A variant byte \emph{is} a version. A change to the layout, the security argument, or the algorithm choices under an existing byte is a spec break. New algorithms get new bytes (\pqcrypt{}'s hybrid suite is at \code{0x06} not \code{0x01} for exactly this reason).
+\end{itemize}
+
+\subsection{What \emph{would} trigger a v2 of the whole toolkit}
+
+\begin{itemize}
+\item \textbf{A structural break of Module-LWE.} Would force \pqcrypt{} to allocate a new core suite (likely under a new variant byte, e.g., a hypothetical \pqcrypt{} v2 at variant \code{0x06}--no wait, that's already taken; the actual choice would be a new reserved-future allocation). \pqid{} and \pqhash{} are unaffected by ML-KEM breaks because they make no PQ-cryptography claim.
+\item \textbf{A serious break of SHAKE-256.} Would force \pqhash{} to a new variant byte with a different hash function (KMAC256? a stream cipher in PRF mode? a different sponge?). \pqcrypt{}'s KDF schedule would also need revision because HKDF-SHA3-256 depends on SHAKE-256. \pqid{} is unaffected.
+\item \textbf{A serious break of AES-256-GCM.} Would force \pqcrypt{} to a new suite under a new byte using a different AEAD. \pqid{} and \pqhash{} are unaffected.
+\item \textbf{A change to the variant-byte allocation discipline.} Would force every project to a new wire-format version, indicated by a new variant byte. This is the worst-case scenario and is exactly what the immutable-variant-byte rule is designed to prevent.
+\end{itemize}
+
+None of these is anticipated in the v1.x lifetime. The roadmap is conservative on purpose: \pqtoolkit{} is intended to outlive any individual deployment, which means most of its versions look like ``a new entry was added to the variant table; everything else is unchanged.''
