@@ -20,26 +20,26 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
-      - name: PQID Java build and test
-        working-directory: pqid/java
+      - name: TesseraID Java build and test
+        working-directory: tessera-id/java
         run: |
           make build
           make test
-      - name: PQHash Java build
-        working-directory: pqhash/java
+      - name: TesseraHash Java build
+        working-directory: tessera-hash/java
         run: make build
       - name: Build conformance runner
         working-directory: tools/conformance/java
         run: make build
       - name: Run conformance runner
         run: |
-          for f in pqid/conformance/vectors/*.json pqhash/conformance/vectors/*.json; do
-            java -cp tools/conformance/java/build com.pqtoolkit.conformance.ConformanceRunner "$f"
+          for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
+            java -cp tools/conformance/java/build com.tessera.conformance.ConformanceRunner "$f"
           done
-      - name: PQID fuzz smoke (60s)
-        working-directory: pqid/java
+      - name: TesseraID fuzz smoke (60s)
+        working-directory: tessera-id/java
         run: |
-          timeout 60 java -cp build com.pqid.FuzzDecode 1000000 || ec=$?
+          timeout 60 java -cp build com.tessera.id.FuzzDecode 1000000 || ec=$?
           if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
             exit "$ec"
           fi

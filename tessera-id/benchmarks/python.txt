@@ -1,0 +1,14 @@
+TesseraID Python benchmarks (single thread)
+--------------------------------------
+
+[canonical (tessera_id.py)]
+  Standard generation                           630,071 ops/sec   (  1587 ns/op)
+  HLC generation (no observe)                   698,594 ops/sec   (  1431 ns/op)
+  encode Base64URL                            2,340,667 ops/sec   (   427 ns/op)
+  encode Crockford Base32                       164,332 ops/sec   (  6085 ns/op)
+  decode Base64URL                            1,439,692 ops/sec   (   695 ns/op)
+  decode Crockford Base32                       190,227 ops/sec   (  5257 ns/op)
+
+[fast (tessera_id_fast.py)]
+  Standard generation                           772,547 ops/sec   (  1294 ns/op)
+  HLC generation (no observe)                   815,654 ops/sec   (  1226 ns/op)

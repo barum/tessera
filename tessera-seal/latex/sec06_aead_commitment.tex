@@ -1,0 +1,33 @@
+\section{AEAD and Commitment}
+\label{sec:aead-commitment}
+
+\subsection{Why a separate commitment tag}
+
+AES-256-GCM and ChaCha20-Poly1305 are confidentiality-and-integrity AEADs but \emph{not} key-committing \citep{grubbs2017aead}: an attacker with two different keys can produce a single ciphertext that decrypts correctly under both. Weaponized variants \citep{albertini2020aead,len2021aead} matter most in multi-recipient settings where the same envelope reaches recipients holding different keys --- e.g., the exact class of bug \texttt{age} still has open in 2026. \pqcrypt{} closes this with an explicit 32-byte commitment tag.
+
+\subsection{The UtC construction (Bellare \& Hoang 2022)}
+
+Given the HKDF pseudorandom key \texttt{prk} from \cref{sec:kdf-nonce}, derive two subkeys
+% frozen v1 wire tags — not rebrandable names: "pqcrypt v1 aead k", "pqcrypt v1 commit"
+(the literal HKDF-Expand info labels below are frozen v1 wire tags; see \cref{sec:kdf-nonce}):
+\begin{align*}
+K_{\mathrm{aead}}   &= \mathrm{HKDF\text{-}Expand}(\texttt{prk},\, \text{``pqcrypt v1 aead k''},\, 32) \\
+K_{\mathrm{commit}} &= \mathrm{HKDF\text{-}Expand}(\texttt{prk},\, \text{``pqcrypt v1 commit''},\, 32)
+\end{align*}
+Encrypt under $K_{\mathrm{aead}}$ as usual, producing \code{AEAD\_CT} and \code{AEAD\_TAG}. Then compute:
+$$
+\mathrm{COMMIT} = \mathrm{HMAC\text{-}SHA3\text{-}256}\!\left(K_{\mathrm{commit}},\ \mathrm{header} \,\|\, \mathrm{KEM\_CT} \,\|\, \mathrm{AD} \,\|\, \mathrm{AEAD\_CT}\right)
+$$
+The 32-byte \code{COMMIT} appears as the final field on the wire (\cref{sec:wire-format}).
+
+\subsection{Verification}
+
+Decryption verifies both \code{AEAD\_TAG} (covering header, \code{KEM\_CT}, AD, \code{AEAD\_CT}) and \code{COMMIT} (covering header, \code{KEM\_CT}, AD, \code{AEAD\_CT}) in constant time before returning the plaintext. Both checks MUST execute even on early-detectable structural errors (truncated input, bad header magic) to keep timing flat; the implementation uses a synthetic key on structural failure paths.
+
+\subsection{Why UtC over CTX, GCM-SST, or compactly-committing schemes}
+
+CTX \citep{chan2022commit} is gaining adoption (libsodium 1.0.21, MLS) and shares UtC's tag-then-commit shape. UtC was chosen for v1 because (a) the original Bellare--Hoang proof is the most cited reference in subsequent literature, (b) its construction is simplest to implement in eight languages without crypto-library help, and (c) the 32-byte overhead matches our wire-format budget comfortably. GCM-SST \citep{bellare2024gcmsst} is academic-only as of 2026. Compactly-committing AEADs \citep{grubbs2017aead} are more space-efficient but introduce a non-standard cipher dependency.
+
+\subsection{Commitment vs content binding}
+
+The UtC commitment binds the AEAD key to the ciphertext --- it answers the question ``can the same ciphertext open to different plaintexts under different keys?'' (no, by the commitment). It does \emph{not} answer ``does this ciphertext correspond to a specific known plaintext content?''. That question is answered by binding a \pqhash{} (the SHAKE-256-based content-hash sibling format under the \pqtoolkit{} monorepo; variant byte \code{0x03}) as the AEAD AD: a \pqcrypt{} envelope whose AD is the \pqhash{} of the plaintext is cryptographically bound to that specific content. The two bindings are independent and stack cleanly: UtC closes multi-recipient confusion; \pqhash{}-as-AD closes content substitution. See \cref{sec:ad-binding} for the AD-binding patterns including \pqid{}-as-AD and \pqhash{}-as-AD.

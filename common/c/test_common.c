@@ -40,11 +40,11 @@ int main(void) {
     uint8_t out[64];
 
     /* SHA3-256 KATs (FIPS 202 / NIST CAVS). */
-    pqtk_sha3_256((const uint8_t *)"", 0, out);
+    tessera_sha3_256((const uint8_t *)"", 0, out);
     CHECK("sha3-256 empty", out,
           "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a");
 
-    pqtk_sha3_256((const uint8_t *)"abc", 3, out);
+    tessera_sha3_256((const uint8_t *)"abc", 3, out);
     CHECK("sha3-256 abc", out,
           "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532");
 
@@ -53,7 +53,7 @@ int main(void) {
     {
         uint8_t key[20];
         memset(key, 0x0b, 20);
-        pqtk_hmac_sha3_256(key, 20, (const uint8_t *)"Hi There", 8, out);
+        tessera_hmac_sha3_256(key, 20, (const uint8_t *)"Hi There", 8, out);
         CHECK("hmac-sha3-256 Hi There", out,
               "ba85192310dffa96e2a3a40e69774351140bb7185e1202cdcc917589f95e16bb");
     }
@@ -64,10 +64,10 @@ int main(void) {
         uint8_t ikm[22], salt[13], prk[32], okm[42];
         memset(ikm, 0x0b, 22);
         for (int i = 0; i < 13; i++) salt[i] = (uint8_t)i;
-        pqtk_hkdf_sha3_256_extract(salt, 13, ikm, 22, prk);
+        tessera_hkdf_sha3_256_extract(salt, 13, ikm, 22, prk);
         uint8_t info[10];
         for (int i = 0; i < 10; i++) info[i] = (uint8_t)(0xf0 + i);
-        if (pqtk_hkdf_sha3_256_expand(prk, info, 10, okm, 42) != 0) {
+        if (tessera_hkdf_sha3_256_expand(prk, info, 10, okm, 42) != 0) {
             printf("FAIL hkdf expand rc != 0\n");
             fails++;
         } else {
@@ -79,7 +79,7 @@ int main(void) {
      * Statistical test only — proves the call path works on this host. */
     {
         uint8_t r[64] = {0};
-        if (pqtk_csprng(r, sizeof(r)) != 0) {
+        if (tessera_csprng(r, sizeof(r)) != 0) {
             printf("FAIL csprng returned -1\n");
             fails++;
         } else {

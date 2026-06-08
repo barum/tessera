@@ -1,0 +1,14 @@
+{
+  "name": "tessera-hash",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/tessera_hash.js",
+  "types": "./dist/tessera_hash.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

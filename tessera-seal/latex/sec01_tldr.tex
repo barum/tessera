@@ -1,0 +1,27 @@
+\section*{TL;DR}
+\addcontentsline{toc}{section}{TL;DR}
+
+\pqcrypt{} is a 16-byte-header, variable-body \textbf{post-quantum encryption envelope} format with byte-identical polyglot reference implementations under the \texttt{tessera} monorepo. It joins \pqid{} (41-byte identifier, variant bytes \texttt{0x01}/\texttt{0x02}) and \pqhash{} (73-byte content hash, variant byte \texttt{0x03}) as the third project in the family, owning variant byte \texttt{0x04}.
+
+v1.x ships three suites, allocated at the \code{SUITE} byte (header offset 7):
+
+\begin{itemize}
+\item \textbf{Suite \code{0x01} (mandatory, pure PQ).} \textbf{ML-KEM-1024} \citep{fips203} + \textbf{AES-256-GCM} + a \textbf{32-byte UtC commitment tag} \citep{bellare2022commitment} + \textbf{HKDF-SHA3-256}. The v1 baseline.
+\item \textbf{Suite \code{0x02} (optional, pure PQ).} Substitutes ChaCha20-Poly1305 for callers without AES hardware. Same UtC commitment.
+\item \textbf{Suite \code{0x06} (optional, hybrid; v1.2).} Adds \textbf{X25519} \citep{rfc7748} alongside ML-KEM-1024 with an X-Wing--style SHAKE-256 combiner \citep{xwing-draft}. Opt-in defense-in-depth for callers who want a classical safety net against a Module-LWE structural break.
+\end{itemize}
+
+Suites \code{0x01}/\code{0x02} carry the unambiguous post-quantum confidentiality promise: the residual Module-LWE-break risk (\cref{sec:threat-model,sec:appendices}) is the deliberate cost. Suite \code{0x06} is the \emph{opt-in} alternative that mitigates that residual risk; it is a separate suite-byte allocation, never an in-place modification of \code{0x01}/\code{0x02}. The wire is unambiguous about which promise a given envelope makes.
+
+\begin{calloutinfo}[At a glance]
+\begin{itemize}
+\item \textbf{Three suites, three explicit promises.} No agility within a suite, no negotiation, no downgrade. A suite byte \emph{is} a version.
+\item \textbf{Key-committing.} Every envelope carries a 32-byte UtC commitment tag (HMAC-SHA3-256) --- closes the multi-recipient confusion class that age v1.x still has open.
+\item \textbf{Deterministic AEAD nonce} derived from a per-envelope-fresh session key. No CSPRNG dependency on the encrypt path beyond ML-KEM's internal \code{Encaps} randomness (and the X25519 ephemeral keygen in hybrid).
+\item \textbf{Single \texttt{DecryptionError}} for every authentication-class failure. No distinguishing oracle. Structural errors (truncation, unknown variant/suite, suite/key mismatch) are distinguishable safely.
+\item \textbf{Binds \pqid{} as AD} by convention. Envelope rebinding fails closed (\cref{sec:ad-binding}).
+\item \textbf{Plugin protocol ships in v1.} Key-on-disk lives in the plugin, not the core spec. Reference \texttt{tessera-seal-plugin-file} uses \texttt{.tseal-key-v1.1} (Argon2id \citep{rfc9106} + AES-256-GCM key wrap with embedded public key).
+\item \textbf{Inherits monorepo discipline.} Spec-first LaTeX (this document); Python is the readable reference; C pins the canonical ABI; cross-language KAT vectors gate CI.
+\item \textbf{Polyglot status (v1.3, 2026-05-21):} Python, C, Go, Rust ship suites \code{0x01}/\code{0x02}; Python, Rust, Go ship hybrid \code{0x06}; C++, TypeScript, Java, CPython ext v1.1 wrappers ship suites \code{0x01}/\code{0x02} and add hybrid in v1.4 (\cref{sec:conformance}, Appendix F).
+\end{itemize}
+\end{calloutinfo}

@@ -1,0 +1,140 @@
+name: TesseraSeal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tessera-seal/**'
+      - 'common/c/hkdf_sha3.*'
+      - 'common/c/random.*'
+      - 'common/c/tessera_header.h'
+      - '.github/workflows/tessera-seal.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tessera-seal/**'
+      - 'common/c/hkdf_sha3.*'
+      - 'common/c/random.*'
+      - 'common/c/tessera_header.h'
+      - '.github/workflows/tessera-seal.yml'
+
+jobs:
+  python:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -r tessera-seal/python/requirements.txt pytest
+      - name: TesseraSeal Python tests
+        run: cd tessera-seal/python && python3 -m pytest test_tessera_seal.py -v
+      - name: TesseraSeal bench (smoke)
+        run: cd tessera-seal/python && python3 bench.py | head -30
+
+  c:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenSSL 3.5+ on Ubuntu
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - name: Build common/c primitives
+        run: cd common/c && make test
+      - name: Build and run tessera-seal/c tests
+        run: cd tessera-seal/c && make test
+      - name: Build and run tessera-seal/cpp tests
+        run: cd tessera-seal/cpp && make test
+
+  go:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: TesseraSeal Go tests
+        run: cd tessera-seal/go && go test -count=1 -timeout 120s
+
+  rust:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: TesseraSeal Rust tests
+        run: cd tessera-seal/rust && cargo test --release --test integration
+
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install + test
+        run: |
+          cd tessera-seal/typescript
+          npm install
+          npx tsc
+          node --test dist/test_tessera_seal.js
+
+  java:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "24"
+      - name: TesseraSeal Java tests
+        run: cd tessera-seal/java && make test
+
+  cpython-ext:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install OpenSSL 3.5+ on Ubuntu
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - run: pip install setuptools
+      - name: Build CPython extension
+        run: cd tessera-seal/cpython && python3 setup.py build_ext --inplace
+      - name: Run extension tests
+        run: cd tessera-seal/cpython && python3 test_tessera_seal_ext.py
+
+  latex:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install TeX Live
+        run: sudo apt-get update && sudo apt-get install -y texlive-latex-base texlive-latex-extra texlive-fonts-recommended texlive-bibtex-extra texlive-latex-recommended
+      - name: Build whitepaper
+        run: cd tessera-seal/latex && make
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TesseraSeal_Whitepaper
+          path: tessera-seal/latex/TesseraSeal_Whitepaper.pdf

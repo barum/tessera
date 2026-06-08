@@ -1,0 +1,16 @@
+{
+  "name": "tessera-id",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/tessera_id.js",
+  "types": "./dist/tessera_id.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node dist/test_tessera_id.js",
+    "bench": "tsc && node dist/bench.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

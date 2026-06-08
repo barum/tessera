@@ -1,11 +1,11 @@
-# pqtoolkit umbrella whitepaper Makefile.
+# tessera umbrella whitepaper Makefile.
 # Builds the cross-project overview document.
-# Mirrors pqid/latex/Makefile, pqhash/latex/Makefile, pqcrypt/latex/Makefile.
+# Mirrors tessera-id/latex/Makefile, tessera-hash/latex/Makefile, tessera-seal/latex/Makefile.
 
 LATEX  ?= pdflatex
 BIBTEX ?= bibtex
 NAME   ?= main
-PDF    ?= PQToolkit_Whitepaper.pdf
+PDF    ?= Tessera_Whitepaper.pdf
 
 .PHONY: all clean buildinfo
 

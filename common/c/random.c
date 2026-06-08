@@ -1,9 +1,9 @@
 /*
- * random.c — Implementation of pqtk_csprng(). See random.h for the contract.
+ * random.c — Implementation of tessera_csprng(). See random.h for the contract.
  *
- * Extracted from pqid/c/pqid.c under PQCK-00002. pqid/c retains its own
- * pqid_getrandom() wrapper that delegates to pqtk_csprng() for backward
- * compatibility; new code (pqcrypt/c) calls pqtk_csprng() directly.
+ * Extracted from tessera_id/c/tessera_id.c under PQCK-00002. tessera_id/c retains its own
+ * tessera_id_getrandom() wrapper that delegates to tessera_csprng() for backward
+ * compatibility; new code (tessera_seal/c) calls tessera_csprng() directly.
  */
 #if !defined(_POSIX_C_SOURCE)
 #  define _POSIX_C_SOURCE 200809L
@@ -23,21 +23,21 @@
 
 #if defined(__linux__) || defined(__GLIBC__)
 #  include <sys/random.h>
-#  define PQTK_HAVE_GETRANDOM 1
+#  define TESSERA_HAVE_GETRANDOM 1
 #elif defined(__APPLE__)
 #  include <sys/random.h>  /* macOS exposes getentropy here */
-#  define PQTK_HAVE_GETENTROPY 1
+#  define TESSERA_HAVE_GETENTROPY 1
 #elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
 #  include <unistd.h>
-#  define PQTK_HAVE_GETENTROPY 1
+#  define TESSERA_HAVE_GETENTROPY 1
 #endif
 
-int pqtk_csprng(uint8_t *buf, size_t len) {
+int tessera_csprng(uint8_t *buf, size_t len) {
     if (buf == NULL && len > 0) {
         errno = EINVAL;
         return -1;
     }
-#if defined(PQTK_HAVE_GETRANDOM)
+#if defined(TESSERA_HAVE_GETRANDOM)
     size_t off = 0;
     while (off < len) {
         ssize_t n = getrandom(buf + off, len - off, 0);
@@ -48,7 +48,7 @@ int pqtk_csprng(uint8_t *buf, size_t len) {
         off += (size_t)n;
     }
     return 0;
-#elif defined(PQTK_HAVE_GETENTROPY)
+#elif defined(TESSERA_HAVE_GETENTROPY)
     /* getentropy() reads at most 256 bytes per call. */
     size_t off = 0;
     while (off < len) {

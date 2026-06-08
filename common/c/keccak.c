@@ -5,7 +5,7 @@
  * dependency-free; not optimized for SIMD; constant-time in the sense
  * that all operations are on fixed-shape state regardless of input.
  *
- * Tested against pqid/conformance/vectors/pqhash_hash_only.json (KATs
+ * Tested against tessera_id/conformance/vectors/tessera_hash_hash_only.json (KATs
  * generated from Python's hashlib.shake_256). Any deviation from the
  * spec is caught by the harness, not by review.
  */
@@ -76,7 +76,7 @@ static void keccak_f1600(uint64_t s[25]) {
 #define SHAKE256_RATE 136
 #define SHAKE_SUFFIX  0x1F
 
-void pqid_shake256(const uint8_t *input, size_t in_len,
+void tessera_id_shake256(const uint8_t *input, size_t in_len,
                    uint8_t *output, size_t out_len) {
     uint64_t state[25];
     memset(state, 0, sizeof(state));

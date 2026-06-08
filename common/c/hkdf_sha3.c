@@ -127,51 +127,51 @@ static void keccak_sponge(const uint8_t *in, size_t in_len,
 
 #define SHA3_256_RATE 136   /* (1600 - 2*256)/8 */
 
-void pqtk_sha3_256(const uint8_t *msg, size_t msg_len,
-                   uint8_t out[PQTK_SHA3_256_DIGEST_BYTES]) {
-    keccak_sponge(msg, msg_len, 0x06, SHA3_256_RATE, out, PQTK_SHA3_256_DIGEST_BYTES);
+void tessera_sha3_256(const uint8_t *msg, size_t msg_len,
+                   uint8_t out[TESSERA_SHA3_256_DIGEST_BYTES]) {
+    keccak_sponge(msg, msg_len, 0x06, SHA3_256_RATE, out, TESSERA_SHA3_256_DIGEST_BYTES);
 }
 
 /* --------------------------- HMAC-SHA3-256 ------------------------------ */
 
-void pqtk_hmac_sha3_256(const uint8_t *key, size_t key_len,
+void tessera_hmac_sha3_256(const uint8_t *key, size_t key_len,
                         const uint8_t *msg, size_t msg_len,
-                        uint8_t out[PQTK_SHA3_256_DIGEST_BYTES]) {
-    uint8_t k_block[PQTK_SHA3_256_BLOCK_BYTES];
-    uint8_t ipad[PQTK_SHA3_256_BLOCK_BYTES];
-    uint8_t opad[PQTK_SHA3_256_BLOCK_BYTES];
-    uint8_t inner[PQTK_SHA3_256_DIGEST_BYTES];
+                        uint8_t out[TESSERA_SHA3_256_DIGEST_BYTES]) {
+    uint8_t k_block[TESSERA_SHA3_256_BLOCK_BYTES];
+    uint8_t ipad[TESSERA_SHA3_256_BLOCK_BYTES];
+    uint8_t opad[TESSERA_SHA3_256_BLOCK_BYTES];
+    uint8_t inner[TESSERA_SHA3_256_DIGEST_BYTES];
 
     /* Step 1: key normalization. If key > block size, hash it. Else pad. */
     memset(k_block, 0, sizeof(k_block));
-    if (key_len > PQTK_SHA3_256_BLOCK_BYTES) {
-        pqtk_sha3_256(key, key_len, k_block);
+    if (key_len > TESSERA_SHA3_256_BLOCK_BYTES) {
+        tessera_sha3_256(key, key_len, k_block);
         /* digest is 32 bytes; remaining bytes are zero from memset above */
     } else if (key_len > 0) {
         memcpy(k_block, key, key_len);
     }
 
     /* Step 2: ipad and opad. */
-    for (size_t i = 0; i < PQTK_SHA3_256_BLOCK_BYTES; i++) {
+    for (size_t i = 0; i < TESSERA_SHA3_256_BLOCK_BYTES; i++) {
         ipad[i] = k_block[i] ^ 0x36;
         opad[i] = k_block[i] ^ 0x5c;
     }
 
     /* Step 3: inner = SHA3-256(ipad || msg). Build in a temp buffer to
      * keep the keccak_sponge() interface single-pass. For the per-envelope
-     * sizes pqcrypt uses (msg ≤ ~few KB), a stack-allocated buffer is
+     * sizes tessera_seal uses (msg ≤ ~few KB), a stack-allocated buffer is
      * appropriate; for very large msgs the caller should chunk via a
      * future streaming API. */
     {
         /* Heap-free path: build inner-hash input on the stack if it fits,
          * else fall back to two-call streaming via the keccak_sponge.
-         * For pqcrypt v1 messages (header || KEM_CT || AD || AEAD_CT)
+         * For tessera_seal v1 messages (header || KEM_CT || AD || AEAD_CT)
          * the typical size is < 8 KB. Cap stack use at 16 KB. */
         if (msg_len <= 16384) {
-            uint8_t buf[16384 + PQTK_SHA3_256_BLOCK_BYTES];
-            memcpy(buf, ipad, PQTK_SHA3_256_BLOCK_BYTES);
-            if (msg_len > 0) memcpy(buf + PQTK_SHA3_256_BLOCK_BYTES, msg, msg_len);
-            pqtk_sha3_256(buf, PQTK_SHA3_256_BLOCK_BYTES + msg_len, inner);
+            uint8_t buf[16384 + TESSERA_SHA3_256_BLOCK_BYTES];
+            memcpy(buf, ipad, TESSERA_SHA3_256_BLOCK_BYTES);
+            if (msg_len > 0) memcpy(buf + TESSERA_SHA3_256_BLOCK_BYTES, msg, msg_len);
+            tessera_sha3_256(buf, TESSERA_SHA3_256_BLOCK_BYTES + msg_len, inner);
         } else {
             /* Streaming fallback. Build absorb manually so we don't need
              * dynamic allocation. This path is used only when msg_len
@@ -222,45 +222,45 @@ void pqtk_hmac_sha3_256(const uint8_t *key, size_t key_len,
 
     /* Step 4: outer = SHA3-256(opad || inner). */
     {
-        uint8_t outer_buf[PQTK_SHA3_256_BLOCK_BYTES + PQTK_SHA3_256_DIGEST_BYTES];
-        memcpy(outer_buf, opad, PQTK_SHA3_256_BLOCK_BYTES);
-        memcpy(outer_buf + PQTK_SHA3_256_BLOCK_BYTES, inner, PQTK_SHA3_256_DIGEST_BYTES);
-        pqtk_sha3_256(outer_buf, sizeof(outer_buf), out);
+        uint8_t outer_buf[TESSERA_SHA3_256_BLOCK_BYTES + TESSERA_SHA3_256_DIGEST_BYTES];
+        memcpy(outer_buf, opad, TESSERA_SHA3_256_BLOCK_BYTES);
+        memcpy(outer_buf + TESSERA_SHA3_256_BLOCK_BYTES, inner, TESSERA_SHA3_256_DIGEST_BYTES);
+        tessera_sha3_256(outer_buf, sizeof(outer_buf), out);
     }
 }
 
 /* ----------------------------- HKDF ------------------------------------- */
 
-void pqtk_hkdf_sha3_256_extract(const uint8_t *salt, size_t salt_len,
+void tessera_hkdf_sha3_256_extract(const uint8_t *salt, size_t salt_len,
                                 const uint8_t *ikm,  size_t ikm_len,
-                                uint8_t prk[PQTK_SHA3_256_DIGEST_BYTES]) {
-    static const uint8_t zero_salt[PQTK_SHA3_256_DIGEST_BYTES] = {0};
+                                uint8_t prk[TESSERA_SHA3_256_DIGEST_BYTES]) {
+    static const uint8_t zero_salt[TESSERA_SHA3_256_DIGEST_BYTES] = {0};
     if (salt == NULL || salt_len == 0) {
         salt     = zero_salt;
-        salt_len = PQTK_SHA3_256_DIGEST_BYTES;
+        salt_len = TESSERA_SHA3_256_DIGEST_BYTES;
     }
-    pqtk_hmac_sha3_256(salt, salt_len, ikm, ikm_len, prk);
+    tessera_hmac_sha3_256(salt, salt_len, ikm, ikm_len, prk);
 }
 
-int pqtk_hkdf_sha3_256_expand(const uint8_t prk[PQTK_SHA3_256_DIGEST_BYTES],
+int tessera_hkdf_sha3_256_expand(const uint8_t prk[TESSERA_SHA3_256_DIGEST_BYTES],
                               const uint8_t *info, size_t info_len,
                               uint8_t *out, size_t out_len) {
-    const size_t N = (out_len + PQTK_SHA3_256_DIGEST_BYTES - 1)
-                     / PQTK_SHA3_256_DIGEST_BYTES;
+    const size_t N = (out_len + TESSERA_SHA3_256_DIGEST_BYTES - 1)
+                     / TESSERA_SHA3_256_DIGEST_BYTES;
     if (N > 255) return -1;  /* RFC 5869 §2.3 hard limit */
 
-    uint8_t T[PQTK_SHA3_256_DIGEST_BYTES];
+    uint8_t T[TESSERA_SHA3_256_DIGEST_BYTES];
     /* Scratch buffer for T(i) input: T(i-1) || info || counter.
      * Max size: digest + info + 1. Cap info at 4 KB for stack safety. */
     if (info_len > 4096) return -1;
-    uint8_t buf[PQTK_SHA3_256_DIGEST_BYTES + 4096 + 1];
+    uint8_t buf[TESSERA_SHA3_256_DIGEST_BYTES + 4096 + 1];
 
     size_t written = 0;
     for (size_t i = 1; i <= N; i++) {
         size_t buf_len = 0;
         if (i > 1) {
-            memcpy(buf, T, PQTK_SHA3_256_DIGEST_BYTES);
-            buf_len += PQTK_SHA3_256_DIGEST_BYTES;
+            memcpy(buf, T, TESSERA_SHA3_256_DIGEST_BYTES);
+            buf_len += TESSERA_SHA3_256_DIGEST_BYTES;
         }
         if (info_len > 0) {
             memcpy(buf + buf_len, info, info_len);
@@ -268,11 +268,11 @@ int pqtk_hkdf_sha3_256_expand(const uint8_t prk[PQTK_SHA3_256_DIGEST_BYTES],
         }
         buf[buf_len++] = (uint8_t)i;
 
-        pqtk_hmac_sha3_256(prk, PQTK_SHA3_256_DIGEST_BYTES,
+        tessera_hmac_sha3_256(prk, TESSERA_SHA3_256_DIGEST_BYTES,
                            buf, buf_len, T);
 
         size_t take = out_len - written;
-        if (take > PQTK_SHA3_256_DIGEST_BYTES) take = PQTK_SHA3_256_DIGEST_BYTES;
+        if (take > TESSERA_SHA3_256_DIGEST_BYTES) take = TESSERA_SHA3_256_DIGEST_BYTES;
         memcpy(out + written, T, take);
         written += take;
     }

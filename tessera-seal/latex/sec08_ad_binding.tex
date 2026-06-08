@@ -1,0 +1,26 @@
+\section{The TesseraID-as-AD Canonical Pattern}
+\label{sec:ad-binding}
+
+\pqcrypt{}'s existence as a sibling of \pqid{} and \pqhash{} in the same monorepo is not aesthetic --- it is structural. The canonical usage pattern is to bind a \pqid{} as the AEAD's associated data:
+
+\begin{lstlisting}[language=Python]
+record_id = tessera_id.new_hlc()                         # 41 bytes
+envelope  = tessera_seal.encrypt(plaintext, recipient_pub,
+                            associated_data=record_id)
+# ... later, after delivery ...
+plaintext = tessera_seal.decrypt(envelope, recipient_priv,
+                            expected_ad=record_id)       # MUST match
+\end{lstlisting}
+
+\textbf{What this defends.} An attacker who reroutes the envelope under a different \pqid{} cannot decrypt it: AEAD tag verification fails (AD mismatch) and the decryption path returns the generic \texttt{DecryptionError} (\cref{sec:failure-modes}). The envelope is cryptographically bound to the identifier it was issued for.
+
+\textbf{Cost.} Free. Every AEAD's AD path is computed at no marginal cost beyond the bytes being mixed into the MAC. \pqcrypt{}'s bench measurement \texttt{encrypt\_with\_tessera\_id\_ad} confirms this experimentally (\cref{sec:appendices}).
+
+\textbf{Cross-project AD patterns.} Other useful AD choices:
+\begin{itemize}
+\item A \pqhash{} of the plaintext, for envelopes that explicitly bind to content (defense against substituting one record's envelope onto another record).
+\item A concatenation of a \pqid{} and a recipient identifier, for envelopes addressed to a specific (record, recipient) pair.
+\item A protocol-level domain separator (e.g., \texttt{"tessera-seal-app-v1-records"}) plus the \pqid{}.
+\end{itemize}
+
+\textbf{Conformance.} The KAT file \texttt{tessera-seal/conformance/vectors/ad\_binding.json} exercises positive cases (envelope decrypts with the matching AD) and negative cases (any single-bit AD change causes a generic \texttt{DECRYPT\_FAILED}, with timing equal to the positive case to within the constant-time tolerance defined in \cref{sec:side-channels}).

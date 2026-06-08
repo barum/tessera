@@ -1,5 +1,5 @@
 /*
- * random.h — OS-CSPRNG wrapper shared across pqtoolkit C implementations.
+ * random.h — OS-CSPRNG wrapper shared across tessera C implementations.
  *
  * Normative requirement (umbrella CLAUDE.md security invariants #1):
  *   MUST use an OS-provided CSPRNG and MUST NOT fall back to any
@@ -15,14 +15,14 @@
  *
  * Returns 0 on success, -1 on unrecoverable error. Partial reads are
  * retried; EINTR is handled. Caller surfaces the error code (e.g.,
- * PQID_E_RNG, PQCRYPT_E_RNG) in their project-specific status enum.
+ * TESSERA_ID_E_RNG, TESSERA_SEAL_E_RNG) in their project-specific status enum.
  *
- * Originally lived inline in pqid/c/pqid.c. Extracted under PQCK-00002
- * once a second consumer (pqcrypt) materialised, per the umbrella
+ * Originally lived inline in tessera_id/c/tessera_id.c. Extracted under PQCK-00002
+ * once a second consumer (tessera_seal) materialised, per the umbrella
  * "extract only when 2+ consumers exist" rule.
  */
-#ifndef PQTOOLKIT_COMMON_RANDOM_H
-#define PQTOOLKIT_COMMON_RANDOM_H
+#ifndef TESSERA_COMMON_RANDOM_H
+#define TESSERA_COMMON_RANDOM_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -33,10 +33,10 @@ extern "C" {
 
 /* Fill `buf` with `len` cryptographically-secure random bytes. Returns
  * 0 on success; -1 on failure (with errno set by the underlying call). */
-int pqtk_csprng(uint8_t *buf, size_t len);
+int tessera_csprng(uint8_t *buf, size_t len);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* PQTOOLKIT_COMMON_RANDOM_H */
+#endif /* TESSERA_COMMON_RANDOM_H */

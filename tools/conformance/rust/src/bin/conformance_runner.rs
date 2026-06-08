@@ -4,10 +4,10 @@ use std::env;
 use std::fs;
 use std::process::ExitCode;
 
-use pqid::{
-    set_now_ms_for_testing, HlcGenerator, Pqid, VARIANT_HLC, SIZE_BYTES,
+use tessera_id::{
+    set_now_ms_for_testing, HlcGenerator, TesseraId, VARIANT_HLC, SIZE_BYTES,
 };
-use pqhash::{self, Pqhash, PQHASH_SIZE_BYTES};
+use tessera_hash::{self, TesseraHash, TESSERA_HASH_SIZE_BYTES};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -51,7 +51,7 @@ fn hex_to_arr(s: &str) -> Result<[u8; SIZE_BYTES], String> {
 
 fn run_decode(r: &Record) -> Result<(), String> {
     let arr = hex_to_arr(r.input_hex.as_ref().unwrap())?;
-    let p = Pqid::from_bytes(&arr).map_err(|e| format!("from_bytes: {:?}", e))?;
+    let p = TesseraId::from_bytes(&arr).map_err(|e| format!("from_bytes: {:?}", e))?;
     let exp = r.expected.as_ref().unwrap();
     let want_variant = exp["variant"].as_i64().unwrap() as u8;
     let want_ts = exp["timestamp_ms"].as_i64().unwrap();
@@ -75,7 +75,7 @@ fn run_decode(r: &Record) -> Result<(), String> {
 
 fn run_encode_b64(r: &Record) -> Result<(), String> {
     let arr = hex_to_arr(r.input_hex.as_ref().unwrap())?;
-    let p = Pqid(arr);
+    let p = TesseraId(arr);
     let s = p.to_base64url();
     let want = r.expected_str.as_ref().unwrap();
     if &s != want {
@@ -85,7 +85,7 @@ fn run_encode_b64(r: &Record) -> Result<(), String> {
 }
 
 fn run_decode_b64(r: &Record) -> Result<(), String> {
-    let p = Pqid::from_base64url(r.input_str.as_ref().unwrap())
+    let p = TesseraId::from_base64url(r.input_str.as_ref().unwrap())
         .map_err(|e| format!("from_base64url: {:?}", e))?;
     let got = hex::encode(p.as_bytes());
     let want = r.expected_hex.as_ref().unwrap();
@@ -97,7 +97,7 @@ fn run_decode_b64(r: &Record) -> Result<(), String> {
 
 fn run_encode_crockford(r: &Record) -> Result<(), String> {
     let arr = hex_to_arr(r.input_hex.as_ref().unwrap())?;
-    let p = Pqid(arr);
+    let p = TesseraId(arr);
     let s = p.to_crockford();
     let want = r.expected_str.as_ref().unwrap();
     if &s != want {
@@ -107,7 +107,7 @@ fn run_encode_crockford(r: &Record) -> Result<(), String> {
 }
 
 fn run_decode_crockford(r: &Record) -> Result<(), String> {
-    let p = Pqid::from_crockford(r.input_str.as_ref().unwrap())
+    let p = TesseraId::from_crockford(r.input_str.as_ref().unwrap())
         .map_err(|e| format!("from_crockford: {:?}", e))?;
     let got = hex::encode(p.as_bytes());
     let want = r.expected_hex.as_ref().unwrap();
@@ -126,16 +126,16 @@ fn run_validate_invalid(r: &Record) -> Result<(), String> {
                 Ok(b) => b,
                 Err(_) => return Ok(()),
             };
-            match Pqid::from_bytes(&bytes) {
+            match TesseraId::from_bytes(&bytes) {
                 Ok(_) => Err("expected error, got success".into()),
                 Err(_) => Ok(()),
             }
         }
-        "b64" => match Pqid::from_base64url(r.input_str.as_ref().unwrap()) {
+        "b64" => match TesseraId::from_base64url(r.input_str.as_ref().unwrap()) {
             Ok(_) => Err("expected error, got success".into()),
             Err(_) => Ok(()),
         },
-        "crockford" => match Pqid::from_crockford(r.input_str.as_ref().unwrap()) {
+        "crockford" => match TesseraId::from_crockford(r.input_str.as_ref().unwrap()) {
             Ok(_) => Err("expected error, got success".into()),
             Err(_) => Ok(()),
         },
@@ -145,7 +145,7 @@ fn run_validate_invalid(r: &Record) -> Result<(), String> {
 
 fn run_validate_min_timestamp(r: &Record) -> Result<(), String> {
     let arr = hex_to_arr(r.input_hex.as_ref().unwrap())?;
-    let p = pqid::Pqid(arr);
+    let p = tessera_id::TesseraId(arr);
     let got = p.validate_min_timestamp();
     let want = r.expected.as_ref().and_then(|v| v.as_bool())
         .ok_or_else(|| "no expected bool".to_string())?;
@@ -184,7 +184,7 @@ fn run_hlc_overflow(r: &Record) -> Result<(), String> {
             peer[6] = VARIANT_HLC;
             peer[7] = (c_msg >> 8) as u8;
             peer[8] = c_msg as u8;
-            let p = Pqid(peer);
+            let p = TesseraId(peer);
             g.new_id(Some(&p))
         }
     } else {
@@ -209,19 +209,19 @@ fn run_hlc_overflow(r: &Record) -> Result<(), String> {
     Ok(())
 }
 
-fn pqhash_from_hex(hex_s: &str) -> Result<Pqhash, String> {
+fn tessera_hash_from_hex(hex_s: &str) -> Result<TesseraHash, String> {
     let bytes = hex::decode(hex_s).map_err(|e| e.to_string())?;
-    if bytes.len() != PQHASH_SIZE_BYTES {
-        return Err(format!("len {} != {}", bytes.len(), PQHASH_SIZE_BYTES));
+    if bytes.len() != TESSERA_HASH_SIZE_BYTES {
+        return Err(format!("len {} != {}", bytes.len(), TESSERA_HASH_SIZE_BYTES));
     }
-    let mut arr = [0u8; PQHASH_SIZE_BYTES];
+    let mut arr = [0u8; TESSERA_HASH_SIZE_BYTES];
     arr.copy_from_slice(&bytes);
-    Ok(Pqhash(arr))
+    Ok(TesseraHash(arr))
 }
 
-fn run_pqhash_hash_only(r: &Record) -> Result<(), String> {
+fn run_tessera_hash_hash_only(r: &Record) -> Result<(), String> {
     let content = hex::decode(r.input_hex.as_ref().unwrap()).map_err(|e| e.to_string())?;
-    let tail = pqhash::hash_only(&content);
+    let tail = tessera_hash::hash_only(&content);
     let got = hex::encode(tail);
     let want = r.expected_tail_hex.as_ref().ok_or("no expected_tail_hex")?;
     if &got != want {
@@ -230,8 +230,8 @@ fn run_pqhash_hash_only(r: &Record) -> Result<(), String> {
     Ok(())
 }
 
-fn run_pqhash_decode(r: &Record) -> Result<(), String> {
-    let p = pqhash_from_hex(r.input_hex.as_ref().unwrap())?;
+fn run_tessera_hash_decode(r: &Record) -> Result<(), String> {
+    let p = tessera_hash_from_hex(r.input_hex.as_ref().unwrap())?;
     let exp = r.expected.as_ref().ok_or("no expected")?;
     if p.variant() as i64 != exp["variant"].as_i64().unwrap() {
         return Err("variant".into());
@@ -250,16 +250,16 @@ fn run_pqhash_decode(r: &Record) -> Result<(), String> {
     Ok(())
 }
 
-fn run_pqhash_encode_b64(r: &Record) -> Result<(), String> {
-    let p = pqhash_from_hex(r.input_hex.as_ref().unwrap())?;
+fn run_tessera_hash_encode_b64(r: &Record) -> Result<(), String> {
+    let p = tessera_hash_from_hex(r.input_hex.as_ref().unwrap())?;
     let s = p.to_base64url();
     let want = r.expected_str.as_ref().unwrap();
     if &s != want { return Err(format!("got={} want={}", s, want)); }
     Ok(())
 }
 
-fn run_pqhash_decode_b64(r: &Record) -> Result<(), String> {
-    let p = Pqhash::from_base64url(r.input_str.as_ref().unwrap())
+fn run_tessera_hash_decode_b64(r: &Record) -> Result<(), String> {
+    let p = TesseraHash::from_base64url(r.input_str.as_ref().unwrap())
         .map_err(|e| format!("{:?}", e))?;
     let got = hex::encode(p.as_bytes());
     let want = r.expected_hex.as_ref().unwrap();
@@ -267,16 +267,16 @@ fn run_pqhash_decode_b64(r: &Record) -> Result<(), String> {
     Ok(())
 }
 
-fn run_pqhash_encode_crockford(r: &Record) -> Result<(), String> {
-    let p = pqhash_from_hex(r.input_hex.as_ref().unwrap())?;
+fn run_tessera_hash_encode_crockford(r: &Record) -> Result<(), String> {
+    let p = tessera_hash_from_hex(r.input_hex.as_ref().unwrap())?;
     let s = p.to_crockford();
     let want = r.expected_str.as_ref().unwrap();
     if &s != want { return Err(format!("got={} want={}", s, want)); }
     Ok(())
 }
 
-fn run_pqhash_decode_crockford(r: &Record) -> Result<(), String> {
-    let p = Pqhash::from_crockford(r.input_str.as_ref().unwrap())
+fn run_tessera_hash_decode_crockford(r: &Record) -> Result<(), String> {
+    let p = TesseraHash::from_crockford(r.input_str.as_ref().unwrap())
         .map_err(|e| format!("{:?}", e))?;
     let got = hex::encode(p.as_bytes());
     let want = r.expected_hex.as_ref().unwrap();
@@ -284,7 +284,7 @@ fn run_pqhash_decode_crockford(r: &Record) -> Result<(), String> {
     Ok(())
 }
 
-fn run_pqhash_validate_invalid(r: &Record) -> Result<(), String> {
+fn run_tessera_hash_validate_invalid(r: &Record) -> Result<(), String> {
     let kind = r.input_kind.as_ref().unwrap().as_str();
     match kind {
         "binary_hex" => {
@@ -293,16 +293,16 @@ fn run_pqhash_validate_invalid(r: &Record) -> Result<(), String> {
                 Ok(b) => b,
                 Err(_) => return Ok(()),
             };
-            match Pqhash::from_bytes(&bytes) {
+            match TesseraHash::from_bytes(&bytes) {
                 Ok(_) => Err("expected error, got success".into()),
                 Err(_) => Ok(()),
             }
         }
-        "b64" => match Pqhash::from_base64url(r.input_str.as_ref().unwrap()) {
+        "b64" => match TesseraHash::from_base64url(r.input_str.as_ref().unwrap()) {
             Ok(_) => Err("expected error, got success".into()),
             Err(_) => Ok(()),
         },
-        "crockford" => match Pqhash::from_crockford(r.input_str.as_ref().unwrap()) {
+        "crockford" => match TesseraHash::from_crockford(r.input_str.as_ref().unwrap()) {
             Ok(_) => Err("expected error, got success".into()),
             Err(_) => Ok(()),
         },
@@ -310,8 +310,8 @@ fn run_pqhash_validate_invalid(r: &Record) -> Result<(), String> {
     }
 }
 
-fn run_pqhash_verify(r: &Record) -> Result<(), String> {
-    let p = pqhash_from_hex(r.input_hex.as_ref().unwrap())?;
+fn run_tessera_hash_verify(r: &Record) -> Result<(), String> {
+    let p = tessera_hash_from_hex(r.input_hex.as_ref().unwrap())?;
     let content = hex::decode(r.content_hex.as_ref().unwrap()).map_err(|e| e.to_string())?;
     let got = p.verify(&content);
     let want = r.expected.as_ref().and_then(|v| v.as_bool())
@@ -330,14 +330,14 @@ fn dispatch(r: &Record) -> Result<(), String> {
         "validate_invalid" => run_validate_invalid(r),
         "hlc_overflow" => run_hlc_overflow(r),
         "validate_min_timestamp" => run_validate_min_timestamp(r),
-        "pqhash_hash_only" => run_pqhash_hash_only(r),
-        "pqhash_decode" => run_pqhash_decode(r),
-        "pqhash_encode_b64" => run_pqhash_encode_b64(r),
-        "pqhash_decode_b64" => run_pqhash_decode_b64(r),
-        "pqhash_encode_crockford" => run_pqhash_encode_crockford(r),
-        "pqhash_decode_crockford" => run_pqhash_decode_crockford(r),
-        "pqhash_validate_invalid" => run_pqhash_validate_invalid(r),
-        "pqhash_verify" => run_pqhash_verify(r),
+        "tessera_hash_hash_only" => run_tessera_hash_hash_only(r),
+        "tessera_hash_decode" => run_tessera_hash_decode(r),
+        "tessera_hash_encode_b64" => run_tessera_hash_encode_b64(r),
+        "tessera_hash_decode_b64" => run_tessera_hash_decode_b64(r),
+        "tessera_hash_encode_crockford" => run_tessera_hash_encode_crockford(r),
+        "tessera_hash_decode_crockford" => run_tessera_hash_decode_crockford(r),
+        "tessera_hash_validate_invalid" => run_tessera_hash_validate_invalid(r),
+        "tessera_hash_verify" => run_tessera_hash_verify(r),
         other => Err(format!("unknown op {:?}", other)),
     }
 }

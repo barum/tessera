@@ -1,0 +1,20 @@
+TesseraSeal Go benchmarks (tessera-seal/go/)
+----------------------------------------------------------------------
+Run on:    Apple M4 Max, Go 1.26.1, darwin/arm64
+Date:      2026-05-21 (v1.3 refresh — hybrid suite 0x06 added)
+Note:      Uses crypto/mlkem from the Go 1.26 stdlib (no external ML-KEM
+           library). golang.org/x/crypto/sha3 for SHA3/SHAKE,
+           x/crypto/chacha20poly1305 for the optional ChaCha suite.
+           Hybrid suite 0x06 (PQCK-00029) uses crypto/ecdh X25519 from the
+           Go stdlib + the SHAKE-256 combiner; one fresh X25519 keygen +
+           one DH per envelope adds ~50 us amortized.
+
+BenchmarkKeygen-14               	   24666	     44050 ns/op	   15480 B/op	       5 allocs/op
+BenchmarkEncrypt1KB_AESGCM-14    	   20788	     57635 ns/op	   24448 B/op	      51 allocs/op
+BenchmarkDecrypt1KB_AESGCM-14    	   20232	     57057 ns/op	   10088 B/op	      48 allocs/op
+BenchmarkEncrypt1MB_AESGCM-14    	     838	   1459810 ns/op	 2134163 B/op	      51 allocs/op
+BenchmarkDecrypt1MB_AESGCM-14    	     865	   1426782 ns/op	 2113279 B/op	      48 allocs/op
+BenchmarkPeekHeader-14           	249667651	         4.792 ns/op	       0 B/op	       0 allocs/op
+BenchmarkKeygenHybrid-14         	   17521	     68504 ns/op	   15880 B/op	      11 allocs/op
+BenchmarkEncrypt1KB_Hybrid-14    	   10000	    105494 ns/op	   28800 B/op	      62 allocs/op
+BenchmarkDecrypt1KB_Hybrid-14    	   13724	     82947 ns/op	   12040 B/op	      53 allocs/op

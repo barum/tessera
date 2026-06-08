@@ -7,14 +7,14 @@ import {
   decode, HLCGenerator,
   setNowMsForTesting,
   validateMinTimestamp,
-} from "pqid";
+} from "tessera-id";
 import {
-  PQHASH_SIZE_BYTES,
-  pqhashHashOnly,
-  pqhashDecode, pqhashVerify,
-  pqhashEncodeBase64URL, pqhashDecodeBase64URL,
-  pqhashEncodeCrockford, pqhashDecodeCrockford,
-} from "pqhash";
+  TESSERA_HASH_SIZE_BYTES,
+  tesseraHashHashOnly,
+  tesseraHashDecode, tesseraHashVerify,
+  tesseraHashEncodeBase64URL, tesseraHashDecodeBase64URL,
+  tesseraHashEncodeCrockford, tesseraHashDecodeCrockford,
+} from "tessera-hash";
 
 interface Record {
   name: string;
@@ -163,18 +163,18 @@ function runValidateMinTimestamp(r: Record): Result {
   return { ok: true };
 }
 
-function runPQHashHashOnly(r: Record): Result {
+function runTesseraHashHashOnly(r: Record): Result {
   const content = hexToBytes(r.input_hex!);
-  const tail = pqhashHashOnly(content);
+  const tail = tesseraHashHashOnly(content);
   const got = bytesToHex(tail);
   if (got !== r.expected_tail_hex) return { ok: false, detail: `got=${got} want=${r.expected_tail_hex}` };
   return { ok: true };
 }
 
-function runPQHashDecode(r: Record): Result {
+function runTesseraHashDecode(r: Record): Result {
   const raw = hexToBytes(r.input_hex!);
   try {
-    const d = pqhashDecode(raw);
+    const d = tesseraHashDecode(raw);
     const exp = r.expected;
     if (d.variant !== exp.variant) return { ok: false, detail: "variant" };
     if (d.timestampMs !== exp.timestamp_ms) return { ok: false, detail: `ts got=${d.timestampMs} want=${exp.timestamp_ms}` };
@@ -187,16 +187,16 @@ function runPQHashDecode(r: Record): Result {
   }
 }
 
-function runPQHashEncodeB64(r: Record): Result {
+function runTesseraHashEncodeB64(r: Record): Result {
   const raw = hexToBytes(r.input_hex!);
-  const s = pqhashEncodeBase64URL(raw);
+  const s = tesseraHashEncodeBase64URL(raw);
   if (s !== r.expected_str) return { ok: false, detail: `got=${s} want=${r.expected_str}` };
   return { ok: true };
 }
 
-function runPQHashDecodeB64(r: Record): Result {
+function runTesseraHashDecodeB64(r: Record): Result {
   try {
-    const raw = pqhashDecodeBase64URL(r.input_str!);
+    const raw = tesseraHashDecodeBase64URL(r.input_str!);
     const got = bytesToHex(raw);
     if (got !== r.expected_hex) return { ok: false, detail: `got=${got} want=${r.expected_hex}` };
     return { ok: true };
@@ -205,16 +205,16 @@ function runPQHashDecodeB64(r: Record): Result {
   }
 }
 
-function runPQHashEncodeCrockford(r: Record): Result {
+function runTesseraHashEncodeCrockford(r: Record): Result {
   const raw = hexToBytes(r.input_hex!);
-  const s = pqhashEncodeCrockford(raw);
+  const s = tesseraHashEncodeCrockford(raw);
   if (s !== r.expected_str) return { ok: false, detail: `got=${s} want=${r.expected_str}` };
   return { ok: true };
 }
 
-function runPQHashDecodeCrockford(r: Record): Result {
+function runTesseraHashDecodeCrockford(r: Record): Result {
   try {
-    const raw = pqhashDecodeCrockford(r.input_str!);
+    const raw = tesseraHashDecodeCrockford(r.input_str!);
     const got = bytesToHex(raw);
     if (got !== r.expected_hex) return { ok: false, detail: `got=${got} want=${r.expected_hex}` };
     return { ok: true };
@@ -223,16 +223,16 @@ function runPQHashDecodeCrockford(r: Record): Result {
   }
 }
 
-function runPQHashValidateInvalid(r: Record): Result {
+function runTesseraHashValidateInvalid(r: Record): Result {
   try {
     if (r.input_kind === "binary_hex") {
       const h = r.input_hex!;
-      if (h.length !== 2 * PQHASH_SIZE_BYTES) return { ok: true };
-      pqhashDecode(hexToBytes(h));
+      if (h.length !== 2 * TESSERA_HASH_SIZE_BYTES) return { ok: true };
+      tesseraHashDecode(hexToBytes(h));
     } else if (r.input_kind === "b64") {
-      pqhashDecodeBase64URL(r.input_str!);
+      tesseraHashDecodeBase64URL(r.input_str!);
     } else if (r.input_kind === "crockford") {
-      pqhashDecodeCrockford(r.input_str!);
+      tesseraHashDecodeCrockford(r.input_str!);
     } else {
       return { ok: false, detail: `unknown input_kind ${r.input_kind}` };
     }
@@ -242,10 +242,10 @@ function runPQHashValidateInvalid(r: Record): Result {
   }
 }
 
-function runPQHashVerify(r: Record): Result {
+function runTesseraHashVerify(r: Record): Result {
   const raw = hexToBytes(r.input_hex!);
   const content = hexToBytes(r.content_hex!);
-  const got = pqhashVerify(raw, content);
+  const got = tesseraHashVerify(raw, content);
   const want = r.expected as boolean;
   if (got !== want) return { ok: false, detail: `got=${got} want=${want}` };
   return { ok: true };
@@ -261,14 +261,14 @@ function dispatch(r: Record): Result {
     case "validate_invalid": return runValidateInvalid(r);
     case "hlc_overflow": return runHLCOverflow(r);
     case "validate_min_timestamp": return runValidateMinTimestamp(r);
-    case "pqhash_hash_only": return runPQHashHashOnly(r);
-    case "pqhash_decode": return runPQHashDecode(r);
-    case "pqhash_encode_b64": return runPQHashEncodeB64(r);
-    case "pqhash_decode_b64": return runPQHashDecodeB64(r);
-    case "pqhash_encode_crockford": return runPQHashEncodeCrockford(r);
-    case "pqhash_decode_crockford": return runPQHashDecodeCrockford(r);
-    case "pqhash_validate_invalid": return runPQHashValidateInvalid(r);
-    case "pqhash_verify": return runPQHashVerify(r);
+    case "tessera_hash_hash_only": return runTesseraHashHashOnly(r);
+    case "tessera_hash_decode": return runTesseraHashDecode(r);
+    case "tessera_hash_encode_b64": return runTesseraHashEncodeB64(r);
+    case "tessera_hash_decode_b64": return runTesseraHashDecodeB64(r);
+    case "tessera_hash_encode_crockford": return runTesseraHashEncodeCrockford(r);
+    case "tessera_hash_decode_crockford": return runTesseraHashDecodeCrockford(r);
+    case "tessera_hash_validate_invalid": return runTesseraHashValidateInvalid(r);
+    case "tessera_hash_verify": return runTesseraHashVerify(r);
   }
   return { ok: false, detail: `unknown op ${r.op}` };
 }

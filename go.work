@@ -1,9 +1,9 @@
 go 1.26
 
 use (
-	./pqid/go
-	./pqhash/go
-	./pqcrypt/go
+	./tessera-id/go
+	./tessera-hash/go
+	./tessera-seal/go
 	./tools/conformance/go
-	./tools/conformance/go/pqcrypt_runner
+	./tools/conformance/go/tessera_seal_runner
 )

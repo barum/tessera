@@ -9,8 +9,8 @@
  * Usage: conformance_runner <vectors.json>
  */
 #define _POSIX_C_SOURCE 200809L
-#include "pqid.h"
-#include "pqhash.h"
+#include "tessera_id.h"
+#include "tessera_hash.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -189,11 +189,11 @@ static int op_decode(const char *rec, char *err) {
     if (!get_str(rec, "input_hex", input_hex, sizeof(input_hex))) {
         snprintf(err, 256, "no input_hex"); return 0;
     }
-    uint8_t raw[PQID_SIZE_BYTES];
-    if (hex_to_bytes(input_hex, raw, PQID_SIZE_BYTES) != 0) {
+    uint8_t raw[TESSERA_ID_SIZE_BYTES];
+    if (hex_to_bytes(input_hex, raw, TESSERA_ID_SIZE_BYTES) != 0) {
         snprintf(err, 256, "bad hex"); return 0;
     }
-    if (pqid_validate(raw) != PQID_OK) {
+    if (tessera_id_validate(raw) != TESSERA_ID_OK) {
         snprintf(err, 256, "validate failed"); return 0;
     }
     int64_t want_v, want_t, want_c;
@@ -202,16 +202,16 @@ static int op_decode(const char *rec, char *err) {
     if (!get_nested_int(rec, "expected", "timestamp_ms", &want_t)) { snprintf(err, 256, "no ts"); return 0; }
     if (!get_nested_int(rec, "expected", "counter", &want_c)) { snprintf(err, 256, "no counter"); return 0; }
     /* Random hex is buried in nested object — we re-encode and compare. */
-    if (pqid_variant(raw) != (uint8_t)want_v) {
-        snprintf(err, 256, "variant got=%u want=%lld", pqid_variant(raw), (long long)want_v);
+    if (tessera_id_variant(raw) != (uint8_t)want_v) {
+        snprintf(err, 256, "variant got=%u want=%lld", tessera_id_variant(raw), (long long)want_v);
         return 0;
     }
-    if ((int64_t)pqid_timestamp_ms(raw) != want_t) {
-        snprintf(err, 256, "ts got=%llu want=%lld", (unsigned long long)pqid_timestamp_ms(raw), (long long)want_t);
+    if ((int64_t)tessera_id_timestamp_ms(raw) != want_t) {
+        snprintf(err, 256, "ts got=%llu want=%lld", (unsigned long long)tessera_id_timestamp_ms(raw), (long long)want_t);
         return 0;
     }
-    if ((int64_t)pqid_counter(raw) != want_c) {
-        snprintf(err, 256, "counter got=%u want=%lld", pqid_counter(raw), (long long)want_c);
+    if ((int64_t)tessera_id_counter(raw) != want_c) {
+        snprintf(err, 256, "counter got=%u want=%lld", tessera_id_counter(raw), (long long)want_c);
         return 0;
     }
     /* Crude nested-string fetch for random_hex: find "random_hex" inside
@@ -223,7 +223,7 @@ static int op_decode(const char *rec, char *err) {
             char want_hex[80];
             read_string(rh, want_hex, sizeof(want_hex));
             char got_hex[80];
-            bytes_to_hex(raw + PQID_RANDOM_OFFSET, PQID_RANDOM_BYTES, got_hex);
+            bytes_to_hex(raw + TESSERA_ID_RANDOM_OFFSET, TESSERA_ID_RANDOM_BYTES, got_hex);
             (void)want_rand;
             if (strcmp(want_hex, got_hex) != 0) {
                 snprintf(err, 256, "random got=%s want=%s", got_hex, want_hex);
@@ -238,11 +238,11 @@ static int op_encode_b64(const char *rec, char *err) {
     char input_hex[128], want[64];
     if (!get_str(rec, "input_hex", input_hex, sizeof(input_hex))) { snprintf(err, 256, "no input_hex"); return 0; }
     if (!get_str(rec, "expected_str", want, sizeof(want))) { snprintf(err, 256, "no expected_str"); return 0; }
-    uint8_t raw[PQID_SIZE_BYTES];
-    if (hex_to_bytes(input_hex, raw, PQID_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
-    char out[PQID_ENCODED_LEN_B64 + 1] = {0};
-    pqid_encode_b64url(raw, out);
-    out[PQID_ENCODED_LEN_B64] = '\0';
+    uint8_t raw[TESSERA_ID_SIZE_BYTES];
+    if (hex_to_bytes(input_hex, raw, TESSERA_ID_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
+    char out[TESSERA_ID_ENCODED_LEN_B64 + 1] = {0};
+    tessera_id_encode_b64url(raw, out);
+    out[TESSERA_ID_ENCODED_LEN_B64] = '\0';
     if (strcmp(out, want) != 0) {
         snprintf(err, 256, "got=%s want=%s", out, want);
         return 0;
@@ -254,11 +254,11 @@ static int op_decode_b64(const char *rec, char *err) {
     char input[64], want_hex[128];
     if (!get_str(rec, "input_str", input, sizeof(input))) { snprintf(err, 256, "no input_str"); return 0; }
     if (!get_str(rec, "expected_hex", want_hex, sizeof(want_hex))) { snprintf(err, 256, "no expected_hex"); return 0; }
-    if (strlen(input) != PQID_ENCODED_LEN_B64) { snprintf(err, 256, "input len %zu", strlen(input)); return 0; }
-    uint8_t raw[PQID_SIZE_BYTES];
-    if (pqid_decode_b64url(input, raw) != PQID_OK) { snprintf(err, 256, "decode error"); return 0; }
+    if (strlen(input) != TESSERA_ID_ENCODED_LEN_B64) { snprintf(err, 256, "input len %zu", strlen(input)); return 0; }
+    uint8_t raw[TESSERA_ID_SIZE_BYTES];
+    if (tessera_id_decode_b64url(input, raw) != TESSERA_ID_OK) { snprintf(err, 256, "decode error"); return 0; }
     char got[128];
-    bytes_to_hex(raw, PQID_SIZE_BYTES, got);
+    bytes_to_hex(raw, TESSERA_ID_SIZE_BYTES, got);
     if (strcmp(got, want_hex) != 0) {
         snprintf(err, 256, "got=%s want=%s", got, want_hex);
         return 0;
@@ -270,11 +270,11 @@ static int op_encode_crockford(const char *rec, char *err) {
     char input_hex[128], want[80];
     if (!get_str(rec, "input_hex", input_hex, sizeof(input_hex))) { snprintf(err, 256, "no input_hex"); return 0; }
     if (!get_str(rec, "expected_str", want, sizeof(want))) { snprintf(err, 256, "no expected_str"); return 0; }
-    uint8_t raw[PQID_SIZE_BYTES];
-    if (hex_to_bytes(input_hex, raw, PQID_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
-    char out[PQID_ENCODED_LEN_B32 + 1] = {0};
-    pqid_encode_crockford(raw, out);
-    out[PQID_ENCODED_LEN_B32] = '\0';
+    uint8_t raw[TESSERA_ID_SIZE_BYTES];
+    if (hex_to_bytes(input_hex, raw, TESSERA_ID_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
+    char out[TESSERA_ID_ENCODED_LEN_B32 + 1] = {0};
+    tessera_id_encode_crockford(raw, out);
+    out[TESSERA_ID_ENCODED_LEN_B32] = '\0';
     if (strcmp(out, want) != 0) {
         snprintf(err, 256, "got=%s want=%s", out, want);
         return 0;
@@ -286,11 +286,11 @@ static int op_decode_crockford(const char *rec, char *err) {
     char input[80], want_hex[128];
     if (!get_str(rec, "input_str", input, sizeof(input))) { snprintf(err, 256, "no input_str"); return 0; }
     if (!get_str(rec, "expected_hex", want_hex, sizeof(want_hex))) { snprintf(err, 256, "no expected_hex"); return 0; }
-    if (strlen(input) != PQID_ENCODED_LEN_B32) { snprintf(err, 256, "input len %zu", strlen(input)); return 0; }
-    uint8_t raw[PQID_SIZE_BYTES];
-    if (pqid_decode_crockford(input, raw) != PQID_OK) { snprintf(err, 256, "decode error"); return 0; }
+    if (strlen(input) != TESSERA_ID_ENCODED_LEN_B32) { snprintf(err, 256, "input len %zu", strlen(input)); return 0; }
+    uint8_t raw[TESSERA_ID_SIZE_BYTES];
+    if (tessera_id_decode_crockford(input, raw) != TESSERA_ID_OK) { snprintf(err, 256, "decode error"); return 0; }
     char got[128];
-    bytes_to_hex(raw, PQID_SIZE_BYTES, got);
+    bytes_to_hex(raw, TESSERA_ID_SIZE_BYTES, got);
     if (strcmp(got, want_hex) != 0) {
         snprintf(err, 256, "got=%s want=%s", got, want_hex);
         return 0;
@@ -305,24 +305,24 @@ static int op_validate_invalid(const char *rec, char *err) {
         char hex[128];
         if (!get_str(rec, "input_hex", hex, sizeof(hex))) { snprintf(err, 256, "no input_hex"); return 0; }
         size_t hl = strlen(hex);
-        if (hl != PQID_SIZE_BYTES * 2) return 1;  /* length error counts as reject */
-        uint8_t raw[PQID_SIZE_BYTES];
-        if (hex_to_bytes(hex, raw, PQID_SIZE_BYTES) != 0) return 1;
-        if (pqid_validate(raw) != PQID_OK) return 1;
+        if (hl != TESSERA_ID_SIZE_BYTES * 2) return 1;  /* length error counts as reject */
+        uint8_t raw[TESSERA_ID_SIZE_BYTES];
+        if (hex_to_bytes(hex, raw, TESSERA_ID_SIZE_BYTES) != 0) return 1;
+        if (tessera_id_validate(raw) != TESSERA_ID_OK) return 1;
         snprintf(err, 256, "expected error, got success"); return 0;
     } else if (strcmp(kind, "b64") == 0) {
         char input[64];
         if (!get_str(rec, "input_str", input, sizeof(input))) { snprintf(err, 256, "no input_str"); return 0; }
-        if (strlen(input) != PQID_ENCODED_LEN_B64) return 1;
-        uint8_t raw[PQID_SIZE_BYTES];
-        if (pqid_decode_b64url(input, raw) != PQID_OK) return 1;
+        if (strlen(input) != TESSERA_ID_ENCODED_LEN_B64) return 1;
+        uint8_t raw[TESSERA_ID_SIZE_BYTES];
+        if (tessera_id_decode_b64url(input, raw) != TESSERA_ID_OK) return 1;
         snprintf(err, 256, "expected error, got success"); return 0;
     } else if (strcmp(kind, "crockford") == 0) {
         char input[80];
         if (!get_str(rec, "input_str", input, sizeof(input))) { snprintf(err, 256, "no input_str"); return 0; }
-        if (strlen(input) != PQID_ENCODED_LEN_B32) return 1;
-        uint8_t raw[PQID_SIZE_BYTES];
-        if (pqid_decode_crockford(input, raw) != PQID_OK) return 1;
+        if (strlen(input) != TESSERA_ID_ENCODED_LEN_B32) return 1;
+        uint8_t raw[TESSERA_ID_SIZE_BYTES];
+        if (tessera_id_decode_crockford(input, raw) != TESSERA_ID_OK) return 1;
         snprintf(err, 256, "expected error, got success"); return 0;
     }
     snprintf(err, 256, "unknown input_kind %s", kind);
@@ -332,9 +332,9 @@ static int op_validate_invalid(const char *rec, char *err) {
 static int op_validate_min_timestamp(const char *rec, char *err) {
     char hex[128];
     if (!get_str(rec, "input_hex", hex, sizeof(hex))) { snprintf(err, 256, "no input_hex"); return 0; }
-    uint8_t raw[PQID_SIZE_BYTES];
-    if (hex_to_bytes(hex, raw, PQID_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
-    int got = pqid_validate_min_timestamp(raw);
+    uint8_t raw[TESSERA_ID_SIZE_BYTES];
+    if (hex_to_bytes(hex, raw, TESSERA_ID_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
+    int got = tessera_id_validate_min_timestamp(raw);
     /* Expected is a bare boolean — look for "expected": true|false */
     const char *p = find_key(rec, "expected");
     if (!p) { snprintf(err, 256, "no expected"); return 0; }
@@ -365,14 +365,14 @@ static int op_hlc_overflow(const char *rec, char *err) {
         if (!get_nested_int(rec, "observe", "c_msg", &c_msg)) { snprintf(err, 256, "no observe.c_msg"); return 0; }
     }
 
-    pqid_hlc_generator_t g;
-    pqid_hlc_init(&g);
+    tessera_id_hlc_generator_t g;
+    tessera_id_hlc_init(&g);
     g.l = (uint64_t)l_old;
     g.c = (uint16_t)c_old;
 
-    pqid_set_now_ms_for_testing((uint64_t)pt);
+    tessera_id_set_now_ms_for_testing((uint64_t)pt);
 
-    uint8_t out[PQID_SIZE_BYTES];
+    uint8_t out[TESSERA_ID_SIZE_BYTES];
     int rc;
     if (has_observe) {
         uint8_t peer9[9];
@@ -382,19 +382,19 @@ static int op_hlc_overflow(const char *rec, char *err) {
         peer9[3] = (uint8_t)(l_msg >> 16);
         peer9[4] = (uint8_t)(l_msg >> 8);
         peer9[5] = (uint8_t)(l_msg);
-        peer9[6] = PQID_VARIANT_HLC;
+        peer9[6] = TESSERA_ID_VARIANT_HLC;
         peer9[7] = (uint8_t)(c_msg >> 8);
         peer9[8] = (uint8_t)(c_msg);
-        rc = pqid_hlc_new(&g, peer9, out);
+        rc = tessera_id_hlc_new(&g, peer9, out);
     } else {
-        rc = pqid_hlc_new(&g, NULL, out);
+        rc = tessera_id_hlc_new(&g, NULL, out);
     }
 
-    pqid_set_now_ms_for_testing(UINT64_MAX);
+    tessera_id_set_now_ms_for_testing(UINT64_MAX);
 
-    if (rc != PQID_OK) { snprintf(err, 256, "rc=%d", rc); return 0; }
-    int64_t got_l = (int64_t)pqid_timestamp_ms(out);
-    int64_t got_c = (int64_t)pqid_counter(out);
+    if (rc != TESSERA_ID_OK) { snprintf(err, 256, "rc=%d", rc); return 0; }
+    int64_t got_l = (int64_t)tessera_id_timestamp_ms(out);
+    int64_t got_c = (int64_t)tessera_id_counter(out);
     if (got_l != exp_l || got_c != exp_c) {
         snprintf(err, 256, "got=(l=%lld, c=%lld) want=(l=%lld, c=%lld)",
                  (long long)got_l, (long long)got_c, (long long)exp_l, (long long)exp_c);
@@ -403,7 +403,7 @@ static int op_hlc_overflow(const char *rec, char *err) {
     return 1;
 }
 
-/* ---------- PQHash ops ---------- */
+/* ---------- TesseraHash ops ---------- */
 
 /* Read a JSON string into a heap-allocated buffer. Returns NUL-terminated
  * string or NULL on missing/error. Caller must free. */
@@ -456,7 +456,7 @@ static uint8_t *hex_to_alloc(const char *hex, size_t *out_len) {
     return buf;
 }
 
-static int op_pqhash_hash_only(const char *rec, char *err) {
+static int op_tessera_hash_hash_only(const char *rec, char *err) {
     char *hex = get_str_dyn(rec, "input_hex");
     if (!hex) { snprintf(err, 256, "no input_hex"); return 0; }
     size_t content_len;
@@ -465,7 +465,7 @@ static int op_pqhash_hash_only(const char *rec, char *err) {
     if (!content) { snprintf(err, 256, "bad input_hex"); return 0; }
 
     uint8_t tail[64];
-    pqhash_hash_only(content, content_len, tail);
+    tessera_hash_hash_only(content, content_len, tail);
     free(content);
 
     char *want = get_str_dyn(rec, "expected_tail_hex");
@@ -482,16 +482,16 @@ static int op_pqhash_hash_only(const char *rec, char *err) {
     return ok;
 }
 
-static int op_pqhash_decode(const char *rec, char *err) {
+static int op_tessera_hash_decode(const char *rec, char *err) {
     char input_hex[160];  /* 73 bytes = 146 hex chars */
     if (!get_str(rec, "input_hex", input_hex, sizeof(input_hex))) {
         snprintf(err, 256, "no input_hex"); return 0;
     }
-    uint8_t raw[PQHASH_SIZE_BYTES];
-    if (hex_to_bytes(input_hex, raw, PQHASH_SIZE_BYTES) != 0) {
+    uint8_t raw[TESSERA_HASH_SIZE_BYTES];
+    if (hex_to_bytes(input_hex, raw, TESSERA_HASH_SIZE_BYTES) != 0) {
         snprintf(err, 256, "bad hex"); return 0;
     }
-    if (pqhash_validate(raw) != PQHASH_OK) {
+    if (tessera_hash_validate(raw) != TESSERA_HASH_OK) {
         snprintf(err, 256, "validate failed"); return 0;
     }
     int64_t want_v, want_t, want_c;
@@ -500,9 +500,9 @@ static int op_pqhash_decode(const char *rec, char *err) {
      || !get_nested_int(rec, "expected", "counter", &want_c)) {
         snprintf(err, 256, "missing expected fields"); return 0;
     }
-    if (pqhash_variant(raw) != (uint8_t)want_v) { snprintf(err, 256, "variant"); return 0; }
-    if ((int64_t)pqhash_timestamp_ms(raw) != want_t) { snprintf(err, 256, "ts"); return 0; }
-    if ((int64_t)pqhash_counter(raw) != want_c) { snprintf(err, 256, "counter"); return 0; }
+    if (tessera_hash_variant(raw) != (uint8_t)want_v) { snprintf(err, 256, "variant"); return 0; }
+    if ((int64_t)tessera_hash_timestamp_ms(raw) != want_t) { snprintf(err, 256, "ts"); return 0; }
+    if ((int64_t)tessera_hash_counter(raw) != want_c) { snprintf(err, 256, "counter"); return 0; }
 
     const char *exp = find_key(rec, "expected");
     if (exp && *exp == '{') {
@@ -511,7 +511,7 @@ static int op_pqhash_decode(const char *rec, char *err) {
             char want_hex[160];
             read_string(th, want_hex, sizeof(want_hex));
             char got_hex[160];
-            bytes_to_hex(raw + PQHASH_TAIL_OFFSET, PQHASH_TAIL_BYTES, got_hex);
+            bytes_to_hex(raw + TESSERA_HASH_TAIL_OFFSET, TESSERA_HASH_TAIL_BYTES, got_hex);
             if (strcmp(want_hex, got_hex) != 0) {
                 snprintf(err, 256, "tail got=%s want=%s", got_hex, want_hex);
                 return 0;
@@ -521,94 +521,94 @@ static int op_pqhash_decode(const char *rec, char *err) {
     return 1;
 }
 
-static int op_pqhash_encode_b64(const char *rec, char *err) {
+static int op_tessera_hash_encode_b64(const char *rec, char *err) {
     char input_hex[160], want[128];
     if (!get_str(rec, "input_hex", input_hex, sizeof(input_hex))) { snprintf(err, 256, "no input_hex"); return 0; }
     if (!get_str(rec, "expected_str", want, sizeof(want))) { snprintf(err, 256, "no expected_str"); return 0; }
-    uint8_t raw[PQHASH_SIZE_BYTES];
-    if (hex_to_bytes(input_hex, raw, PQHASH_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
-    char out[PQHASH_ENCODED_LEN_B64 + 1] = {0};
-    pqhash_encode_b64url(raw, out);
-    out[PQHASH_ENCODED_LEN_B64] = '\0';
+    uint8_t raw[TESSERA_HASH_SIZE_BYTES];
+    if (hex_to_bytes(input_hex, raw, TESSERA_HASH_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
+    char out[TESSERA_HASH_ENCODED_LEN_B64 + 1] = {0};
+    tessera_hash_encode_b64url(raw, out);
+    out[TESSERA_HASH_ENCODED_LEN_B64] = '\0';
     if (strcmp(out, want) != 0) { snprintf(err, 256, "got=%s want=%s", out, want); return 0; }
     return 1;
 }
 
-static int op_pqhash_decode_b64(const char *rec, char *err) {
+static int op_tessera_hash_decode_b64(const char *rec, char *err) {
     char input[128], want_hex[160];
     if (!get_str(rec, "input_str", input, sizeof(input))) { snprintf(err, 256, "no input_str"); return 0; }
     if (!get_str(rec, "expected_hex", want_hex, sizeof(want_hex))) { snprintf(err, 256, "no expected_hex"); return 0; }
-    if (strlen(input) != PQHASH_ENCODED_LEN_B64) { snprintf(err, 256, "input len %zu", strlen(input)); return 0; }
-    uint8_t raw[PQHASH_SIZE_BYTES];
-    if (pqhash_decode_b64url(input, raw) != PQHASH_OK) { snprintf(err, 256, "decode error"); return 0; }
+    if (strlen(input) != TESSERA_HASH_ENCODED_LEN_B64) { snprintf(err, 256, "input len %zu", strlen(input)); return 0; }
+    uint8_t raw[TESSERA_HASH_SIZE_BYTES];
+    if (tessera_hash_decode_b64url(input, raw) != TESSERA_HASH_OK) { snprintf(err, 256, "decode error"); return 0; }
     char got[160];
-    bytes_to_hex(raw, PQHASH_SIZE_BYTES, got);
+    bytes_to_hex(raw, TESSERA_HASH_SIZE_BYTES, got);
     if (strcmp(got, want_hex) != 0) { snprintf(err, 256, "got=%s want=%s", got, want_hex); return 0; }
     return 1;
 }
 
-static int op_pqhash_encode_crockford(const char *rec, char *err) {
+static int op_tessera_hash_encode_crockford(const char *rec, char *err) {
     char input_hex[160], want[160];
     if (!get_str(rec, "input_hex", input_hex, sizeof(input_hex))) { snprintf(err, 256, "no input_hex"); return 0; }
     if (!get_str(rec, "expected_str", want, sizeof(want))) { snprintf(err, 256, "no expected_str"); return 0; }
-    uint8_t raw[PQHASH_SIZE_BYTES];
-    if (hex_to_bytes(input_hex, raw, PQHASH_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
-    char out[PQHASH_ENCODED_LEN_B32 + 1] = {0};
-    pqhash_encode_crockford(raw, out);
-    out[PQHASH_ENCODED_LEN_B32] = '\0';
+    uint8_t raw[TESSERA_HASH_SIZE_BYTES];
+    if (hex_to_bytes(input_hex, raw, TESSERA_HASH_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
+    char out[TESSERA_HASH_ENCODED_LEN_B32 + 1] = {0};
+    tessera_hash_encode_crockford(raw, out);
+    out[TESSERA_HASH_ENCODED_LEN_B32] = '\0';
     if (strcmp(out, want) != 0) { snprintf(err, 256, "got=%s want=%s", out, want); return 0; }
     return 1;
 }
 
-static int op_pqhash_decode_crockford(const char *rec, char *err) {
+static int op_tessera_hash_decode_crockford(const char *rec, char *err) {
     char input[160], want_hex[160];
     if (!get_str(rec, "input_str", input, sizeof(input))) { snprintf(err, 256, "no input_str"); return 0; }
     if (!get_str(rec, "expected_hex", want_hex, sizeof(want_hex))) { snprintf(err, 256, "no expected_hex"); return 0; }
-    if (strlen(input) != PQHASH_ENCODED_LEN_B32) { snprintf(err, 256, "input len %zu", strlen(input)); return 0; }
-    uint8_t raw[PQHASH_SIZE_BYTES];
-    if (pqhash_decode_crockford(input, raw) != PQHASH_OK) { snprintf(err, 256, "decode error"); return 0; }
+    if (strlen(input) != TESSERA_HASH_ENCODED_LEN_B32) { snprintf(err, 256, "input len %zu", strlen(input)); return 0; }
+    uint8_t raw[TESSERA_HASH_SIZE_BYTES];
+    if (tessera_hash_decode_crockford(input, raw) != TESSERA_HASH_OK) { snprintf(err, 256, "decode error"); return 0; }
     char got[160];
-    bytes_to_hex(raw, PQHASH_SIZE_BYTES, got);
+    bytes_to_hex(raw, TESSERA_HASH_SIZE_BYTES, got);
     if (strcmp(got, want_hex) != 0) { snprintf(err, 256, "got=%s want=%s", got, want_hex); return 0; }
     return 1;
 }
 
-static int op_pqhash_validate_invalid(const char *rec, char *err) {
+static int op_tessera_hash_validate_invalid(const char *rec, char *err) {
     char kind[32];
     if (!get_str(rec, "input_kind", kind, sizeof(kind))) { snprintf(err, 256, "no input_kind"); return 0; }
     if (strcmp(kind, "binary_hex") == 0) {
         char hex[160];
         if (!get_str(rec, "input_hex", hex, sizeof(hex))) { snprintf(err, 256, "no input_hex"); return 0; }
         size_t hl = strlen(hex);
-        if (hl != PQHASH_SIZE_BYTES * 2) return 1;  /* length error counts as reject */
-        uint8_t raw[PQHASH_SIZE_BYTES];
-        if (hex_to_bytes(hex, raw, PQHASH_SIZE_BYTES) != 0) return 1;
-        if (pqhash_validate(raw) != PQHASH_OK) return 1;
+        if (hl != TESSERA_HASH_SIZE_BYTES * 2) return 1;  /* length error counts as reject */
+        uint8_t raw[TESSERA_HASH_SIZE_BYTES];
+        if (hex_to_bytes(hex, raw, TESSERA_HASH_SIZE_BYTES) != 0) return 1;
+        if (tessera_hash_validate(raw) != TESSERA_HASH_OK) return 1;
         snprintf(err, 256, "expected error, got success"); return 0;
     } else if (strcmp(kind, "b64") == 0) {
         char input[128];
         if (!get_str(rec, "input_str", input, sizeof(input))) { snprintf(err, 256, "no input_str"); return 0; }
-        if (strlen(input) != PQHASH_ENCODED_LEN_B64) return 1;
-        uint8_t raw[PQHASH_SIZE_BYTES];
-        if (pqhash_decode_b64url(input, raw) != PQHASH_OK) return 1;
+        if (strlen(input) != TESSERA_HASH_ENCODED_LEN_B64) return 1;
+        uint8_t raw[TESSERA_HASH_SIZE_BYTES];
+        if (tessera_hash_decode_b64url(input, raw) != TESSERA_HASH_OK) return 1;
         snprintf(err, 256, "expected error, got success"); return 0;
     } else if (strcmp(kind, "crockford") == 0) {
         char input[160];
         if (!get_str(rec, "input_str", input, sizeof(input))) { snprintf(err, 256, "no input_str"); return 0; }
-        if (strlen(input) != PQHASH_ENCODED_LEN_B32) return 1;
-        uint8_t raw[PQHASH_SIZE_BYTES];
-        if (pqhash_decode_crockford(input, raw) != PQHASH_OK) return 1;
+        if (strlen(input) != TESSERA_HASH_ENCODED_LEN_B32) return 1;
+        uint8_t raw[TESSERA_HASH_SIZE_BYTES];
+        if (tessera_hash_decode_crockford(input, raw) != TESSERA_HASH_OK) return 1;
         snprintf(err, 256, "expected error, got success"); return 0;
     }
     snprintf(err, 256, "unknown input_kind %s", kind);
     return 0;
 }
 
-static int op_pqhash_verify(const char *rec, char *err) {
+static int op_tessera_hash_verify(const char *rec, char *err) {
     char input_hex[160];
     if (!get_str(rec, "input_hex", input_hex, sizeof(input_hex))) { snprintf(err, 256, "no input_hex"); return 0; }
-    uint8_t raw[PQHASH_SIZE_BYTES];
-    if (hex_to_bytes(input_hex, raw, PQHASH_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
+    uint8_t raw[TESSERA_HASH_SIZE_BYTES];
+    if (hex_to_bytes(input_hex, raw, TESSERA_HASH_SIZE_BYTES) != 0) { snprintf(err, 256, "bad hex"); return 0; }
 
     char *content_hex = get_str_dyn(rec, "content_hex");
     if (!content_hex) { snprintf(err, 256, "no content_hex"); return 0; }
@@ -617,7 +617,7 @@ static int op_pqhash_verify(const char *rec, char *err) {
     free(content_hex);
     if (!content) { snprintf(err, 256, "bad content_hex"); return 0; }
 
-    int got = pqhash_verify(raw, content, content_len);
+    int got = tessera_hash_verify(raw, content, content_len);
     free(content);
 
     /* expected is a bare boolean */
@@ -669,14 +669,14 @@ int main(int argc, char **argv) {
         else if (strcmp(op, "validate_invalid") == 0)  ok = op_validate_invalid(rec, err);
         else if (strcmp(op, "hlc_overflow") == 0)      ok = op_hlc_overflow(rec, err);
         else if (strcmp(op, "validate_min_timestamp") == 0) ok = op_validate_min_timestamp(rec, err);
-        else if (strcmp(op, "pqhash_hash_only") == 0)       ok = op_pqhash_hash_only(rec, err);
-        else if (strcmp(op, "pqhash_decode") == 0)          ok = op_pqhash_decode(rec, err);
-        else if (strcmp(op, "pqhash_encode_b64") == 0)      ok = op_pqhash_encode_b64(rec, err);
-        else if (strcmp(op, "pqhash_decode_b64") == 0)      ok = op_pqhash_decode_b64(rec, err);
-        else if (strcmp(op, "pqhash_encode_crockford") == 0) ok = op_pqhash_encode_crockford(rec, err);
-        else if (strcmp(op, "pqhash_decode_crockford") == 0) ok = op_pqhash_decode_crockford(rec, err);
-        else if (strcmp(op, "pqhash_validate_invalid") == 0) ok = op_pqhash_validate_invalid(rec, err);
-        else if (strcmp(op, "pqhash_verify") == 0)          ok = op_pqhash_verify(rec, err);
+        else if (strcmp(op, "tessera_hash_hash_only") == 0)       ok = op_tessera_hash_hash_only(rec, err);
+        else if (strcmp(op, "tessera_hash_decode") == 0)          ok = op_tessera_hash_decode(rec, err);
+        else if (strcmp(op, "tessera_hash_encode_b64") == 0)      ok = op_tessera_hash_encode_b64(rec, err);
+        else if (strcmp(op, "tessera_hash_decode_b64") == 0)      ok = op_tessera_hash_decode_b64(rec, err);
+        else if (strcmp(op, "tessera_hash_encode_crockford") == 0) ok = op_tessera_hash_encode_crockford(rec, err);
+        else if (strcmp(op, "tessera_hash_decode_crockford") == 0) ok = op_tessera_hash_decode_crockford(rec, err);
+        else if (strcmp(op, "tessera_hash_validate_invalid") == 0) ok = op_tessera_hash_validate_invalid(rec, err);
+        else if (strcmp(op, "tessera_hash_verify") == 0)          ok = op_tessera_hash_verify(rec, err);
         else { snprintf(err, sizeof(err), "unknown op %s", op); ok = 0; }
 
         if (ok) printf("PASS %s\n", name);

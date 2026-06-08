@@ -1,0 +1,54 @@
+\section{Security and Collision Math}
+\label{sec:security}
+
+\tesserahash{}'s security claim reduces to ``SHAKE-256 is collision-resistant.'' This section quantifies the margin and lays out the threat boundaries explicitly.
+
+\subsection{Collision and second-preimage bounds}
+
+For an $n$-bit hash output:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Property} & \textbf{Classical} & \textbf{Grover} \citep{grover1996} & \textbf{BHT} \citep{bht1998} & \textbf{$n=512$ (TesseraHash)} \\
+\midrule
+Second preimage  & $2^n$       & $2^{n/2}$ & ---       & $2^{512}$ classical, $2^{256}$ Grover \\
+Collision        & $2^{n/2}$   & ---       & $2^{n/3}$ & $2^{256}$ classical, $\sim 2^{170}$ BHT \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The dominant quantum bound is Brassard--H{\o}yer--Tapp collision at $\sim 2^{170}$. To put $2^{170}$ in perspective: at a generation rate of $10^{12}$ \tesserahash{}es per second --- vastly beyond any realistic system --- finding a collision would take $\sim 10^{31}$ years, or roughly $10^{21}$ times the current age of the universe.
+
+The relevant point for content-identifier use cases is that \emph{second-preimage} is usually the threat that matters (``can an attacker produce content that hashes to this specific identifier?'') and second-preimage is bounded by $2^{256}$ even under Grover. This is the same security margin NIST targets for ML-KEM-1024 \citep{fips203} and AES-256-GCM-equivalent symmetric strength.
+
+\subsection{Why 512 bits, not 256 bits}
+
+A 256-bit tail (SHAKE-256 truncated, or SHA3-256) would provide $2^{128}$ classical collision and $\sim 2^{85}$ BHT collision. The $2^{85}$ figure --- ``one trillion years at one trillion generations per second'' --- is comfortable but not 30--50 year-comfortable. TesseraHash is intended to outlive any individual deployment; budgeting collision resistance for two centuries beyond the most aggressive realistic generation rate motivates the 512-bit choice. The 9 extra bytes of header relative to a hypothetical 32-byte (256-bit-tail) variant cost essentially nothing in practice.
+
+This contrasts with TesseraID: TesseraID's 256-bit tail is sized for \emph{unguessability} (a random field where Grover second-preimage at $2^{128}$ is the binding bound), not collision. The two projects use different bit budgets because the threats differ.
+
+\subsection{What an attacker controls}
+
+\begin{itemize}
+  \item \textbf{Content.} Yes --- the attacker can submit any content they want. The collision/second-preimage cost is what it is.
+  \item \textbf{Timestamp.} The attacker controls the timestamp on their own generator. The timestamp is provenance metadata; it cannot be forged ``against'' a third party because the third party never signed it.
+  \item \textbf{Counter.} Similarly attacker-controlled on their own generator.
+  \item \textbf{Variant byte.} Setting variant to anything other than \code{0x03} causes decode rejection. Setting variant to \code{0x01}, \code{0x02}, or \code{0x04} additionally triggers cross-project rejection in TesseraID's and TesseraSeal's decoders --- attackers cannot smuggle a \tesserahash{} past a TesseraID parser by flipping the variant byte (and vice versa).
+  \item \textbf{Tail.} The attacker chooses the content; the tail is then forced. The attacker cannot independently set the tail.
+\end{itemize}
+
+\subsection{Where the timestamp leaks}
+
+The 48-bit timestamp is plaintext. An attacker who sees a \tesserahash{} learns approximately when the identifier was generated --- not when the content was created (different generators can hash the same content at different times). If the timestamp is sensitive, encrypt the entire \tesserahash{} (use \tesseraseal{}; \cref{sec:monorepo}), or do not generate the \tesserahash{} until you are ready to publish.
+
+\subsection{Side channels}
+
+\tesserahash{} has no secret-dependent control flow: the SHAKE-256 sponge processes content with input-independent permutations \citep{fips202}, the counter advances deterministically, the timestamp is read from the OS clock. An attacker who can time a \tesserahash{} computation recovers, at most, the length of the input content (which they may control or already know).
+
+Because TesseraHash is keyless, the side-channel disclaimer language that TesseraSeal requires (constant-time vs constant-power, KyberSlash regression, etc.) does not apply. The security guarantees rest on the cryptographic strength of SHAKE-256 \citep{fips202}, not on the implementation's timing behavior.
+
+\subsection{Random source quality}
+
+\tesserahash{} has no random field. The CSPRNG discipline that binds \tesseraid{} and \tesseraseal{} (OS \texttt{getrandom}/\texttt{getentropy}/\texttt{BCryptGenRandom} only, no userspace PRNG) is not relevant for \tesserahash{}: the tail is deterministic in content, the counter advances by 1, the timestamp is wall-clock.

@@ -7,8 +7,8 @@
     "run": "node dist/conformance_runner.js"
   },
   "dependencies": {
-    "pqid":   "file:../../../pqid/typescript",
-    "pqhash": "file:../../../pqhash/typescript"
+    "tessera-id":   "file:../../../tessera-id/typescript",
+    "tessera-hash": "file:../../../tessera-hash/typescript"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

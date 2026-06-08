@@ -19,19 +19,19 @@ jobs:
             cxx: g++
     steps:
       - uses: actions/checkout@v4
-      - name: PQID C++ build and test
+      - name: TesseraID C++ build and test
         env:
           CXX: ${{ matrix.cxx }}
         run: |
-          cd pqid/cpp
+          cd tessera-id/cpp
           make clean
           make all
-          ./test_pqid
-      - name: PQHash C++ build and test
+          ./test_tessera_id
+      - name: TesseraHash C++ build and test
         env:
           CXX: ${{ matrix.cxx }}
         run: |
-          cd pqhash/cpp
+          cd tessera-hash/cpp
           make clean
           make test
       - name: Build conformance runner
@@ -42,14 +42,14 @@ jobs:
           make
       - name: Run conformance vectors against C++ runner
         run: |
-          for f in pqid/conformance/vectors/*.json pqhash/conformance/vectors/*.json; do
+          for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
             tools/conformance/cpp/conformance_runner "$f"
           done
-      - name: PQID fuzz smoke (60s)
+      - name: TesseraID fuzz smoke (60s)
         env:
           CXX: ${{ matrix.cxx }}
         run: |
-          cd pqid/cpp
+          cd tessera-id/cpp
           make fuzz_decode
           timeout 60 ./fuzz_decode 5000000 || ec=$?
           if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then

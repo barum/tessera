@@ -1,0 +1,64 @@
+% ============================================================================
+%  Part IV: When to Use What
+% ============================================================================
+\section{When to Use What}
+\label{sec:when}
+
+This part is the practical decision guide. We work through the question ``should I use TesseraID, and if so, which variant?'' in three layers: when TesseraID is the right format at all, when to choose Standard vs HLC, and when to reach for something else.
+
+\subsection{When TesseraID is the right format}
+
+Use TesseraID when one or more of the following apply:
+
+\begin{itemize}
+  \item \textbf{Long horizon.} The identifier may need to remain unforgeable for ten years or longer, in a world where cryptographically-relevant quantum computers may exist by 2045--2050. This includes audit logs, financial records, training-corpus records, archival keys, and compliance artifacts.
+  \item \textbf{Distributed-systems semantics.} Multiple nodes generate identifiers and the order of events across nodes matters for correctness. This is the HLC variant's home turf.
+  \item \textbf{Heterogeneous implementations.} A deployment spans multiple languages or frameworks, and you need a guarantee that all of them produce sortable identifiers regardless of library choice. UUIDv7's optional intra-millisecond ordering breaks this; TesseraID's mandatory counter does not.
+  \item \textbf{Large scale.} Identifier streams reach $10^9$ IDs/sec or beyond, where birthday-bound math on 80- or 128-bit fields starts to matter even classically.
+\end{itemize}
+
+Don't use TesseraID when bytes are at an absolute premium. The 41-byte size is the cost of post-quantum margins; if your use case fits comfortably inside 16 or 20 bytes (because identifier counts are modest, security horizons are short, and storage cost dominates) then UUIDv7 or ULID is fine.
+
+\subsection{Choosing between Standard and HLC}
+
+\textbf{Choose Standard when} you have a single source of truth for time, or many sources whose clocks you trust to within a millisecond or two, and you don't need to reconstruct causal order across nodes from the identifier itself. The vast majority of single-database, single-tenant systems fall here. So do most multi-tenant SaaS applications: each tenant's events are conceptually independent, so cross-node ordering doesn't matter.
+
+\textbf{Choose HLC when} you have a real causality requirement. Specifically: your system has multiple nodes that exchange messages, the order in which one node's events were observed by another node matters for correctness, and you are willing to plumb HLC observation through your message-passing layer (every message carries the sender's HLC, every receiver observes that HLC before generating its next ID). If any of these is missing, you don't get HLC's value, and you pay HLC's costs (mutex contention, drift bounds, harder debugging) for nothing.
+
+Concrete examples where HLC earns its keep:
+
+\begin{itemize}
+  \item \textbf{Distributed event logs} that span multiple regions and must be merged into a globally-sortable stream after the fact. The HLC ensures that events causally-ordered by message exchange end up in the right relative position even if their wall clocks disagreed at generation time.
+  \item \textbf{CRDTs and version vectors.} HLC is the standard tool for ordering concurrent updates in a way that preserves causality. CRDTs that use HLC as their version vector get correct merge semantics for free.
+  \item \textbf{Distributed snapshots.} Algorithms like Chandy--Lamport \citep{chandylamport1985} need a way to determine which events happened before a snapshot cut; HLC provides exactly that.
+  \item \textbf{Multi-region replication.} If a row is written in region A, replicated to region B, and modified in region B, the HLC variant of the new identifier in B reflects the causal dependency on A's write even if B's wall clock was behind.
+\end{itemize}
+
+In all of these cases, the HLC variant's causal-ordering property comes from a discipline the application must follow: every message must carry the sender's HLC observation, and every receiver must observe that HLC before generating its next ID. The format provides the substrate; the application provides the discipline.
+
+\subsection{When to reach for something else}
+
+Part \ref{sec:compare} works through each of these in feature-level detail; the one-line verdicts:
+
+\begin{itemize}
+  \item \textbf{UUIDv4} for throwaway operational IDs where you need broad library compatibility and don't care about ordering or post-quantum margins.
+  \item \textbf{UUIDv7} for time-ordered UUIDs where being in RFC 9562 outweighs the 37-bit post-quantum margin, and where you control all generators (so they all use Method 3 of RFC 9562 §6.2 rather than the optional non-monotonic Method 2).
+  \item \textbf{ULID} for 16-byte time-ordered identifiers with a community spec, broad ecosystem support, and a tolerable 40-bit post-quantum margin.
+  \item \textbf{KSUID} for a 20-byte identifier with the largest possible random tail when second-granularity ordering is good enough.
+  \item \textbf{Snowflake} when bytes are at an absolute premium, you can run a coordination service for unique machine IDs, and you accept that uniqueness depends on machine-ID assignment correctness rather than cryptographic randomness.
+  \item \textbf{BIGSERIAL or auto-increment integers} when the data lives in exactly one database, you don't care about portability, and you want the smallest, fastest possible primary key.
+  \item \textbf{A signed token format like PASETO \citep{paseto} or JWT \citep{rfc7519}} when you need the identifier to be unforgeable by anyone but the issuer. TesseraID is not a signed token; anyone with a CSPRNG can produce a TesseraID that looks valid. TesseraIDs can be valuable as the \emph{payload} inside such a signed token --- the token authenticates, the TesseraID provides time-ordering and uniqueness.
+\end{itemize}
+
+\subsection{Hybrid deployments}
+
+In practice, large systems often use multiple identifier formats simultaneously. A reasonable layering:
+
+\begin{itemize}
+  \item \textbf{TesseraID} for archival, audit, and identifier-of-record use cases where post-quantum margins matter and ten-year defensibility is required.
+  \item \textbf{UUIDv7} or \textbf{ULID} for operational identifiers (request IDs, span IDs, trace IDs) where 16 bytes is preferable and the identifier's lifetime is measured in seconds to days.
+  \item \textbf{Snowflake} or \textbf{BIGSERIAL} for purely intra-database keys where the system controls all generators.
+\end{itemize}
+
+The formats coexist fine. TesseraID's encoded forms (Base64URL or Crockford) are visually distinct from UUIDs (no hyphens, no fixed length match) so distinguishing identifier types in mixed logs is straightforward.
+

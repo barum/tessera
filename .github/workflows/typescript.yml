@@ -19,13 +19,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - name: PQID TypeScript test
-        working-directory: pqid/typescript
+      - name: TesseraID TypeScript test
+        working-directory: tessera-id/typescript
         run: |
           npm install
           npm test
-      - name: PQHash TypeScript build
-        working-directory: pqhash/typescript
+      - name: TesseraHash TypeScript build
+        working-directory: tessera-hash/typescript
         run: |
           npm install
           npm run build
@@ -35,11 +35,11 @@ jobs:
           npm install
           npm run build
           cd ../../..
-          for f in pqid/conformance/vectors/*.json pqhash/conformance/vectors/*.json; do
+          for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
             node tools/conformance/typescript/dist/conformance_runner.js "$f"
           done
-      - name: PQID fuzz smoke (60s)
-        working-directory: pqid/typescript
+      - name: TesseraID fuzz smoke (60s)
+        working-directory: tessera-id/typescript
         run: |
           timeout 60 node dist/fuzz/fuzz_decode.js 1000000 || ec=$?
           if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then

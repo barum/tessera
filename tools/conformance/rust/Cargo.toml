@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-pqid    = { path = "../../../pqid/rust" }
-pqhash  = { path = "../../../pqhash/rust" }
-pqcrypt = { path = "../../../pqcrypt/rust" }
+tessera-id   = { path = "../../../tessera-id/rust" }
+tessera-hash = { path = "../../../tessera-hash/rust" }
+tessera-seal = { path = "../../../tessera-seal/rust" }
 serde   = { version = "1", features = ["derive"] }
 serde_json = "1"
 hex     = "0.4"
@@ -18,8 +18,8 @@ name = "conformance_runner"
 path = "src/bin/conformance_runner.rs"
 
 [[bin]]
-name = "pqcrypt_runner"
-path = "src/bin/pqcrypt_runner.rs"
+name = "tessera_seal_runner"
+path = "src/bin/tessera_seal_runner.rs"
 
 [profile.release]
 opt-level = 3

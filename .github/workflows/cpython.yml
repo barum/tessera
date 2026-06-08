@@ -22,18 +22,18 @@ jobs:
       - name: Install build deps
         run: python3 -m pip install --upgrade pip setuptools
       - name: Build extension
-        working-directory: pqid/cpython
+        working-directory: tessera-id/cpython
         run: python3 setup.py build_ext --inplace
       - name: Run extension tests
-        working-directory: pqid/cpython
-        run: python3 test_pqid_ext.py
+        working-directory: tessera-id/cpython
+        run: python3 test_tessera_id_ext.py
       - name: Run conformance runner against all vectors
         run: |
-          for f in pqid/conformance/vectors/*.json pqhash/conformance/vectors/*.json; do
+          for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
             python3 tools/conformance/cpython/conformance_runner.py "$f"
           done
       - name: Fuzz smoke (60s)
-        working-directory: pqid/cpython
+        working-directory: tessera-id/cpython
         run: |
           timeout 60 python3 fuzz/fuzz_decode.py 1000000 || ec=$?
           if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then

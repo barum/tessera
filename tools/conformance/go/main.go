@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"pqhash"
-	"pqid"
+	"tesserahash"
+	"tesseraid"
 )
 
 type Record struct {
@@ -51,14 +51,14 @@ func (r Record) expectedAsBool() (bool, bool) {
 	return b, true
 }
 
-func hexToArr(s string) ([pqid.SizeBytes]byte, error) {
-	var a [pqid.SizeBytes]byte
+func hexToArr(s string) ([tesseraid.SizeBytes]byte, error) {
+	var a [tesseraid.SizeBytes]byte
 	b, err := hex.DecodeString(s)
 	if err != nil {
 		return a, err
 	}
-	if len(b) != pqid.SizeBytes {
-		return a, fmt.Errorf("hex len %d != %d", len(b), pqid.SizeBytes)
+	if len(b) != tesseraid.SizeBytes {
+		return a, fmt.Errorf("hex len %d != %d", len(b), tesseraid.SizeBytes)
 	}
 	copy(a[:], b)
 	return a, nil
@@ -69,7 +69,7 @@ func runDecode(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	d, err := pqid.Decode(b)
+	d, err := tesseraid.Decode(b)
 	if err != nil {
 		return false, fmt.Sprintf("Decode error: %v", err)
 	}
@@ -98,7 +98,7 @@ func runValidateMinTimestamp(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	got := pqid.ValidateMinTimestamp(raw)
+	got := tesseraid.ValidateMinTimestamp(raw)
 	want, ok := r.expectedAsBool()
 	if !ok {
 		return false, "no expected bool"
@@ -114,7 +114,7 @@ func runEncodeB64(r Record) (bool, string) {
 	if err != nil {
 		return false, err.Error()
 	}
-	s := pqid.EncodeBase64URL(arr)
+	s := tesseraid.EncodeBase64URL(arr)
 	if s != r.ExpectedStr {
 		return false, fmt.Sprintf("got=%q want=%q", s, r.ExpectedStr)
 	}
@@ -122,7 +122,7 @@ func runEncodeB64(r Record) (bool, string) {
 }
 
 func runDecodeB64(r Record) (bool, string) {
-	arr, err := pqid.DecodeBase64URL(r.InputStr)
+	arr, err := tesseraid.DecodeBase64URL(r.InputStr)
 	if err != nil {
 		return false, fmt.Sprintf("error: %v", err)
 	}
@@ -138,7 +138,7 @@ func runEncodeCrockford(r Record) (bool, string) {
 	if err != nil {
 		return false, err.Error()
 	}
-	s := pqid.EncodeCrockford(arr)
+	s := tesseraid.EncodeCrockford(arr)
 	if s != r.ExpectedStr {
 		return false, fmt.Sprintf("got=%q want=%q", s, r.ExpectedStr)
 	}
@@ -146,7 +146,7 @@ func runEncodeCrockford(r Record) (bool, string) {
 }
 
 func runDecodeCrockford(r Record) (bool, string) {
-	arr, err := pqid.DecodeCrockford(r.InputStr)
+	arr, err := tesseraid.DecodeCrockford(r.InputStr)
 	if err != nil {
 		return false, fmt.Sprintf("error: %v", err)
 	}
@@ -164,17 +164,17 @@ func runValidateInvalid(r Record) (bool, string) {
 		if err != nil {
 			return true, "" // hex parse failure also counts as reject
 		}
-		if _, err := pqid.Decode(b); err != nil {
+		if _, err := tesseraid.Decode(b); err != nil {
 			return true, ""
 		}
 		return false, "expected error, got success"
 	case "b64":
-		if _, err := pqid.DecodeBase64URL(r.InputStr); err != nil {
+		if _, err := tesseraid.DecodeBase64URL(r.InputStr); err != nil {
 			return true, ""
 		}
 		return false, "expected error, got success"
 	case "crockford":
-		if _, err := pqid.DecodeCrockford(r.InputStr); err != nil {
+		if _, err := tesseraid.DecodeCrockford(r.InputStr); err != nil {
 			return true, ""
 		}
 		return false, "expected error, got success"
@@ -182,12 +182,12 @@ func runValidateInvalid(r Record) (bool, string) {
 	return false, fmt.Sprintf("unknown input_kind %q", r.InputKind)
 }
 
-func runPQHashHashOnly(r Record) (bool, string) {
+func runTesseraHashHashOnly(r Record) (bool, string) {
 	content, err := hex.DecodeString(r.InputHex)
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	tail := pqhash.PQHashHashOnly(content)
+	tail := tesserahash.TesseraHashHashOnly(content)
 	got := hex.EncodeToString(tail[:])
 	if got != r.ExpectedTailHex {
 		return false, fmt.Sprintf("got=%s want=%s", got, r.ExpectedTailHex)
@@ -195,12 +195,12 @@ func runPQHashHashOnly(r Record) (bool, string) {
 	return true, ""
 }
 
-func runPQHashDecode(r Record) (bool, string) {
+func runTesseraHashDecode(r Record) (bool, string) {
 	raw, err := hex.DecodeString(r.InputHex)
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	d, err := pqhash.PQHashDecode(raw)
+	d, err := tesserahash.TesseraHashDecode(raw)
 	if err != nil {
 		return false, fmt.Sprintf("decode: %v", err)
 	}
@@ -224,22 +224,22 @@ func runPQHashDecode(r Record) (bool, string) {
 	return true, ""
 }
 
-func runPQHashEncodeB64(r Record) (bool, string) {
+func runTesseraHashEncodeB64(r Record) (bool, string) {
 	raw, err := hex.DecodeString(r.InputHex)
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	var arr [pqhash.PQHashSizeBytes]byte
+	var arr [tesserahash.TesseraHashSizeBytes]byte
 	copy(arr[:], raw)
-	got := pqhash.PQHashEncodeBase64URL(arr)
+	got := tesserahash.TesseraHashEncodeBase64URL(arr)
 	if got != r.ExpectedStr {
 		return false, fmt.Sprintf("got=%q want=%q", got, r.ExpectedStr)
 	}
 	return true, ""
 }
 
-func runPQHashDecodeB64(r Record) (bool, string) {
-	arr, err := pqhash.PQHashDecodeBase64URL(r.InputStr)
+func runTesseraHashDecodeB64(r Record) (bool, string) {
+	arr, err := tesserahash.TesseraHashDecodeBase64URL(r.InputStr)
 	if err != nil {
 		return false, fmt.Sprintf("decode: %v", err)
 	}
@@ -250,22 +250,22 @@ func runPQHashDecodeB64(r Record) (bool, string) {
 	return true, ""
 }
 
-func runPQHashEncodeCrockford(r Record) (bool, string) {
+func runTesseraHashEncodeCrockford(r Record) (bool, string) {
 	raw, err := hex.DecodeString(r.InputHex)
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	var arr [pqhash.PQHashSizeBytes]byte
+	var arr [tesserahash.TesseraHashSizeBytes]byte
 	copy(arr[:], raw)
-	got := pqhash.PQHashEncodeCrockford(arr)
+	got := tesserahash.TesseraHashEncodeCrockford(arr)
 	if got != r.ExpectedStr {
 		return false, fmt.Sprintf("got=%q want=%q", got, r.ExpectedStr)
 	}
 	return true, ""
 }
 
-func runPQHashDecodeCrockford(r Record) (bool, string) {
-	arr, err := pqhash.PQHashDecodeCrockford(r.InputStr)
+func runTesseraHashDecodeCrockford(r Record) (bool, string) {
+	arr, err := tesserahash.TesseraHashDecodeCrockford(r.InputStr)
 	if err != nil {
 		return false, fmt.Sprintf("decode: %v", err)
 	}
@@ -276,24 +276,24 @@ func runPQHashDecodeCrockford(r Record) (bool, string) {
 	return true, ""
 }
 
-func runPQHashValidateInvalid(r Record) (bool, string) {
+func runTesseraHashValidateInvalid(r Record) (bool, string) {
 	switch r.InputKind {
 	case "binary_hex":
 		raw, err := hex.DecodeString(r.InputHex)
 		if err != nil {
 			return true, ""
 		}
-		if _, err := pqhash.PQHashDecode(raw); err != nil {
+		if _, err := tesserahash.TesseraHashDecode(raw); err != nil {
 			return true, ""
 		}
 		return false, "expected error, got success"
 	case "b64":
-		if _, err := pqhash.PQHashDecodeBase64URL(r.InputStr); err != nil {
+		if _, err := tesserahash.TesseraHashDecodeBase64URL(r.InputStr); err != nil {
 			return true, ""
 		}
 		return false, "expected error, got success"
 	case "crockford":
-		if _, err := pqhash.PQHashDecodeCrockford(r.InputStr); err != nil {
+		if _, err := tesserahash.TesseraHashDecodeCrockford(r.InputStr); err != nil {
 			return true, ""
 		}
 		return false, "expected error, got success"
@@ -301,7 +301,7 @@ func runPQHashValidateInvalid(r Record) (bool, string) {
 	return false, fmt.Sprintf("unknown input_kind %q", r.InputKind)
 }
 
-func runPQHashVerify(r Record) (bool, string) {
+func runTesseraHashVerify(r Record) (bool, string) {
 	raw, err := hex.DecodeString(r.InputHex)
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
@@ -310,7 +310,7 @@ func runPQHashVerify(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("bad content_hex: %v", err)
 	}
-	got := pqhash.PQHashVerify(raw, content)
+	got := tesserahash.TesseraHashVerify(raw, content)
 	var want bool
 	if err := json.Unmarshal(r.Expected, &want); err != nil {
 		return false, "no expected bool"
@@ -325,18 +325,18 @@ func runHLCOverflow(r Record) (bool, string) {
 	if r.Name == "doc" {
 		return true, ""
 	}
-	g := &pqid.HLCGenerator{}
+	g := &tesseraid.HLCGenerator{}
 	g.SetHLCStateForTesting(r.Start["l_old"], uint16(r.Start["c_old"]))
 
-	restore := pqid.SetNowMSForTesting(func() int64 { return r.PhysicalTimeMs })
-	defer pqid.SetNowMSForTesting(restore)
+	restore := tesseraid.SetNowMSForTesting(func() int64 { return r.PhysicalTimeMs })
+	defer tesseraid.SetNowMSForTesting(restore)
 
-	var out [pqid.SizeBytes]byte
+	var out [tesseraid.SizeBytes]byte
 	var err error
 	if r.Observe == nil {
 		out, err = g.New(nil)
 	} else {
-		var peer [pqid.SizeBytes]byte
+		var peer [tesseraid.SizeBytes]byte
 		lMsg := r.Observe["l_msg"]
 		cMsg := uint16(r.Observe["c_msg"])
 		peer[0] = byte(lMsg >> 40)
@@ -345,7 +345,7 @@ func runHLCOverflow(r Record) (bool, string) {
 		peer[3] = byte(lMsg >> 16)
 		peer[4] = byte(lMsg >> 8)
 		peer[5] = byte(lMsg)
-		peer[6] = pqid.VariantHLC
+		peer[6] = tesseraid.VariantHLC
 		peer[7] = byte(cMsg >> 8)
 		peer[8] = byte(cMsg)
 		out, err = g.New(&peer)
@@ -353,7 +353,7 @@ func runHLCOverflow(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("error: %v", err)
 	}
-	d, err := pqid.Decode(out[:])
+	d, err := tesseraid.Decode(out[:])
 	if err != nil {
 		return false, fmt.Sprintf("decode error: %v", err)
 	}
@@ -388,22 +388,22 @@ func dispatch(r Record) (bool, string) {
 		return runHLCOverflow(r)
 	case "validate_min_timestamp":
 		return runValidateMinTimestamp(r)
-	case "pqhash_hash_only":
-		return runPQHashHashOnly(r)
-	case "pqhash_decode":
-		return runPQHashDecode(r)
-	case "pqhash_encode_b64":
-		return runPQHashEncodeB64(r)
-	case "pqhash_decode_b64":
-		return runPQHashDecodeB64(r)
-	case "pqhash_encode_crockford":
-		return runPQHashEncodeCrockford(r)
-	case "pqhash_decode_crockford":
-		return runPQHashDecodeCrockford(r)
-	case "pqhash_validate_invalid":
-		return runPQHashValidateInvalid(r)
-	case "pqhash_verify":
-		return runPQHashVerify(r)
+	case "tessera_hash_hash_only":
+		return runTesseraHashHashOnly(r)
+	case "tessera_hash_decode":
+		return runTesseraHashDecode(r)
+	case "tessera_hash_encode_b64":
+		return runTesseraHashEncodeB64(r)
+	case "tessera_hash_decode_b64":
+		return runTesseraHashDecodeB64(r)
+	case "tessera_hash_encode_crockford":
+		return runTesseraHashEncodeCrockford(r)
+	case "tessera_hash_decode_crockford":
+		return runTesseraHashDecodeCrockford(r)
+	case "tessera_hash_validate_invalid":
+		return runTesseraHashValidateInvalid(r)
+	case "tessera_hash_verify":
+		return runTesseraHashVerify(r)
 	}
 	return false, fmt.Sprintf("unknown op %q", r.Op)
 }

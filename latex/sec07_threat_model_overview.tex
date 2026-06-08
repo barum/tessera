@@ -3,9 +3,9 @@
 
 Each project has its own normative threat model in its own whitepaper. This section summarizes the differences and the shared ground.
 
-\subsection{What is and isn't ``post-quantum'' in \pqtoolkit{}}
+\subsection{What is and isn't ``post-quantum'' in \tessera{}}
 
-The ``post-quantum'' in \pqtoolkit{} means different things in different projects, and the differences matter.
+The ``post-quantum'' in \tessera{} means different things in different projects, and the differences matter.
 
 \begin{center}
 \small
@@ -13,46 +13,46 @@ The ``post-quantum'' in \pqtoolkit{} means different things in different project
 \toprule
 \textbf{Project} & \textbf{What ``PQ'' refers to} & \textbf{Binding security argument} \\
 \midrule
-\pqid{}     & \emph{Post-quantum-era hygiene}. The 256-bit random tail retains 128-bit second-preimage against Grover's algorithm \citep{grover1996}. PQID is not a cryptographic primitive; it is an identifier whose random field is sized for the era in which quantum search exists. & ``The OS CSPRNG produces unguessable bits, and 256 of them is enough.'' \\[0.4em]
-\pqhash{}   & \emph{Post-quantum-era hygiene} for content commitments. The 512-bit SHAKE-256 \citep{fips202} tail retains 256-bit Grover second-preimage and $\sim$170-bit BHT \citep{bht1998} collision. & ``SHAKE-256 is what NIST FIPS 202 says it is.'' \\[0.4em]
-\pqcrypt{}  & \emph{Genuine post-quantum cryptography}. ML-KEM-1024 \citep{fips203} for the key encapsulation. Hybrid suite \code{0x06} adds X25519 \citep{rfc7748} for classical defense-in-depth. & ``ML-KEM-1024 is IND-CCA2-secure under Module-LWE; AES-256-GCM and ChaCha20-Poly1305 are confidentiality-and-integrity-secure under their standard assumptions; UtC \citep{bellare2022commitment} closes multi-recipient key confusion.'' \\
+\tesseraid{}     & \emph{Post-quantum-era hygiene}. The 256-bit random tail retains 128-bit second-preimage against Grover's algorithm \citep{grover1996}. TesseraID is not a cryptographic primitive; it is an identifier whose random field is sized for the era in which quantum search exists. & ``The OS CSPRNG produces unguessable bits, and 256 of them is enough.'' \\[0.4em]
+\tesserahash{}   & \emph{Post-quantum-era hygiene} for content commitments. The 512-bit SHAKE-256 \citep{fips202} tail retains 256-bit Grover second-preimage and $\sim$170-bit BHT \citep{bht1998} collision. & ``SHAKE-256 is what NIST FIPS 202 says it is.'' \\[0.4em]
+\tesseraseal{}  & \emph{Genuine post-quantum cryptography}. ML-KEM-1024 \citep{fips203} for the key encapsulation. Hybrid suite \code{0x06} adds X25519 \citep{rfc7748} for classical defense-in-depth. & ``ML-KEM-1024 is IND-CCA2-secure under Module-LWE; AES-256-GCM and ChaCha20-Poly1305 are confidentiality-and-integrity-secure under their standard assumptions; UtC \citep{bellare2022commitment} closes multi-recipient key confusion.'' \\
 \bottomrule
 \end{tabularx}
 \end{center}
 
-The first two are not making cryptographic claims --- they are public artifacts. An attacker sees every byte of every \pqid{} and \pqhash{}; the security of \pqid{} reduces to ``the random tail is unguessable'' and the security of \pqhash{} reduces to ``the SHAKE-256 hash is collision-resistant.'' Both projects defer producer authentication, integrity of the wire form, and confidentiality of their contents to an outer envelope.
+The first two are not making cryptographic claims --- they are public artifacts. An attacker sees every byte of every \tesseraid{} and \tesserahash{}; the security of \tesseraid{} reduces to ``the random tail is unguessable'' and the security of \tesserahash{} reduces to ``the SHAKE-256 hash is collision-resistant.'' Both projects defer producer authentication, integrity of the wire form, and confidentiality of their contents to an outer envelope.
 
-\pqcrypt{} is the only project that makes a cryptographic confidentiality claim. The claim is structured carefully: suites \code{0x01}/\code{0x02} make a \emph{pure post-quantum} promise (no classical fallback; if ML-KEM-1024 is structurally broken, every envelope under these suites loses confidentiality). Suite \code{0x06} makes a \emph{hybrid} promise (an attacker must break both ML-KEM-1024 \emph{and} X25519 to recover the session key). The wire byte at offset 7 records which promise applies; a single envelope never makes both.
+\tesseraseal{} is the only project that makes a cryptographic confidentiality claim. The claim is structured carefully: suites \code{0x01}/\code{0x02} make a \emph{pure post-quantum} promise (no classical fallback; if ML-KEM-1024 is structurally broken, every envelope under these suites loses confidentiality). Suite \code{0x06} makes a \emph{hybrid} promise (an attacker must break both ML-KEM-1024 \emph{and} X25519 to recover the session key). The wire byte at offset 7 records which promise applies; a single envelope never makes both.
 
 \subsection{Cross-cutting invariants}
 
 These apply to all three projects:
 
 \begin{itemize}
-\item \textbf{OS CSPRNG only.} Where randomness is needed (\pqid{}'s 32-byte tail; \pqcrypt{}'s ML-KEM \texttt{Encaps} randomness and X25519 ephemeral keygen for hybrid), it comes from the OS CSPRNG: \texttt{getrandom(2)} / \texttt{getentropy(3)} / \texttt{BCryptGenRandom} / \texttt{os.urandom} / \texttt{SecureRandom} / \texttt{crypto.getRandomValues} / \texttt{/dev/urandom}. No userspace PRNG, no fallback. \pqhash{} has no random field and is exempt.
+\item \textbf{OS CSPRNG only.} Where randomness is needed (\tesseraid{}'s 32-byte tail; \tesseraseal{}'s ML-KEM \texttt{Encaps} randomness and X25519 ephemeral keygen for hybrid), it comes from the OS CSPRNG: \texttt{getrandom(2)} / \texttt{getentropy(3)} / \texttt{BCryptGenRandom} / \texttt{os.urandom} / \texttt{SecureRandom} / \texttt{crypto.getRandomValues} / \texttt{/dev/urandom}. No userspace PRNG, no fallback. \tesserahash{} has no random field and is exempt.
 \item \textbf{Variant-byte cross-rejection.} Each project's decoders reject every variant byte they do not own (Section~\ref{sec:shared-namespace}). The contract is gated by KAT vectors.
 \item \textbf{No unsafe Rust, no cgo, no new FFI.} Implementations are pure within their language. CPython extensions are direct C against the CPython API, not FFI bridges.
-\item \textbf{Supply-chain hygiene.} No new third-party crypto dependencies. SHAKE-256/Keccak comes from stdlib (Python, Go) or vendored \texttt{common/} (C, C++, Java). \pqcrypt{}'s ML-KEM-1024 and X25519 sources are pinned per language; see \pqcrypt{}'s whitepaper §5.
+\item \textbf{Supply-chain hygiene.} No new third-party crypto dependencies. SHAKE-256/Keccak comes from stdlib (Python, Go) or vendored \texttt{common/} (C, C++, Java). \tesseraseal{}'s ML-KEM-1024 and X25519 sources are pinned per language; see \tesseraseal{}'s whitepaper §5.
 \end{itemize}
 
 \subsection{Side-channel posture}
 
 \begin{itemize}
-\item \pqid{} and \pqhash{} are \emph{public artifacts} with no secret-dependent control flow. Side-channel attacks on the generator recover, at most, content the attacker may already have submitted (\pqhash{}) or the rate of identifier generation (\pqid{}).
-\item \pqcrypt{} mitigates \emph{software-timing} side channels by vendoring constant-time ML-KEM-1024 and X25519 implementations per language and by maintaining a constant-time decrypt path (single \texttt{DecryptionError} class, synthetic-key AEAD verify on structural failures). \pqcrypt{} explicitly does \emph{not} mitigate power, electromagnetic, frequency-scaling (Hertzbleed), or prefetcher (GoFetch) side channels; the normative side-channel disclaimer is at \texttt{pqcrypt/docs/side-channel-disclaimer.md}.
+\item \tesseraid{} and \tesserahash{} are \emph{public artifacts} with no secret-dependent control flow. Side-channel attacks on the generator recover, at most, content the attacker may already have submitted (\tesserahash{}) or the rate of identifier generation (\tesseraid{}).
+\item \tesseraseal{} mitigates \emph{software-timing} side channels by vendoring constant-time ML-KEM-1024 and X25519 implementations per language and by maintaining a constant-time decrypt path (single \texttt{DecryptionError} class, synthetic-key AEAD verify on structural failures). \tesseraseal{} explicitly does \emph{not} mitigate power, electromagnetic, frequency-scaling (Hertzbleed), or prefetcher (GoFetch) side channels; the normative side-channel disclaimer is at \texttt{tessera-seal/docs/side-channel-disclaimer.md}.
 \end{itemize}
 
-\subsection{What \pqtoolkit{} as a whole does not provide}
+\subsection{What \tessera{} as a whole does not provide}
 
 \begin{itemize}
 \item \textbf{No signature primitive.} Producer authentication is out of v1.x scope. Use ML-DSA \citep{fips204}, Ed25519 \citep{rfc8032}, or PASETO \citep{paseto-v4}. A future \texttt{pqsign}-style sibling project is outside v1.x scope.
-\item \textbf{No transport layer.} \pqtoolkit{} ships wire formats, not protocols. Use TLS 1.3, QUIC, or Noise underneath.
-\item \textbf{No FIPS 140-3 module validation.} The algorithms used in \pqcrypt{} are FIPS-approved (FIPS 203 ML-KEM, FIPS 197 AES, FIPS 202 SHA-3 family); the implementation is not a validated module. Callers who need module validation should source ML-KEM from a validated module (e.g., a future BoringCrypto release) and integrate at the API boundary.
-\item \textbf{No key rotation primitive.} Each \pqcrypt{} envelope is self-contained; rotation is a higher-level concern that the plugin protocol and the outer application own.
+\item \textbf{No transport layer.} \tessera{} ships wire formats, not protocols. Use TLS 1.3, QUIC, or Noise underneath.
+\item \textbf{No FIPS 140-3 module validation.} The algorithms used in \tesseraseal{} are FIPS-approved (FIPS 203 ML-KEM, FIPS 197 AES, FIPS 202 SHA-3 family); the implementation is not a validated module. Callers who need module validation should source ML-KEM from a validated module (e.g., a future BoringCrypto release) and integrate at the API boundary.
+\item \textbf{No key rotation primitive.} Each \tesseraseal{} envelope is self-contained; rotation is a higher-level concern that the plugin protocol and the outer application own.
 \end{itemize}
 
 \subsection{Pre-external-audit posture}
 
-PQCrypt v1.x ships with an internal pre-external-audit threat-model walk-through at \texttt{pqcrypt/docs/security-audit-v1.2.md}. It enumerates known attacks vs mitigations, per-language posture, and six open items for an external auditor (CI timing histogram, FIPS 140-3 path, synthetic-key timing-pad invariant testing, hybrid C port, plugin protocol fuzz harness, memory-zeroization audit).
+TesseraSeal v1.x ships with an internal pre-external-audit threat-model walk-through at \texttt{tessera-seal/docs/security-audit-v1.2.md}. It enumerates known attacks vs mitigations, per-language posture, and six open items for an external auditor (CI timing histogram, FIPS 140-3 path, synthetic-key timing-pad invariant testing, hybrid C port, plugin protocol fuzz harness, memory-zeroization audit).
 
-PQID and PQHash are simpler in shape and do not have an equivalent internal audit document; their threat models live entirely in their respective whitepapers. A future external audit would cover all three projects, with the PQCrypt portion being the largest by surface area.
+TesseraID and TesseraHash are simpler in shape and do not have an equivalent internal audit document; their threat models live entirely in their respective whitepapers. A future external audit would cover all three projects, with the TesseraSeal portion being the largest by surface area.

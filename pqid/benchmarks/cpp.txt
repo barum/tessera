@@ -1,9 +1,0 @@
-PQID C++ benchmarks (g++ -O3, single thread)
---------------------------------------------
-
-  Standard generation                      2383425 ops/sec   (   420 ns/op)
-  HLC generation (no observe)              3397694 ops/sec   (   294 ns/op)
-  encode Base64URL                        31023429 ops/sec   (    32 ns/op)
-  encode Crockford Base32                 25419694 ops/sec   (    39 ns/op)
-  decode Base64URL                        75129334 ops/sec   (    13 ns/op)
-  decode Crockford Base32                 44652309 ops/sec   (    22 ns/op)

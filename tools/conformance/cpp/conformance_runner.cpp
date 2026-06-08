@@ -3,8 +3,8 @@
 // Uses a tiny string-search JSON reader (records have a fixed schema, so a
 // real parser is overkill). The C runner uses the same approach.
 
-#include "pqid.hpp"
-#include "pqhash.hpp"
+#include "tessera_id.hpp"
+#include "tessera_hash.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -18,7 +18,7 @@
 #include <string>
 #include <string_view>
 
-using namespace pqid;
+using namespace tessera_id;
 
 static std::string slurp(const char* path) {
     std::ifstream f(path, std::ios::binary);
@@ -116,7 +116,7 @@ static Result op_decode(const std::string& rec) {
     if (!hex) return {false, "no input_hex"};
     auto raw = hex_to_bytes(*hex);
     if (raw.size() != kSize) return {false, "bad len"};
-    Pqid p;
+    TesseraId p;
     std::memcpy(p.bytes.data(), raw.data(), kSize);
     auto want_variant = get_nested_int(rec, "expected", "variant").value_or(-1);
     auto want_ts      = get_nested_int(rec, "expected", "timestamp_ms").value_or(-1);
@@ -138,7 +138,7 @@ static Result op_encode_b64(const std::string& rec) {
     auto want = get_str(rec, "expected_str");
     if (!hex || !want) return {false, "missing fields"};
     auto raw = hex_to_bytes(*hex);
-    Pqid p; std::memcpy(p.bytes.data(), raw.data(), kSize);
+    TesseraId p; std::memcpy(p.bytes.data(), raw.data(), kSize);
     auto s = encode_b64url(p);
     if (s != *want) return {false, "got=" + s + " want=" + *want};
     return {true, ""};
@@ -163,7 +163,7 @@ static Result op_encode_crockford(const std::string& rec) {
     auto want = get_str(rec, "expected_str");
     if (!hex || !want) return {false, "missing fields"};
     auto raw = hex_to_bytes(*hex);
-    Pqid p; std::memcpy(p.bytes.data(), raw.data(), kSize);
+    TesseraId p; std::memcpy(p.bytes.data(), raw.data(), kSize);
     auto s = encode_crockford(p);
     if (s != *want) return {false, "got=" + s + " want=" + *want};
     return {true, ""};
@@ -192,7 +192,7 @@ static Result op_validate_invalid(const std::string& rec) {
             auto raw = hex_to_bytes(hex);
             uint8_t v = raw[kVariantOffset];
             if (v != kVariantStandard && v != kVariantHLC) {
-                throw PqidError("UnknownVariant");
+                throw TesseraIdError("UnknownVariant");
             }
             return {false, "expected error, got success"};
         } else if (kind == "b64") {
@@ -214,7 +214,7 @@ static Result op_validate_min_timestamp(const std::string& rec) {
     auto hex = get_str(rec, "input_hex");
     if (!hex) return {false, "no input_hex"};
     auto raw = hex_to_bytes(*hex);
-    Pqid p; std::memcpy(p.bytes.data(), raw.data(), kSize);
+    TesseraId p; std::memcpy(p.bytes.data(), raw.data(), kSize);
     bool got = validate_min_timestamp(p);
     std::regex re("\"expected\"\\s*:\\s*(true|false)");
     std::smatch m;
@@ -224,29 +224,29 @@ static Result op_validate_min_timestamp(const std::string& rec) {
     return {true, ""};
 }
 
-// ---- PQHash ops ----
+// ---- TesseraHash ops ----
 
-static Result op_pqhash_hash_only(const std::string& rec) {
+static Result op_tessera_hash_hash_only(const std::string& rec) {
     auto hex = get_str(rec, "input_hex");
     auto want = get_str(rec, "expected_tail_hex");
     if (!hex || !want) return {false, "missing fields"};
     auto content = hex_to_bytes(*hex);
     auto want_bytes = hex_to_bytes(*want);
     if (want_bytes.size() != 64) return {false, "expected_tail_hex bad size"};
-    auto tail = pqhash::hash_only(content.data(), content.size());
+    auto tail = tessera_hash::hash_only(content.data(), content.size());
     if (std::memcmp(tail.data(), want_bytes.data(), 64) != 0) return {false, "tail mismatch"};
     return {true, ""};
 }
 
-static Result op_pqhash_decode(const std::string& rec) {
+static Result op_tessera_hash_decode(const std::string& rec) {
     auto hex = get_str(rec, "input_hex");
     if (!hex) return {false, "no input_hex"};
     auto raw = hex_to_bytes(*hex);
-    if (raw.size() != pqhash::kSize) return {false, "bad len"};
-    pqhash::Pqhash p;
-    std::memcpy(p.bytes.data(), raw.data(), pqhash::kSize);
+    if (raw.size() != tessera_hash::kSize) return {false, "bad len"};
+    tessera_hash::TesseraHash p;
+    std::memcpy(p.bytes.data(), raw.data(), tessera_hash::kSize);
     try {
-        auto d = pqhash::decode(p);
+        auto d = tessera_hash::decode(p);
         auto want_variant = get_nested_int(rec, "expected", "variant").value_or(-1);
         auto want_ts      = get_nested_int(rec, "expected", "timestamp_ms").value_or(-1);
         auto want_ctr     = get_nested_int(rec, "expected", "counter").value_or(-1);
@@ -262,25 +262,25 @@ static Result op_pqhash_decode(const std::string& rec) {
     return {true, ""};
 }
 
-static Result op_pqhash_encode_b64(const std::string& rec) {
+static Result op_tessera_hash_encode_b64(const std::string& rec) {
     auto hex = get_str(rec, "input_hex");
     auto want = get_str(rec, "expected_str");
     if (!hex || !want) return {false, "missing fields"};
     auto raw = hex_to_bytes(*hex);
-    pqhash::Pqhash p;
-    std::memcpy(p.bytes.data(), raw.data(), pqhash::kSize);
-    auto s = pqhash::encode_b64url(p);
+    tessera_hash::TesseraHash p;
+    std::memcpy(p.bytes.data(), raw.data(), tessera_hash::kSize);
+    auto s = tessera_hash::encode_b64url(p);
     if (s != *want) return {false, "got=" + s + " want=" + *want};
     return {true, ""};
 }
 
-static Result op_pqhash_decode_b64(const std::string& rec) {
+static Result op_tessera_hash_decode_b64(const std::string& rec) {
     auto in = get_str(rec, "input_str");
     auto want = get_str(rec, "expected_hex");
     if (!in || !want) return {false, "missing fields"};
     try {
-        auto p = pqhash::decode_b64url(*in);
-        auto got = bytes_to_hex(p.bytes.data(), pqhash::kSize);
+        auto p = tessera_hash::decode_b64url(*in);
+        auto got = bytes_to_hex(p.bytes.data(), tessera_hash::kSize);
         if (got != *want) return {false, "got=" + got + " want=" + *want};
     } catch (const std::exception& e) {
         return {false, std::string("error: ") + e.what()};
@@ -288,25 +288,25 @@ static Result op_pqhash_decode_b64(const std::string& rec) {
     return {true, ""};
 }
 
-static Result op_pqhash_encode_crockford(const std::string& rec) {
+static Result op_tessera_hash_encode_crockford(const std::string& rec) {
     auto hex = get_str(rec, "input_hex");
     auto want = get_str(rec, "expected_str");
     if (!hex || !want) return {false, "missing fields"};
     auto raw = hex_to_bytes(*hex);
-    pqhash::Pqhash p;
-    std::memcpy(p.bytes.data(), raw.data(), pqhash::kSize);
-    auto s = pqhash::encode_crockford(p);
+    tessera_hash::TesseraHash p;
+    std::memcpy(p.bytes.data(), raw.data(), tessera_hash::kSize);
+    auto s = tessera_hash::encode_crockford(p);
     if (s != *want) return {false, "got=" + s + " want=" + *want};
     return {true, ""};
 }
 
-static Result op_pqhash_decode_crockford(const std::string& rec) {
+static Result op_tessera_hash_decode_crockford(const std::string& rec) {
     auto in = get_str(rec, "input_str");
     auto want = get_str(rec, "expected_hex");
     if (!in || !want) return {false, "missing fields"};
     try {
-        auto p = pqhash::decode_crockford(*in);
-        auto got = bytes_to_hex(p.bytes.data(), pqhash::kSize);
+        auto p = tessera_hash::decode_crockford(*in);
+        auto got = bytes_to_hex(p.bytes.data(), tessera_hash::kSize);
         if (got != *want) return {false, "got=" + got + " want=" + *want};
     } catch (const std::exception& e) {
         return {false, std::string("error: ") + e.what()};
@@ -314,24 +314,24 @@ static Result op_pqhash_decode_crockford(const std::string& rec) {
     return {true, ""};
 }
 
-static Result op_pqhash_validate_invalid(const std::string& rec) {
+static Result op_tessera_hash_validate_invalid(const std::string& rec) {
     auto kind = get_str(rec, "input_kind").value_or("");
     try {
         if (kind == "binary_hex") {
             auto hex = get_str(rec, "input_hex").value_or("");
-            if (hex.size() != 2 * pqhash::kSize) return {true, ""};
+            if (hex.size() != 2 * tessera_hash::kSize) return {true, ""};
             auto raw = hex_to_bytes(hex);
-            if (raw[pqhash::kVariantOffset] != pqhash::kVariant) {
-                throw pqhash::PqhashError("UnknownVariant");
+            if (raw[tessera_hash::kVariantOffset] != tessera_hash::kVariant) {
+                throw tessera_hash::TesseraHashError("UnknownVariant");
             }
             return {false, "expected error, got success"};
         } else if (kind == "b64") {
             auto s = get_str(rec, "input_str").value_or("");
-            (void)pqhash::decode_b64url(s);
+            (void)tessera_hash::decode_b64url(s);
             return {false, "expected error, got success"};
         } else if (kind == "crockford") {
             auto s = get_str(rec, "input_str").value_or("");
-            (void)pqhash::decode_crockford(s);
+            (void)tessera_hash::decode_crockford(s);
             return {false, "expected error, got success"};
         }
     } catch (const std::exception&) {
@@ -340,15 +340,15 @@ static Result op_pqhash_validate_invalid(const std::string& rec) {
     return {false, "unknown input_kind " + kind};
 }
 
-static Result op_pqhash_verify(const std::string& rec) {
+static Result op_tessera_hash_verify(const std::string& rec) {
     auto hex = get_str(rec, "input_hex");
     auto content_hex = get_str(rec, "content_hex");
     if (!hex || !content_hex) return {false, "missing fields"};
     auto raw = hex_to_bytes(*hex);
     auto content = hex_to_bytes(*content_hex);
-    pqhash::Pqhash p;
-    std::memcpy(p.bytes.data(), raw.data(), pqhash::kSize);
-    bool got = pqhash::verify(p, content.data(), content.size());
+    tessera_hash::TesseraHash p;
+    std::memcpy(p.bytes.data(), raw.data(), tessera_hash::kSize);
+    bool got = tessera_hash::verify(p, content.data(), content.size());
     std::regex re("\"expected\"\\s*:\\s*(true|false)");
     std::smatch m;
     if (!std::regex_search(rec, m, re)) return {false, "no expected"};
@@ -370,7 +370,7 @@ static Result op_hlc_overflow(const std::string& rec) {
     g.set_state_for_testing(*l_old, static_cast<uint16_t>(*c_old));
     set_now_ms_for_testing(*pt);
 
-    Pqid out;
+    TesseraId out;
     try {
         if (has_null_field(rec, "observe")) {
             out = g.next();
@@ -427,14 +427,14 @@ int main(int argc, char** argv) {
         else if (op == "validate_invalid")  r = op_validate_invalid(rec);
         else if (op == "hlc_overflow")      r = op_hlc_overflow(rec);
         else if (op == "validate_min_timestamp") r = op_validate_min_timestamp(rec);
-        else if (op == "pqhash_hash_only")       r = op_pqhash_hash_only(rec);
-        else if (op == "pqhash_decode")          r = op_pqhash_decode(rec);
-        else if (op == "pqhash_encode_b64")      r = op_pqhash_encode_b64(rec);
-        else if (op == "pqhash_decode_b64")      r = op_pqhash_decode_b64(rec);
-        else if (op == "pqhash_encode_crockford") r = op_pqhash_encode_crockford(rec);
-        else if (op == "pqhash_decode_crockford") r = op_pqhash_decode_crockford(rec);
-        else if (op == "pqhash_validate_invalid") r = op_pqhash_validate_invalid(rec);
-        else if (op == "pqhash_verify")          r = op_pqhash_verify(rec);
+        else if (op == "tessera_hash_hash_only")       r = op_tessera_hash_hash_only(rec);
+        else if (op == "tessera_hash_decode")          r = op_tessera_hash_decode(rec);
+        else if (op == "tessera_hash_encode_b64")      r = op_tessera_hash_encode_b64(rec);
+        else if (op == "tessera_hash_decode_b64")      r = op_tessera_hash_decode_b64(rec);
+        else if (op == "tessera_hash_encode_crockford") r = op_tessera_hash_encode_crockford(rec);
+        else if (op == "tessera_hash_decode_crockford") r = op_tessera_hash_decode_crockford(rec);
+        else if (op == "tessera_hash_validate_invalid") r = op_tessera_hash_validate_invalid(rec);
+        else if (op == "tessera_hash_verify")          r = op_tessera_hash_verify(rec);
 
         if (r.ok) std::printf("PASS %s\n", name.c_str());
         else { std::printf("FAIL %s %s\n", name.c_str(), r.detail.c_str()); ++failures; }

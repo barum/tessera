@@ -19,22 +19,22 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
-      - name: PQID Go tests
-        working-directory: pqid/go
+      - name: TesseraID Go tests
+        working-directory: tessera-id/go
         run: go test ./...
-      - name: PQHash Go tests
-        working-directory: pqhash/go
+      - name: TesseraHash Go tests
+        working-directory: tessera-hash/go
         run: go test ./...
       - name: Build and run conformance runner
         run: |
           cd tools/conformance/go
           go build -o conformance_runner .
           cd ../../..
-          for f in pqid/conformance/vectors/*.json pqhash/conformance/vectors/*.json; do
+          for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
             tools/conformance/go/conformance_runner "$f"
           done
-      - name: PQID fuzz smoke (20s each)
-        working-directory: pqid/go
+      - name: TesseraID fuzz smoke (20s each)
+        working-directory: tessera-id/go
         run: |
           go test -run='^$' -fuzz='^FuzzDecode$' -fuzztime=20s .
           go test -run='^$' -fuzz='^FuzzDecodeBase64URL$' -fuzztime=20s .

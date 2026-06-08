@@ -1,5 +1,5 @@
 % ============================================================================
-%  pqtoolkit — Identifier, Hash, and Encryption for the Post-Quantum Era
+%  tessera — Identifier, Hash, and Encryption for the Post-Quantum Era
 %  Umbrella whitepaper, version 1.0 (2026-05-21)
 %
 %  Author: Bahram Samani
@@ -35,7 +35,7 @@
 \usepackage{fancyhdr}
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{\small\textsl{pqtoolkit Umbrella Whitepaper}}
+\fancyhead[L]{\small\textsl{tessera Umbrella Whitepaper}}
 \fancyhead[R]{\small\textsl{\leftmark}}
 \fancyfoot[C]{\small \thepage}
 \renewcommand{\headrulewidth}{0.4pt}
@@ -45,7 +45,7 @@
 \definecolor{codekw}{rgb}{0.10,0.30,0.70}
 \definecolor{codestr}{rgb}{0.65,0.20,0.20}
 \definecolor{codenum}{rgb}{0.50,0.50,0.50}
-\lstdefinestyle{pqtkcode}{
+\lstdefinestyle{tesseracode}{
   backgroundcolor=\color{codebg},
   basicstyle=\ttfamily\footnotesize,
   keywordstyle=\color{codekw}\bfseries,
@@ -66,7 +66,7 @@
   tabsize=2,
   captionpos=b,
 }
-\lstset{style=pqtkcode}
+\lstset{style=tesseracode}
 \lstdefinelanguage{Pseudocode}{
   morekeywords={if,else,then,return,for,while,procedure,function,end,true,false,when,or,and,not,case,default,is,error},
   morecomment=[l]{//},
@@ -89,10 +89,10 @@
 \titlespacing{\section}{0pt}{18pt}{8pt}
 \titlespacing{\subsection}{0pt}{14pt}{6pt}
 
-\newcommand{\pqtoolkit}{\textsf{pqtoolkit}}
-\newcommand{\pqid}{\textsf{PQID}}
-\newcommand{\pqhash}{\textsf{PQHash}}
-\newcommand{\pqcrypt}{\textsf{PQCrypt}}
+\newcommand{\tessera}{\textsf{tessera}}
+\newcommand{\tesseraid}{\textsf{TesseraID}}
+\newcommand{\tesserahash}{\textsf{TesseraHash}}
+\newcommand{\tesseraseal}{\textsf{TesseraSeal}}
 \newcommand{\code}[1]{\texttt{#1}}
 
 \begin{document}
@@ -101,15 +101,15 @@
 \begin{titlepage}
   \centering
   \vspace*{1.8cm}
-  {\Huge\bfseries pqtoolkit\par}
+  {\Huge\bfseries tessera\par}
   \vspace{0.4cm}
   {\Large Identifier, Hash, and Encryption Primitives\\for the Post-Quantum Era\par}
   \vspace{0.3cm}
-  {\large\itshape Umbrella whitepaper covering \pqid{}, \pqhash{}, and \pqcrypt{}\par}
+  {\large\itshape Umbrella whitepaper covering \tesseraid{}, \tesserahash{}, and \tesseraseal{}\par}
   \vspace{1.4cm}
   {\large\bfseries Bahram Samani\par}
   \vspace{0.4em}
-  {\small\itshape \pqtoolkit{} monorepo maintainer\par}
+  {\small\itshape \tessera{} monorepo maintainer\par}
   \vspace{1.4cm}
   {\large\itshape Umbrella Whitepaper, Version 1.0\par}
   \vspace{0.3em}
@@ -120,12 +120,12 @@
     \textbf{Build date:} \buildDate \quad\textbf{Build time:} \buildTime\\[0.4em]
     \textbf{Source:} \texttt{latex/main.tex} \quad\textbf{Spec version:} v1.0\\[0.4em]
     \textbf{Project artifacts:}
-    \pqid{} (v1.1, variants \texttt{0x01}/\texttt{0x02}, 41 B);
-    \pqhash{} (v1.0, variant \texttt{0x03}, 73 B);
-    \pqcrypt{} (v1.3, variant \texttt{0x04}, suites \texttt{0x01}/\texttt{0x02}/\texttt{0x06}).
+    \tesseraid{} (v1.1, variants \texttt{0x01}/\texttt{0x02}, 41 B);
+    \tesserahash{} (v1.0, variant \texttt{0x03}, 73 B);
+    \tesseraseal{} (v1.3, variant \texttt{0x04}, suites \texttt{0x01}/\texttt{0x02}/\texttt{0x06}).
   \end{tcolorbox}
   \vfill
-  {\small This document is the cross-project overview. Each project has its own normative whitepaper: \texttt{pqid/latex/PQID\_Whitepaper.pdf}, \texttt{pqhash/latex/PQHash\_Whitepaper.pdf}, \texttt{pqcrypt/latex/PQCrypt\_Whitepaper.pdf}. This umbrella document does not duplicate their normative content; it documents the relationship between them, the shared discipline, and the integration patterns that span all three.\par}
+  {\small This document is the cross-project overview. Each project has its own normative whitepaper: \texttt{tessera-id/latex/TesseraID\_Whitepaper.pdf}, \texttt{tessera-hash/latex/TesseraHash\_Whitepaper.pdf}, \texttt{tessera-seal/latex/TesseraSeal\_Whitepaper.pdf}. This umbrella document does not duplicate their normative content; it documents the relationship between them, the shared discipline, and the integration patterns that span all three.\par}
   \vspace{0.5cm}
 \end{titlepage}
 

@@ -1,7 +1,7 @@
 \section{The Shared Variant-Byte Namespace}
 \label{sec:shared-namespace}
 
-The single most important piece of shared infrastructure in \pqtoolkit{} is not a library --- it is a one-byte namespace. The variant byte at offset 6 of every wire format names one of the three projects (or a permanent-reserved sentinel). Cross-project decoders reject every byte they do not own.
+The single most important piece of shared infrastructure in \tessera{} is not a library --- it is a one-byte namespace. The variant byte at offset 6 of every wire format names one of the three projects (or a permanent-reserved sentinel). Cross-project decoders reject every byte they do not own.
 
 \subsection{Allocation as of v1.x}
 
@@ -12,26 +12,26 @@ The single most important piece of shared infrastructure in \pqtoolkit{} is not 
 \textbf{Byte} & \textbf{Owner} & \textbf{Meaning} & \textbf{Status} \\
 \midrule
 \code{0x00}     & ---        & Permanently reserved (never assign) & MUST reject \\
-\code{0x01}     & \pqid{}    & Standard generator                    & assigned v1.0 \\
-\code{0x02}     & \pqid{}    & HLC generator                         & assigned v1.0 \\
-\code{0x03}     & \pqhash{}  & SHAKE-256 / 64-byte tail              & assigned v1.0 \\
-\code{0x04}     & \pqcrypt{} & Encryption envelope (suite byte at offset 7) & assigned v1.0 \\
+\code{0x01}     & \tesseraid{}    & Standard generator                    & assigned v1.0 \\
+\code{0x02}     & \tesseraid{}    & HLC generator                         & assigned v1.0 \\
+\code{0x03}     & \tesserahash{}  & SHAKE-256 / 64-byte tail              & assigned v1.0 \\
+\code{0x04}     & \tesseraseal{} & Encryption envelope (suite byte at offset 7) & assigned v1.0 \\
 \code{0x05}--\code{0xFE} & --- & Reserved-future                  & MUST reject \\
 \code{0xFF}     & ---        & Permanently reserved (never assign) & MUST reject \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-The reservation of \code{0x00} and \code{0xFF} is defensive: zero-filled or all-ones buffers cannot pass validation as any project's wire form. The reserved-future range \code{0x05}--\code{0xFE} is available for additional projects under \pqtoolkit{}; each new allocation requires a normative whitepaper update and conformance-vector additions to every existing project (to verify cross-rejection).
+The reservation of \code{0x00} and \code{0xFF} is defensive: zero-filled or all-ones buffers cannot pass validation as any project's wire form. The reserved-future range \code{0x05}--\code{0xFE} is available for additional projects under \tessera{}; each new allocation requires a normative whitepaper update and conformance-vector additions to every existing project (to verify cross-rejection).
 
 \subsection{The cross-rejection contract}
 
 Every project's decoder MUST reject every variant byte it does not own:
 
 \begin{itemize}
-\item \pqid{} decoders accept \code{0x01} and \code{0x02} only. Bytes \code{0x03} (PQHash), \code{0x04} (PQCrypt), and every reserved-future byte produce \texttt{UnknownVariant} / \texttt{PQID\_E\_UNKNOWN\_VARIANT}.
-\item \pqhash{} decoders accept \code{0x03} only. Bytes \code{0x01}, \code{0x02}, \code{0x04}, and reserved-future bytes produce \texttt{PQHASH\_E\_UNKNOWN\_VAR}.
-\item \pqcrypt{} decoders accept \code{0x04} only. Bytes \code{0x01}, \code{0x02}, \code{0x03}, and reserved-future bytes produce \texttt{UnknownVariant} / \texttt{PQCRYPT\_E\_UNKNOWN\_VARIANT}.
+\item \tesseraid{} decoders accept \code{0x01} and \code{0x02} only. Bytes \code{0x03} (TesseraHash), \code{0x04} (TesseraSeal), and every reserved-future byte produce \texttt{UnknownVariant} / \texttt{TESSERA\_ID\_E\_UNKNOWN\_VARIANT}.
+\item \tesserahash{} decoders accept \code{0x03} only. Bytes \code{0x01}, \code{0x02}, \code{0x04}, and reserved-future bytes produce \texttt{TESSERA\_HASH\_E\_UNKNOWN\_VAR}.
+\item \tesseraseal{} decoders accept \code{0x04} only. Bytes \code{0x01}, \code{0x02}, \code{0x03}, and reserved-future bytes produce \texttt{UnknownVariant} / \texttt{TESSERA\_SEAL\_E\_UNKNOWN\_VARIANT}.
 \end{itemize}
 
 The contract is gated by \texttt{invalid.json} KAT files in every project's \texttt{conformance/vectors/} directory. A decoder that accepts a foreign variant byte fails the cross-language harness; the bug is in the decoder, not in the harness.
@@ -42,7 +42,7 @@ A naive design would let each project define its own variant byte in its own one
 
 \begin{enumerate}
 \item \textbf{Confusion attacks.} If a decoder sees the first nine bytes of a wire form and the four bytes ``timestamp + variant + counter'' happen to look valid by every project's local rules, the decoder must decide which project to dispatch to. With a single namespace, the variant byte is the dispatcher; there is no ambiguity.
-\item \textbf{Substitution attacks.} An attacker who knows a system accepts \pqid{}s as primary keys and \pqhash{}es as content keys could substitute one for the other if the variant bytes were locally-scoped. With cross-rejection enforced by the namespace, the substitution fails at the decoder.
+\item \textbf{Substitution attacks.} An attacker who knows a system accepts \tesseraid{}s as primary keys and \tesserahash{}es as content keys could substitute one for the other if the variant bytes were locally-scoped. With cross-rejection enforced by the namespace, the substitution fails at the decoder.
 \item \textbf{Future allocation discipline.} A single, externally-visible byte allocation table makes it impossible to retroactively claim ``oh, our project always meant \code{0x01} to be \emph{this}'' --- the table is normative across projects, version-controlled, and tested.
 \end{enumerate}
 
@@ -56,12 +56,12 @@ The first 9 bytes of every project's wire format are layout-compatible: \code{TS
 \item \code{COUNTER(2)}: 16-bit big-endian monotonic counter within a millisecond.
 \end{itemize}
 
-A single C header at \texttt{common/c/pqtk\_header.h} pins those offsets. Code that just wants to read the timestamp from any \pqtoolkit{} wire form parses the first 6 bytes without knowing or caring which project produced it. Code that wants to dispatch on project reads byte 6.
+A single C header at \texttt{common/c/tessera\_header.h} pins those offsets. Code that just wants to read the timestamp from any \tessera{} wire form parses the first 6 bytes without knowing or caring which project produced it. Code that wants to dispatch on project reads byte 6.
 
-The 9-byte boundary is where the projects diverge: \pqid{} writes a 32-byte random tail, \pqhash{} writes a 64-byte SHAKE-256 tail, and \pqcrypt{} writes a 7-byte body-header continuation (suite + KEM\_CT\_LEN + AD\_LEN) followed by a variable body.
+The 9-byte boundary is where the projects diverge: \tesseraid{} writes a 32-byte random tail, \tesserahash{} writes a 64-byte SHAKE-256 tail, and \tesseraseal{} writes a 7-byte body-header continuation (suite + KEM\_CT\_LEN + AD\_LEN) followed by a variable body.
 
 \subsection{Encoding overlap}
 
-\pqid{} and \pqhash{} both encode to Base64URL (RFC 4648 §5) and Crockford Base32. The encoder code paths are identical across the two projects in every language (with different alphabet sizes per project). \pqcrypt{} ships binary-only on the wire: envelope sizes vary, the variable-length text-encoder is more involved than the fixed-length ones, and most callers wrap envelopes with standard Base64URL at the transport layer if they need text.
+\tesseraid{} and \tesserahash{} both encode to Base64URL (RFC 4648 §5) and Crockford Base32. The encoder code paths are identical across the two projects in every language (with different alphabet sizes per project). \tesseraseal{} ships binary-only on the wire: envelope sizes vary, the variable-length text-encoder is more involved than the fixed-length ones, and most callers wrap envelopes with standard Base64URL at the transport layer if they need text.
 
-PQID and PQHash both apply the same padding-bit guards on decode (Base64URL: final character low-4-bits zero; Crockford: final character low-bit zero). These guards prevent multiple distinct text strings from decoding to the same binary, which would violate canonical round-trip.
+TesseraID and TesseraHash both apply the same padding-bit guards on decode (Base64URL: final character low-4-bits zero; Crockford: final character low-bit zero). These guards prevent multiple distinct text strings from decoding to the same binary, which would violate canonical round-trip.

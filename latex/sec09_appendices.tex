@@ -7,7 +7,7 @@
 \small
 \begin{tabularx}{\textwidth}{@{}lXXX@{}}
 \toprule
-\textbf{Property} & \textbf{\pqid{}}                    & \textbf{\pqhash{}}                & \textbf{\pqcrypt{}} \\
+\textbf{Property} & \textbf{\tesseraid{}}                    & \textbf{\tesserahash{}}                & \textbf{\tesseraseal{}} \\
 \midrule
 Variant byte      & \code{0x01} / \code{0x02}           & \code{0x03}                       & \code{0x04} (+ suite byte at offset 7) \\
 Wire size         & 41 B fixed                          & 73 B fixed                        & 16-byte header + variable body \\
@@ -31,20 +31,20 @@ Round-trip determinism & N/A (random)                  & Yes (content-determinis
 \textbf{Byte} & \textbf{Owner} & \textbf{Project / variant} & \textbf{First spec version} & \textbf{Status} \\
 \midrule
 \code{0x00}     & ---        & Permanently reserved (defensive)  & ---     & MUST reject \\
-\code{0x01}     & \pqid{}    & Standard generator                & v1.0    & assigned \\
-\code{0x02}     & \pqid{}    & HLC generator                     & v1.0    & assigned \\
-\code{0x03}     & \pqhash{}  & SHAKE-256 / 64-byte tail          & v1.0    & assigned \\
-\code{0x04}     & \pqcrypt{} & Encryption envelope (suite byte at offset 7) & v1.0 & assigned \\
+\code{0x01}     & \tesseraid{}    & Standard generator                & v1.0    & assigned \\
+\code{0x02}     & \tesseraid{}    & HLC generator                     & v1.0    & assigned \\
+\code{0x03}     & \tesserahash{}  & SHAKE-256 / 64-byte tail          & v1.0    & assigned \\
+\code{0x04}     & \tesseraseal{} & Encryption envelope (suite byte at offset 7) & v1.0 & assigned \\
 \code{0x05}--\code{0xFE} & --- & Reserved-future                & ---     & MUST reject \\
 \code{0xFF}     & ---        & Permanently reserved (defensive)  & ---     & MUST reject \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\section{PQCrypt Suite-Byte Allocation}
-\label{sec:appendix-pqcrypt-suites}
+\section{TesseraSeal Suite-Byte Allocation}
+\label{sec:appendix-tessera-seal-suites}
 
-(Header offset 7 within a \pqcrypt{} envelope; only valid when \code{VARIANT == 0x04}.)
+(Header offset 7 within a \tesseraseal{} envelope; only valid when \code{VARIANT == 0x04}.)
 
 \begin{center}
 \small
@@ -64,31 +64,31 @@ Round-trip determinism & N/A (random)                  & Yes (content-determinis
 \label{sec:appendix-layout}
 
 \begin{lstlisting}[language=Pseudocode]
-pqtoolkit/
+tessera/
 |-- CLAUDE.md                  # umbrella discipline file
 |-- README.md                  # repo entry point
 |-- latex/                     # this umbrella whitepaper
 |   `-- main.tex, sec*.tex, references.bib, Makefile
 |
-|-- pqid/                      # Project 1: identifier
+|-- tessera-id/                      # Project 1: identifier
 |   |-- CLAUDE.md, README.md
-|   |-- latex/                 # PQID whitepaper sources
+|   |-- latex/                 # TesseraID whitepaper sources
 |   |-- python/, c/, cpp/, go/, rust/, typescript/, java/, cpython/
 |   |-- conformance/vectors/   # KAT files
 |   |-- benchmarks/            # per-language bench data
 |   `-- docs/                  # release notes, docs site sources
 |
-|-- pqhash/                    # Project 2: content hash
-|   |-- (mirror PQID layout; latex/ added in PQHash v1.0)
+|-- tessera-hash/                    # Project 2: content hash
+|   |-- (mirror TesseraID layout; latex/ added in TesseraHash v1.0)
 |   `-- ...
 |
-|-- pqcrypt/                   # Project 3: encryption envelope
-|   |-- (mirror PQID layout)
+|-- tessera-seal/                   # Project 3: encryption envelope
+|   |-- (mirror TesseraID layout)
 |   |-- plugin/                # plugin protocol + reference plugin
 |   `-- docs/                  # incl. side-channel-disclaimer.md, security-audit-v1.2.md
 |
 |-- common/                    # shared library code
-|   |-- c/                     # keccak, pqtk_header, random, hkdf_sha3
+|   |-- c/                     # keccak, tessera_header, random, hkdf_sha3
 |   `-- java/                  # Keccak.java
 |
 `-- tools/
@@ -98,20 +98,20 @@ pqtoolkit/
 \section{Author and Document Provenance}
 \label{sec:appendix-provenance}
 
-\textbf{Author:} Bahram Samani, \pqtoolkit{} monorepo maintainer.
+\textbf{Author:} Bahram Samani, \tessera{} monorepo maintainer.
 
-This umbrella whitepaper is built from LaTeX sources under \texttt{latex/} (\texttt{main.tex} + \texttt{secNN\_*.tex}); the build chain is \texttt{pdflatex $\rightarrow$ bibtex $\rightarrow$ pdflatex $\times$ 2} per the Makefile. The artifact at the repo root \texttt{PQToolkit\_Whitepaper.pdf} is regenerated and committed alongside any normative change to the umbrella.
+This umbrella whitepaper is built from LaTeX sources under \texttt{latex/} (\texttt{main.tex} + \texttt{secNN\_*.tex}); the build chain is \texttt{pdflatex $\rightarrow$ bibtex $\rightarrow$ pdflatex $\times$ 2} per the Makefile. The artifact at the repo root \texttt{Tessera\_Whitepaper.pdf} is regenerated and committed alongside any normative change to the umbrella.
 
 \textbf{Per-project documents.} This umbrella does not restate normative content from the per-project whitepapers. Refer to:
 
 \begin{itemize}
-\item \pqid{}: \texttt{pqid/latex/PQID\_Whitepaper.pdf} (repo root: \texttt{PQID\_Whitepaper.pdf}). 46-page document covering wire format, security analysis, distributed-systems model, comparisons with UUIDv4/v7/ULID/KSUID/Snowflake, eight-language reference implementations.
-\item \pqhash{}: \texttt{pqhash/latex/PQHash\_Whitepaper.pdf} (repo root: \texttt{PQHash\_Whitepaper.pdf}). 21-page document covering wire format, SHAKE-256 binding, encodings, security argument, conformance, comparison with adjacent hash formats.
-\item \pqcrypt{}: \texttt{pqcrypt/latex/PQCrypt\_Whitepaper.pdf} (repo root: \texttt{PQCrypt\_Whitepaper.pdf}). 26-page document covering wire format, ML-KEM-1024 binding, hybrid suite \code{0x06}, AEAD + UtC commitment, KDF, AD-binding patterns, failure modes, side channels, plugin protocol, conformance, comparisons.
+\item \tesseraid{}: \texttt{tessera-id/latex/TesseraID\_Whitepaper.pdf} (repo root: \texttt{TesseraID\_Whitepaper.pdf}). 46-page document covering wire format, security analysis, distributed-systems model, comparisons with UUIDv4/v7/ULID/KSUID/Snowflake, eight-language reference implementations.
+\item \tesserahash{}: \texttt{tessera-hash/latex/TesseraHash\_Whitepaper.pdf} (repo root: \texttt{TesseraHash\_Whitepaper.pdf}). 21-page document covering wire format, SHAKE-256 binding, encodings, security argument, conformance, comparison with adjacent hash formats.
+\item \tesseraseal{}: \texttt{tessera-seal/latex/TesseraSeal\_Whitepaper.pdf} (repo root: \texttt{TesseraSeal\_Whitepaper.pdf}). 26-page document covering wire format, ML-KEM-1024 binding, hybrid suite \code{0x06}, AEAD + UtC commitment, KDF, AD-binding patterns, failure modes, side channels, plugin protocol, conformance, comparisons.
 \end{itemize}
 
 \textbf{Authority order} (when sources disagree): the per-project whitepaper for project-specific content; this umbrella whitepaper for cross-project content; then the per-project Python reference; then the per-project canonical C ABI; then every other language port. A cross-language disagreement is never resolved by changing the spec to match an outlier.
 
 \textbf{Conformance gate}: \texttt{tools/conformance/run.sh} is the branch-protection check on \texttt{main}. Latest cross-language run (2026-05-21, alpha quick loop): 1051 PASS, 0 FAIL across all three projects on the four alpha languages.
 
-\textbf{Acknowledgments.} Bellare and Hoang for the UtC commitment construction. The OpenSSL, RustCrypto, Go core team, \texttt{kyber-py}, SunJCE, and \texttt{@noble} maintainers for the cryptographic primitive sources \pqcrypt{} vendors. The Cryspen team for \texttt{mlkem-native} (retained as embedded-target fallback). The X-Wing draft authors \citep{xwing-draft} for the combiner design idiom \pqcrypt{}'s hybrid suite borrows. The KyberSlash, PQShield, and GoFetch disclosure teams, whose findings shape \pqcrypt{}'s side-channel disclaimer. The SHAKE-256 / SHA-3 standardization team (Bertoni, Daemen, Peeters, Van Assche) whose primitive is the load-bearing element of every \pqtoolkit{} project.
+\textbf{Acknowledgments.} Bellare and Hoang for the UtC commitment construction. The OpenSSL, RustCrypto, Go core team, \texttt{kyber-py}, SunJCE, and \texttt{@noble} maintainers for the cryptographic primitive sources \tesseraseal{} vendors. The Cryspen team for \texttt{mlkem-native} (retained as embedded-target fallback). The X-Wing draft authors \citep{xwing-draft} for the combiner design idiom \tesseraseal{}'s hybrid suite borrows. The KyberSlash, PQShield, and GoFetch disclosure teams, whose findings shape \tesseraseal{}'s side-channel disclaimer. The SHAKE-256 / SHA-3 standardization team (Bertoni, Daemen, Peeters, Van Assche) whose primitive is the load-bearing element of every \tessera{} project.

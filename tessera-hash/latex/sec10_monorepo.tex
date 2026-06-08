@@ -1,0 +1,77 @@
+\section{The \texorpdfstring{\tessera{}}{Tessera} Monorepo Context}
+\label{sec:monorepo}
+
+\tesserahash{} is the second project under the \tessera{} monorepo. Each project is independent on the wire and standalone in its API; they share variant-byte namespace, header layout, and conformance harness.
+
+\subsection{Project relationship}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lllr@{}}
+\toprule
+\textbf{Project} & \textbf{Concern} & \textbf{Variant byte} & \textbf{Wire size (bytes)} \\
+\midrule
+\tesseraid{}    & Post-quantum-era identifier         & \code{0x01} (Standard), \code{0x02} (HLC)  & 41 \\
+\tesserahash{}  & SHAKE-256 content hash              & \code{0x03}                                 & 73 \\
+\tesseraseal{} & ML-KEM-1024 encryption envelope     & \code{0x04}                                 & variable (header 16 + body) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The first 9 bytes of every project's wire format are layout-compatible: \code{TS(6) || VARIANT(1) || CTR(2)}. TesseraHash extends this with a 64-byte tail. TesseraSeal extends with a different 7-byte suffix (SUITE + KEM\_CT\_LEN + AD\_LEN) followed by a variable body. Decoders in each project reject every variant byte they do not own; the cross-rejection contract is gated by \texttt{invalid.json} KAT files in every project.
+
+\subsection{Canonical patterns}
+
+\subsubsection{\tesserahash{}-as-AD: bind a \tesseraseal{} envelope to content}
+
+When encrypting a payload, pass the \tesserahash{} of the cleartext as the AEAD AD. The \tesseraseal{} envelope is then cryptographically bound to ``this specific content,'' not just ``some content this recipient can decrypt.''
+
+\begin{lstlisting}[language=Pseudocode]
+content_hash = tessera_hash.hash_only(plaintext)          # 64 bytes (or pass full 73B raw)
+envelope     = tessera_seal.encrypt(plaintext, recipient_pub,
+                               associated_data=content_hash)
+# ... after delivery ...
+plaintext    = tessera_seal.decrypt(envelope, recipient_priv,
+                               expected_ad=content_hash)
+\end{lstlisting}
+
+If an attacker substitutes the envelope with one carrying different content, the AEAD AD mismatch causes decryption to fail. The same pattern works with a \tesseraid{} as AD (the canonical pattern documented in the \tesseraseal{} whitepaper); the choice between \tesseraid{}-as-AD and \tesserahash{}-as-AD depends on whether the binding is to ``a specific record'' (\tesseraid{}) or ``specific content bytes'' (\tesserahash{}). Both choices cost zero additional cryptography.
+
+\subsubsection{\tesseraid{} + \tesserahash{} together: identifier-plus-content-commitment}
+
+A record-keeping system that wants \emph{both} stable identification and content integrity can carry a \tesseraid{} (for the record's identity over time --- multiple revisions of the same record share a \tesseraid{}) and a \tesserahash{} (for the current content). Updates to the content roll the \tesserahash{} but keep the \tesseraid{}. Subscribers verify both: the \tesseraid{} pins identity, the \tesserahash{} pins content.
+
+\subsubsection{\tesserahash{} of a \tesseraseal{} envelope}
+
+The output of a \tesseraseal{} encryption is a deterministic-on-input-and-randomness byte string. Computing \tesserahash{} over that envelope gives a content-bound identifier for the encrypted blob. This is the right pattern for an object-storage system that wants to index by ciphertext.
+
+\subsection{Shared library code}
+
+Cross-project code lives under \texttt{common/} only if more than one project depends on it today:
+
+\begin{itemize}
+\item \texttt{common/c/keccak.\{h,c\}}, \texttt{common/java/com/tessera/common/Keccak.java}: SHAKE-256/Keccak. \tesserahash{} uses it for the tail; \tesseraseal{} uses it for HKDF-SHA3-256 in its KDF schedule and for the hybrid suite's SHAKE-256 combiner.
+\item \texttt{common/c/tessera\_header.h}: shared offset constants for the 9-byte header layout. All three projects parse the same first nine bytes the same way.
+\item \texttt{common/c/random.\{h,c\}}: OS CSPRNG wrapper. Used by \tesseraid{} (random tail) and \tesseraseal{} (ML-KEM \texttt{Encaps} randomness, X25519 ephemeral keygen). \tesserahash{} has no random field and does not call this.
+\item \texttt{common/c/hkdf\_sha3.\{h,c\}}: HMAC-SHA3-256 and HKDF-SHA3-256. \tesseraseal{}-only today, vendored alongside the Keccak source.
+\end{itemize}
+
+Python and Go use stdlib for SHAKE-256 (\texttt{hashlib.shake\_256}, \texttt{golang.org/x/crypto/sha3}); Rust uses the \texttt{sha3} crate; TypeScript uses \texttt{@noble/hashes}; C, C++, and Java pull from \texttt{common/}. Never re-vendor a second Keccak inside a project that already has \texttt{common/} on its include path.
+
+\subsection{Shared discipline}
+
+\begin{itemize}
+\item One specification-first methodology: whitepaper LaTeX is normative, Python is the readable reference, C pins the canonical ABI, every other language ports byte-identical.
+\item One cross-language KAT harness at \texttt{tools/conformance/run.sh}; the branch-protection gate on \texttt{main}.
+\item One shared variant-byte namespace; cross-project rejection KATs in every project.
+\item One author, one set of memory invariants, one set of CLAUDE.md files coordinating PRs across the three projects.
+\end{itemize}
+
+\subsection{When \emph{not} to use \tesserahash{}}
+
+\begin{itemize}
+\item For random-looking unique identifiers, use \tesseraid{}. \tesserahash{} is content-bound; two callers hashing the same content produce identifiers with identical tails, which is correct for content-addressing but wrong for ``a freshly-minted unique handle.''
+\item For password hashing, use Argon2id \citep{rfc9106} or scrypt. \tesserahash{} has no work factor and no salt; it is a fast keyless hash, not a slow-by-design password derivation function.
+\item For message authentication, use HMAC-SHA3-256 or KMAC256. \tesserahash{} is keyless.
+\item For encryption, use \tesseraseal{}. \tesserahash{} provides no confidentiality.
+\end{itemize}

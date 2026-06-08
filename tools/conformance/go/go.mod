@@ -3,8 +3,8 @@ module conformance_runner
 go 1.26
 
 require (
-	pqhash v0.0.0
-	pqid v0.0.0
+	tesserahash v0.0.0
+	tesseraid v0.0.0
 )
 
 require (
@@ -13,6 +13,6 @@ require (
 )
 
 replace (
-	pqhash => ../../../pqhash/go
-	pqid => ../../../pqid/go
+	tesserahash => ../../../tessera-hash/go
+	tesseraid => ../../../tessera-id/go
 )

@@ -16,19 +16,19 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent.parent.parent  # tools/conformance/python/ → repo root
-sys.path.insert(0, str(REPO_ROOT / "pqid" / "python"))
-sys.path.insert(0, str(REPO_ROOT / "pqhash" / "python"))
-sys.path.insert(0, str(REPO_ROOT / "pqcrypt" / "python"))
+sys.path.insert(0, str(REPO_ROOT / "tessera-id" / "python"))
+sys.path.insert(0, str(REPO_ROOT / "tessera-hash" / "python"))
+sys.path.insert(0, str(REPO_ROOT / "tessera-seal" / "python"))
 
-import pqid  # noqa: E402
-import pqhash  # noqa: E402
-import pqcrypt  # noqa: E402
+import tessera_id  # noqa: E402
+import tessera_hash  # noqa: E402
+import tessera_seal  # noqa: E402
 
 
 def run_decode(rec: dict) -> tuple[bool, str]:
     raw = bytes.fromhex(rec["input_hex"])
     try:
-        d = pqid.decode(raw)
+        d = tessera_id.decode(raw)
     except Exception as e:
         return False, f"raised {type(e).__name__}: {e}"
     exp = rec["expected"]
@@ -45,7 +45,7 @@ def run_decode(rec: dict) -> tuple[bool, str]:
 
 def run_encode_b64(rec: dict) -> tuple[bool, str]:
     raw = bytes.fromhex(rec["input_hex"])
-    s = pqid.encode_b64(raw)
+    s = tessera_id.encode_b64(raw)
     if s != rec["expected_str"]:
         return False, f"got={s!r} want={rec['expected_str']!r}"
     return True, ""
@@ -53,7 +53,7 @@ def run_encode_b64(rec: dict) -> tuple[bool, str]:
 
 def run_decode_b64(rec: dict) -> tuple[bool, str]:
     try:
-        raw = pqid.decode_b64(rec["input_str"])
+        raw = tessera_id.decode_b64(rec["input_str"])
     except Exception as e:
         return False, f"raised {type(e).__name__}: {e}"
     if raw.hex() != rec["expected_hex"]:
@@ -63,7 +63,7 @@ def run_decode_b64(rec: dict) -> tuple[bool, str]:
 
 def run_encode_crockford(rec: dict) -> tuple[bool, str]:
     raw = bytes.fromhex(rec["input_hex"])
-    s = pqid.encode_b32(raw)
+    s = tessera_id.encode_b32(raw)
     if s != rec["expected_str"]:
         return False, f"got={s!r} want={rec['expected_str']!r}"
     return True, ""
@@ -71,7 +71,7 @@ def run_encode_crockford(rec: dict) -> tuple[bool, str]:
 
 def run_decode_crockford(rec: dict) -> tuple[bool, str]:
     try:
-        raw = pqid.decode_b32(rec["input_str"])
+        raw = tessera_id.decode_b32(rec["input_str"])
     except Exception as e:
         return False, f"raised {type(e).__name__}: {e}"
     if raw.hex() != rec["expected_hex"]:
@@ -81,27 +81,27 @@ def run_decode_crockford(rec: dict) -> tuple[bool, str]:
 
 def run_validate_invalid(rec: dict) -> tuple[bool, str]:
     """Ensure the implementation raises *some* error of the right family.
-    We accept any exception under PQIDError, since error-class names differ
+    We accept any exception under TesseraIDError, since error-class names differ
     across languages but the contract is "MUST reject"."""
     kind = rec["input_kind"]
     try:
         if kind == "binary_hex":
-            pqid.decode(bytes.fromhex(rec["input_hex"]))
+            tessera_id.decode(bytes.fromhex(rec["input_hex"]))
         elif kind == "b64":
-            raw = pqid.decode_b64(rec["input_str"])
+            raw = tessera_id.decode_b64(rec["input_str"])
             # decode_b64 returns bytes; if it succeeded, run decode for variant
             # check (which is where Unknown/Variant errors come from for the
             # variant-byte invalid vectors).
-            pqid.decode(raw)
+            tessera_id.decode(raw)
         elif kind == "crockford":
-            raw = pqid.decode_b32(rec["input_str"])
-            pqid.decode(raw)
+            raw = tessera_id.decode_b32(rec["input_str"])
+            tessera_id.decode(raw)
         else:
             return False, f"unknown input_kind {kind!r}"
-    except pqid.PQIDError:
+    except tessera_id.TesseraIDError:
         return True, ""
     except Exception as e:
-        return False, f"raised non-PQIDError: {type(e).__name__}: {e}"
+        return False, f"raised non-TesseraIDError: {type(e).__name__}: {e}"
     return False, "expected error, got success"
 
 
@@ -110,13 +110,13 @@ def run_hlc_overflow(rec: dict) -> tuple[bool, str]:
     if rec["name"] == "doc":
         return True, ""
 
-    g = pqid.HLCGenerator()
+    g = tessera_id.HLCGenerator()
     g._state.l = rec["start"]["l_old"]
     g._state.c = rec["start"]["c_old"]
 
     # Pin physical time.
-    orig = pqid._now_ms
-    pqid._now_ms = lambda: rec["physical_time_ms"]
+    orig = tessera_id._now_ms
+    tessera_id._now_ms = lambda: rec["physical_time_ms"]
     try:
         if rec["observe"] is None:
             raw = g.new()
@@ -129,9 +129,9 @@ def run_hlc_overflow(rec: dict) -> tuple[bool, str]:
             )
             raw = g.new(observe=peer)
     finally:
-        pqid._now_ms = orig
+        tessera_id._now_ms = orig
 
-    d = pqid.decode(raw)
+    d = tessera_id.decode(raw)
     exp = rec["expected"]
     if d.timestamp_ms != exp["l_new"] or d.counter != exp["c_new"]:
         return False, (
@@ -143,7 +143,7 @@ def run_hlc_overflow(rec: dict) -> tuple[bool, str]:
 
 def run_validate_min_timestamp(rec):
     raw = bytes.fromhex(rec["input_hex"])
-    got = pqid.validate_min_timestamp(raw)
+    got = tessera_id.validate_min_timestamp(raw)
     want = rec["expected"]
     if got != want:
         return False, f"got={got} want={want}"
@@ -151,21 +151,21 @@ def run_validate_min_timestamp(rec):
 
 
 # ---------------------------------------------------------------------------
-# PQHash ops
+# TesseraHash ops
 # ---------------------------------------------------------------------------
 
-def run_pqhash_hash_only(rec):
+def run_tessera_hash_hash_only(rec):
     content = bytes.fromhex(rec["input_hex"])
-    got = pqhash.hash_only(content)
+    got = tessera_hash.hash_only(content)
     if got.hex() != rec["expected_tail_hex"]:
         return False, f"tail mismatch"
     return True, ""
 
 
-def run_pqhash_decode(rec):
+def run_tessera_hash_decode(rec):
     raw = bytes.fromhex(rec["input_hex"])
     try:
-        d = pqhash.decode(raw)
+        d = tessera_hash.decode(raw)
     except Exception as e:
         return False, f"raised {type(e).__name__}: {e}"
     exp = rec["expected"]
@@ -180,17 +180,17 @@ def run_pqhash_decode(rec):
     return True, ""
 
 
-def run_pqhash_encode_b64(rec):
+def run_tessera_hash_encode_b64(rec):
     raw = bytes.fromhex(rec["input_hex"])
-    s = pqhash.encode_b64(raw)
+    s = tessera_hash.encode_b64(raw)
     if s != rec["expected_str"]:
         return False, f"got={s!r} want={rec['expected_str']!r}"
     return True, ""
 
 
-def run_pqhash_decode_b64(rec):
+def run_tessera_hash_decode_b64(rec):
     try:
-        raw = pqhash.decode_b64(rec["input_str"])
+        raw = tessera_hash.decode_b64(rec["input_str"])
     except Exception as e:
         return False, f"raised {type(e).__name__}: {e}"
     if raw.hex() != rec["expected_hex"]:
@@ -198,17 +198,17 @@ def run_pqhash_decode_b64(rec):
     return True, ""
 
 
-def run_pqhash_encode_crockford(rec):
+def run_tessera_hash_encode_crockford(rec):
     raw = bytes.fromhex(rec["input_hex"])
-    s = pqhash.encode_b32(raw)
+    s = tessera_hash.encode_b32(raw)
     if s != rec["expected_str"]:
         return False, f"got={s!r} want={rec['expected_str']!r}"
     return True, ""
 
 
-def run_pqhash_decode_crockford(rec):
+def run_tessera_hash_decode_crockford(rec):
     try:
-        raw = pqhash.decode_b32(rec["input_str"])
+        raw = tessera_hash.decode_b32(rec["input_str"])
     except Exception as e:
         return False, f"raised {type(e).__name__}: {e}"
     if raw.hex() != rec["expected_hex"]:
@@ -216,58 +216,58 @@ def run_pqhash_decode_crockford(rec):
     return True, ""
 
 
-def run_pqhash_validate_invalid(rec):
+def run_tessera_hash_validate_invalid(rec):
     kind = rec["input_kind"]
     try:
         if kind == "binary_hex":
-            pqhash.decode(bytes.fromhex(rec["input_hex"]))
+            tessera_hash.decode(bytes.fromhex(rec["input_hex"]))
         elif kind == "b64":
-            raw = pqhash.decode_b64(rec["input_str"])
-            pqhash.decode(raw)
+            raw = tessera_hash.decode_b64(rec["input_str"])
+            tessera_hash.decode(raw)
         elif kind == "crockford":
-            raw = pqhash.decode_b32(rec["input_str"])
-            pqhash.decode(raw)
+            raw = tessera_hash.decode_b32(rec["input_str"])
+            tessera_hash.decode(raw)
         else:
             return False, f"unknown input_kind {kind!r}"
-    except pqhash.PQHashError:
+    except tessera_hash.TesseraHashError:
         return True, ""
     except Exception as e:
-        return False, f"non-PQHashError: {type(e).__name__}: {e}"
+        return False, f"non-TesseraHashError: {type(e).__name__}: {e}"
     return False, "expected error, got success"
 
 
-def run_pqhash_verify(rec):
+def run_tessera_hash_verify(rec):
     raw = bytes.fromhex(rec["input_hex"])
     content = bytes.fromhex(rec["content_hex"])
-    got = pqhash.verify(raw, content)
+    got = tessera_hash.verify(raw, content)
     if got != rec["expected"]:
         return False, f"got={got} want={rec['expected']}"
     return True, ""
 
 
 # ---------------------------------------------------------------------------
-# PQCrypt ops
+# TesseraSeal ops
 # ---------------------------------------------------------------------------
 
 def _pqc_priv(rec):
-    """Reconstruct a PQCrypt PrivateKey from the record's key form."""
+    """Reconstruct a TesseraSeal PrivateKey from the record's key form."""
     if "private_key_seed_hex" in rec:
         seed = bytes.fromhex(rec["private_key_seed_hex"])
-        priv, _ = pqcrypt.generate_keypair_from_seed(
-            seed, suite=rec.get("suite", pqcrypt.SUITE_MLKEM1024_AESGCM)
+        priv, _ = tessera_seal.generate_keypair_from_seed(
+            seed, suite=rec.get("suite", tessera_seal.SUITE_MLKEM1024_AESGCM)
         )
         return priv
-    return pqcrypt.PrivateKey(
+    return tessera_seal.PrivateKey(
         bytes.fromhex(rec["private_key_hex"]),
-        suite=rec.get("suite", pqcrypt.SUITE_MLKEM1024_AESGCM),
+        suite=rec.get("suite", tessera_seal.SUITE_MLKEM1024_AESGCM),
     )
 
 
-def run_pqcrypt_decrypt(rec):
+def run_tessera_seal_decrypt(rec):
     env = bytes.fromhex(rec["envelope_hex"])
     ad = bytes.fromhex(rec.get("expected_ad_hex", ""))
     try:
-        pt = pqcrypt.decrypt(env, _pqc_priv(rec), expected_ad=ad)
+        pt = tessera_seal.decrypt(env, _pqc_priv(rec), expected_ad=ad)
     except Exception as e:
         return False, f"raised {type(e).__name__}: {e}"
     want = bytes.fromhex(rec["expected_plaintext_hex"])
@@ -276,33 +276,33 @@ def run_pqcrypt_decrypt(rec):
     return True, ""
 
 
-def run_pqcrypt_decrypt_should_fail(rec):
+def run_tessera_seal_decrypt_should_fail(rec):
     env = bytes.fromhex(rec["envelope_hex"])
     ad = bytes.fromhex(rec.get("expected_ad_hex", ""))
     if "private_key_hex" in rec or "private_key_seed_hex" in rec:
         try:
-            pqcrypt.decrypt(env, _pqc_priv(rec), expected_ad=ad)
-        except (pqcrypt.DecryptionError, pqcrypt.UnknownVariant,
-                pqcrypt.UnknownSuite, pqcrypt.InvalidLength, pqcrypt.BadKey):
+            tessera_seal.decrypt(env, _pqc_priv(rec), expected_ad=ad)
+        except (tessera_seal.DecryptionError, tessera_seal.UnknownVariant,
+                tessera_seal.UnknownSuite, tessera_seal.InvalidLength, tessera_seal.BadKey):
             return True, ""
         except Exception as e:
-            return False, f"non-PQCryptError: {type(e).__name__}: {e}"
+            return False, f"non-TesseraSealError: {type(e).__name__}: {e}"
         return False, "expected failure, got success"
     # No key — exercise peek_header / validate.
     try:
-        pqcrypt.peek_header(env)
-    except (pqcrypt.UnknownVariant, pqcrypt.UnknownSuite, pqcrypt.InvalidLength):
+        tessera_seal.peek_header(env)
+    except (tessera_seal.UnknownVariant, tessera_seal.UnknownSuite, tessera_seal.InvalidLength):
         return True, ""
     except Exception as e:
-        return False, f"non-PQCryptError: {type(e).__name__}: {e}"
+        return False, f"non-TesseraSealError: {type(e).__name__}: {e}"
     return False, "expected failure, got success"
 
 
-def run_pqcrypt_peek_header(rec):
+def run_tessera_seal_peek_header(rec):
     # The vector stores header_hex (16 bytes); pad with zeros for the runner.
     header = bytes.fromhex(rec["header_hex"]) + b"\x00" * 2000
     try:
-        h = pqcrypt.peek_header(header)
+        h = tessera_seal.peek_header(header)
     except Exception as e:
         return False, f"raised {type(e).__name__}: {e}"
     exp = rec["expected"]
@@ -312,19 +312,19 @@ def run_pqcrypt_peek_header(rec):
     return True, ""
 
 
-def run_pqcrypt_peek_header_should_fail(rec):
+def run_tessera_seal_peek_header_should_fail(rec):
     env = bytes.fromhex(rec["envelope_hex"])
     try:
-        pqcrypt.peek_header(env)
-    except (pqcrypt.UnknownVariant, pqcrypt.UnknownSuite, pqcrypt.InvalidLength):
+        tessera_seal.peek_header(env)
+    except (tessera_seal.UnknownVariant, tessera_seal.UnknownSuite, tessera_seal.InvalidLength):
         return True, ""
     except Exception as e:
-        return False, f"non-PQCryptError: {type(e).__name__}: {e}"
+        return False, f"non-TesseraSealError: {type(e).__name__}: {e}"
     return False, "expected failure, got success"
 
 
-def run_pqcrypt_utc_commit(rec):
-    got = pqcrypt._utc_commit(
+def run_tessera_seal_utc_commit(rec):
+    got = tessera_seal._utc_commit(
         bytes.fromhex(rec["k_commit_hex"]),
         bytes.fromhex(rec["header_hex"]),
         bytes.fromhex(rec["kem_ct_hex"]),
@@ -336,9 +336,9 @@ def run_pqcrypt_utc_commit(rec):
     return True, ""
 
 
-def run_pqcrypt_validate_min_timestamp(rec):
+def run_tessera_seal_validate_min_timestamp(rec):
     env = bytes.fromhex(rec["envelope_hex"])
-    got = pqcrypt.validate_min_timestamp(env, rec["min_ms"])
+    got = tessera_seal.validate_min_timestamp(env, rec["min_ms"])
     if got != rec["expected"]:
         return False, f"got={got} want={rec['expected']}"
     return True, ""
@@ -353,37 +353,37 @@ DISPATCH = {
     "validate_invalid": run_validate_invalid,
     "hlc_overflow": run_hlc_overflow,
     "validate_min_timestamp": run_validate_min_timestamp,
-    "pqhash_hash_only": run_pqhash_hash_only,
-    "pqhash_decode": run_pqhash_decode,
-    "pqhash_encode_b64": run_pqhash_encode_b64,
-    "pqhash_decode_b64": run_pqhash_decode_b64,
-    "pqhash_encode_crockford": run_pqhash_encode_crockford,
-    "pqhash_decode_crockford": run_pqhash_decode_crockford,
-    "pqhash_validate_invalid": run_pqhash_validate_invalid,
-    "pqhash_verify": run_pqhash_verify,
-    # PQCrypt ops (PQCK-00009)
-    "decrypt": run_pqcrypt_decrypt,
-    "decrypt_should_fail": run_pqcrypt_decrypt_should_fail,
-    "peek_header": run_pqcrypt_peek_header,
-    "peek_header_should_fail": run_pqcrypt_peek_header_should_fail,
-    "utc_commit": run_pqcrypt_utc_commit,
-    # NB: validate_min_timestamp is already mapped above for PQID; PQCrypt
+    "tessera_hash_hash_only": run_tessera_hash_hash_only,
+    "tessera_hash_decode": run_tessera_hash_decode,
+    "tessera_hash_encode_b64": run_tessera_hash_encode_b64,
+    "tessera_hash_decode_b64": run_tessera_hash_decode_b64,
+    "tessera_hash_encode_crockford": run_tessera_hash_encode_crockford,
+    "tessera_hash_decode_crockford": run_tessera_hash_decode_crockford,
+    "tessera_hash_validate_invalid": run_tessera_hash_validate_invalid,
+    "tessera_hash_verify": run_tessera_hash_verify,
+    # TesseraSeal ops (PQCK-00009)
+    "decrypt": run_tessera_seal_decrypt,
+    "decrypt_should_fail": run_tessera_seal_decrypt_should_fail,
+    "peek_header": run_tessera_seal_peek_header,
+    "peek_header_should_fail": run_tessera_seal_peek_header_should_fail,
+    "utc_commit": run_tessera_seal_utc_commit,
+    # NB: validate_min_timestamp is already mapped above for TesseraID; TesseraSeal
     # vectors use the SAME op name and the same {envelope_hex, min_ms, expected}
-    # schema. The PQID handler accidentally works only because of name overlap;
-    # we replace the binding here to use the PQCrypt handler when called from
-    # pqcrypt vector files.
+    # schema. The TesseraID handler accidentally works only because of name overlap;
+    # we replace the binding here to use the TesseraSeal handler when called from
+    # tessera-seal vector files.
 }
 
-# The same op name "validate_min_timestamp" appears in PQID and PQCrypt
-# vector files but with slightly different payload shapes. PQID's expects an
-# "input_hex" field; PQCrypt uses "envelope_hex". We dispatch by which key
+# The same op name "validate_min_timestamp" appears in TesseraID and TesseraSeal
+# vector files but with slightly different payload shapes. TesseraID's expects an
+# "input_hex" field; TesseraSeal uses "envelope_hex". We dispatch by which key
 # is present.
 _orig_min_ts = DISPATCH["validate_min_timestamp"]
 
 
 def _dispatch_validate_min_timestamp(rec):
     if "envelope_hex" in rec:
-        return run_pqcrypt_validate_min_timestamp(rec)
+        return run_tessera_seal_validate_min_timestamp(rec)
     return _orig_min_ts(rec)
 
 

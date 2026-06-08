@@ -1,0 +1,105 @@
+\section{Comparison with Existing Formats}
+\label{sec:comparison}
+
+A grounded marketplace view as of November 2026. \pqcrypt{} is the only envelope format in the table that offers \emph{both} (a) a pure-PQ option (suites \code{0x01}/\code{0x02}) and (b) a key-committing AEAD --- with a hybrid alternative (suite \code{0x06}) layered on the same wire format for callers who want defense-in-depth.
+
+\subsection{Envelope formats}
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}lXXXX@{}}
+\toprule
+\textbf{Format} & \textbf{Algorithms (2026)} & \textbf{PQ status} & \textbf{Commit?} & \textbf{Notes} \\
+\midrule
+age v1.2.1 \citep{age-releases} & X25519 + ChaCha20-Poly1305 & Experimental plugin only & No & Multi-recipient confusion class still open \\
+Tink v1.17 \citep{tink-releases} & AES-GCM, GCM-SIV, ChaCha-Poly, HPKE 9180 & ML-KEM tracked, not GA upstream & No & Library, no file-format spec \\
+PASETO v4.local \citep{paseto-v4} & XChaCha20 + BLAKE2b-MAC (EtM) & None & Yes (by construction) & Inspired our deterministic-nonce + separate-MAC \\
+HPKE-PQ draft 09 \citep{hpke-pq} & X-Wing (X25519 + ML-KEM-768) & Hybrid (KEM 0x647A) & No & The agility-camp answer to the same problem \\
+MLS RFC 9420 \citep{rfc9420} & X25519MLKEM768 ciphersuite & Hybrid & No & Group messaging, not file \\
+Signal PQXDH \citep{signal-pqxdh} & X25519 + Kyber-1024 & Hybrid (legacy Kyber) & No & Messaging handshake \\
+Apple iMessage PQ3 \citep{apple-pq3} & ECDH P-256 + Kyber-1024 + rekey & Hybrid (legacy Kyber) & No & Production scale ($\sim$1B devices) \\
+AWS KMS PQ TLS \citep{aws-kms-pq} & ML-KEM-768 hybrid for TLS to endpoints & Transport hybrid & N/A & Not an envelope \\
+GCP Cloud KMS \citep{gcp-kms-pq} & ML-DSA-65, SLH-DSA GA; ML-KEM preview & PQ signing GA & N/A & KMS not envelope \\
+\textbf{TesseraSeal suites \code{0x01}/\code{0x02}} & \textbf{ML-KEM-1024 + AES-256-GCM (or ChaCha) + UtC} & \textbf{Pure PQ} & \textbf{Yes (32 B UtC tag)} & v1.0, this document \\
+\textbf{TesseraSeal suite \code{0x06}} & \textbf{X25519 + ML-KEM-1024 + AES-256-GCM + UtC} & \textbf{Hybrid} & \textbf{Yes (32 B UtC tag)} & v1.2, opt-in (\cref{sec:hybrid}) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The cross-format point: every other hybrid PQ format in 2026 (HPKE-PQ, MLS, Signal, Apple PQ3) is \emph{exclusively} hybrid; every other pure-PQ envelope-shaped artifact is academic. \pqcrypt{} is the only deployed envelope spec that offers \emph{both} a pure-PQ promise and an opt-in hybrid promise on the same wire, distinguished by a single byte. This dual-promise design draws directly on the immutable-variant-byte discipline that \pqid{} (variants \code{0x01}/\code{0x02}) and \pqhash{} (variant \code{0x03}) established earlier in the \pqtoolkit{} monorepo: a byte \emph{is} a version, never a renegotiation surface.
+
+\subsection{KEM cost (Zen 4, cycles; sizes in bytes)}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lcrrrrrrl@{}}
+\toprule
+\textbf{KEM} & \textbf{NIST} & \textbf{Keygen} & \textbf{Encaps} & \textbf{Decaps} & \textbf{pk} & \textbf{sk} & \textbf{ct} & \textbf{Source} \\
+\midrule
+ML-KEM-512  & 1 & 18\,800 & 22\,400 & 18\,200 & 800   & 1\,632 & 768   & \citep{mlkem-native-bench} \\
+ML-KEM-768  & 3 & 30\,100 & 35\,900 & 29\,400 & 1\,184 & 2\,400 & 1\,088 & \citep{mlkem-native-bench} \\
+\textbf{ML-KEM-1024 (TesseraSeal v1)} & \textbf{5} & \textbf{46\,200} & \textbf{54\,800} & \textbf{45\,300} & \textbf{1\,568} & \textbf{3\,168} & \textbf{1\,568} & \citep{mlkem-native-bench} \\
+HQC-128 & 1 & 142\,000 & 256\,000 & 384\,000 & 2\,249 & 2\,305 & 4\,433 & \citep{hqc-perf} \\
+Classic McEliece 348864 & 1 & $1.4 \times 10^8$ & 73\,000 & 132\,000 & 261\,120 & 6\,492 & 96 & \citep{mceliece} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{AEAD throughput (1 MiB, single thread, GB/s)}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lrrrl@{}}
+\toprule
+\textbf{AEAD} & \textbf{Sapphire R.} & \textbf{Zen 4} & \textbf{Apple M3} & \textbf{Notes} \\
+\midrule
+\textbf{AES-256-GCM (TesseraSeal v1)} & \textbf{10.3} & \textbf{9.7} & \textbf{6.8} & AES-NI/VAES \\
+AES-256-GCM-SIV & 6.1 & 5.4 & 3.9 & Extra GHASH pass \\
+ChaCha20-Poly1305 (TesseraSeal suite 0x02) & 5.8 & 3.4 & 3.1 & AVX-512 path on x86 \\
+AEGIS-128L & 28.4 & 26.1 & 14.7 & RFC 9678 Sep 2025 \\
+AEGIS-256 & 18.9 & 17.2 & 10.4 & RFC 9678 Sep 2025 \\
+Ascon-128a (FIPS 232 final, Aug 2025) & 0.55 & 0.52 & 0.61 & Lightweight, constrained HW \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Sources: \citep{ebacs,intelisa,rfc9678}. AEGIS is 2--3$\times$ faster than AES-256-GCM. It was evaluated for v1.2 at suite \code{0x03} (PQCK-00020) and \emph{deferred}: as of November 2026 verified AEGIS implementations are not yet polyglot-ready across Python, Go, Java, and OpenSSL. Revisit when verified implementations land.
+
+\subsection{Reference benchmarks (Apple M4 Max, ops/sec, v1.3)}
+\label{sec:comparison:bench}
+
+End-to-end \pqcrypt{} operations as measured by the per-language bench harnesses on Apple M4 Max (single P-core, release builds). Numbers are ops/sec; higher is better. ``Hybrid'' rows refer to suite \code{0x06} (\cref{sec:hybrid}).
+
+\begin{center}
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+\textbf{Operation} & \textbf{Python} & \textbf{C} & \textbf{Go} & \textbf{Rust} \\
+\midrule
+keygen (ML-KEM-1024)             &   398 & 24\,921 & 24\,666 & 11\,530 \\
+keygen (hybrid \code{0x06})      &   388 & --- v1.4 & 17\,521 &  8\,073 \\
+encrypt 1\,KiB (AES-256-GCM)     &   342 & 20\,966 & 20\,788 &  9\,372 \\
+encrypt 1\,KiB (hybrid \code{0x06}) & 305 & --- v1.4 & 10\,000 &  4\,653 \\
+decrypt 1\,KiB (AES-256-GCM)     &   259 &  8\,689 & 20\,232 & 17\,686 \\
+decrypt 1\,KiB (hybrid \code{0x06}) & 248 & --- v1.4 & 13\,724 & 11\,485 \\
+encrypt 1\,MiB (AES-256-GCM)     &   232 &    447 &    685 &    131 \\
+decrypt 1\,MiB (AES-256-GCM)     &   202 &    405 &    701 &    135 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Read: Go's \pqcrypt{} port is the fastest because Go 1.26 stdlib \texttt{crypto/aes} routes through ARMv8 AES instructions on Apple Silicon automatically and the GC compiler inlines the ML-KEM hot path tightly. C trails Go on \texttt{decrypt 1\,KiB} because the OpenSSL \texttt{EVP\_KEM} \texttt{Decaps} path performs an additional dispatch step. Rust's 1\,MiB throughput is regressed because \texttt{aes-gcm 0.10} does not enable ARMv8 AES intrinsics on stable Rust without a nightly \texttt{target\_feature} cfg; this is tracked as PQCK-00027 (deferred to v1.4) and is expected to recover to C-class throughput once \texttt{aes-gcm 0.11} ships. Hybrid encrypt is roughly $2\times$ slower than the AES-only path because each envelope adds one X25519 ephemeral keygen and one DH; hybrid decrypt adds only one DH.
+
+\subsection{Deployment scale (Nov 2026)}
+
+\begin{itemize}
+\item Cloudflare Radar (Apr 2026): $\sim$38\% of outbound TLS 1.3 to origins uses \texttt{X25519MLKEM768}; $\sim$32\% of inbound from browsers \citep{cloudflare-radar}.
+\item Chrome: \texttt{X25519MLKEM768} default-on Chrome 131 (Nov 2024); \texttt{X25519Kyber768} fully removed in Chrome 141.
+\item OpenSSH 10.0 (Apr 2025): \texttt{mlkem768x25519-sha256} default key exchange.
+\item Apple iMessage PQ3: iOS 17.4 (Mar 2024), $\sim$1B devices.
+\item Signal PQXDH: mandatory client $\geq$ Sep 2023.
+\item AWS KMS PQ TLS to endpoints: GA Oct 2024.
+\item GCP Cloud KMS: PQ signing GA Feb 2026, PQ KEM preview.
+\end{itemize}
+
+The ecosystem reality: hybrid (X-Wing or TLS-style concat) has won the transport-protocol fight. \pqcrypt{} is deliberately a counter-example for the envelope-format niche where unambiguous ``PQ-only'' is a feature, not a bug.

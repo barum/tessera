@@ -1,0 +1,162 @@
+% ============================================================================
+%  TesseraHash — A Post-Quantum-Era Content Identifier
+%  Whitepaper, version 1.0 (2026-05-21)
+%
+%  Author: Bahram Samani
+%
+%  Build:  make
+%          (or: pdflatex main && bibtex main && pdflatex main && pdflatex main)
+% ============================================================================
+\documentclass[11pt,letterpaper]{article}
+
+% ---- Geometry / typography ----
+\usepackage[margin=1in,top=1in,bottom=1.1in]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{setspace}
+\setstretch{1.05}
+
+% ---- Math, code, color, tables, figures, citations ----
+\usepackage{amsmath,amssymb}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{tcolorbox}
+\tcbuselibrary{breakable,skins}
+\usepackage[round,authoryear]{natbib}
+\bibliographystyle{abbrvnat}
+
+% ---- Hyperlinks ----
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black,bookmarksopen=true]{hyperref}
+\usepackage[nameinlink]{cleveref}
+
+% ---- Headers / footers ----
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textsl{TesseraHash Whitepaper}}
+\fancyhead[R]{\small\textsl{\leftmark}}
+\fancyfoot[C]{\small \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ---- Listings (code) ----
+\definecolor{codebg}{rgb}{0.97,0.97,0.97}
+\definecolor{codecomment}{rgb}{0.30,0.50,0.30}
+\definecolor{codekw}{rgb}{0.10,0.30,0.70}
+\definecolor{codestr}{rgb}{0.65,0.20,0.20}
+\definecolor{codenum}{rgb}{0.50,0.50,0.50}
+\lstdefinestyle{tesserahashcode}{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestr},
+  numberstyle=\tiny\color{codenum},
+  numbers=left,
+  numbersep=8pt,
+  xleftmargin=15pt,
+  framesep=4pt,
+  frame=single,
+  framerule=0.4pt,
+  rulecolor=\color{black!30},
+  showspaces=false,
+  showstringspaces=false,
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=2,
+  captionpos=b,
+}
+\lstset{style=tesserahashcode}
+\lstdefinelanguage{Pseudocode}{
+  morekeywords={if,else,then,return,for,while,procedure,function,end,true,false,when,or,and,not,case,default,is,error},
+  morecomment=[l]{//},
+  morecomment=[l]{\#},
+  sensitive=true,
+}
+
+% ---- Callouts ----
+\newtcolorbox{calloutinfo}[1][]{
+  enhanced, breakable, colback=blue!4, colframe=blue!50!black, fonttitle=\bfseries,
+  left=8pt, right=8pt, top=4pt, bottom=4pt, title=#1
+}
+\newtcolorbox{calloutwarning}[1][]{
+  enhanced, breakable, colback=orange!6, colframe=orange!70!black, fonttitle=\bfseries,
+  left=8pt, right=8pt, top=4pt, bottom=4pt, title=#1
+}
+
+% ---- Section formatting ----
+\usepackage{titlesec}
+\titleformat{\section}{\Large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{1em}{}
+\titlespacing{\section}{0pt}{18pt}{8pt}
+\titlespacing{\subsection}{0pt}{14pt}{6pt}
+
+% ---- Custom commands ----
+\newcommand{\tesserahash}{\textsf{TesseraHash}}
+\newcommand{\tesseraid}{\textsf{TesseraID}}
+\newcommand{\tesseraseal}{\textsf{TesseraSeal}}
+\newcommand{\tessera}{\textsf{Tessera}}
+\newcommand{\code}[1]{\texttt{#1}}
+
+% ============================================================================
+%  Document
+% ============================================================================
+\begin{document}
+
+\input{_buildinfo.tex}
+\begin{titlepage}
+  \centering
+  \vspace*{2.0cm}
+  {\Huge\bfseries TesseraHash\par}
+  \vspace{0.6cm}
+  {\Large A Post-Quantum-Era Content Identifier\par}
+  \vspace{0.3cm}
+  {\large\itshape 73-byte SHAKE-256 content hash with provenance\par}
+  \vspace{0.3cm}
+  {\large\itshape Project 2 of 3 in the \tessera{} monorepo\par}
+  \vspace{1.4cm}
+  {\large\bfseries Bahram Samani\par}
+  \vspace{0.4em}
+  {\small\itshape \tessera{} monorepo maintainer\par}
+  \vspace{1.4cm}
+  {\large\itshape Whitepaper, Version 1.0\par}
+  \vspace{0.3em}
+  {\small Released 2026-05-21\par}
+  \vspace{1.4cm}
+  \begin{tcolorbox}[colback=gray!5,colframe=black!30,width=0.78\textwidth]
+    \centering\small
+    \textbf{Build date:} \buildDate \quad\textbf{Build time:} \buildTime\\[0.4em]
+    \textbf{Source:} \texttt{tessera-hash/latex/main.tex}\\[0.4em]
+    \textbf{Spec version:} v1.0 \quad\textbf{Wire variant:} \texttt{0x03}
+  \end{tcolorbox}
+  \vfill
+  {\small \tesserahash{} is the content-hash project in the \tessera{} monorepo, which also contains \tesseraid{} (variant \code{0x01}/\code{0x02}, 41-byte identifier) and \tesseraseal{} (variant \code{0x04}, ML-KEM-1024 encryption envelope). When \tesseraid{} identifies a record whose content needs an integrity binding, use \tesserahash{}; when that content also needs confidentiality, wrap with \tesseraseal{}. See Section~\ref{sec:monorepo} for the cross-project relationship.\par}
+  \vspace{0.5cm}
+\end{titlepage}
+
+\setcounter{tocdepth}{2}
+\tableofcontents
+\newpage
+
+\input{sec01_tldr.tex}
+\input{sec02_threat_model.tex}
+\input{sec03_wire_format.tex}
+\input{sec04_shake256_binding.tex}
+\input{sec05_encodings.tex}
+\input{sec06_generator_and_provenance.tex}
+\input{sec07_security_and_collisions.tex}
+\input{sec08_conformance_and_implementations.tex}
+\input{sec09_comparison.tex}
+\input{sec10_monorepo.tex}
+\input{sec11_appendices.tex}
+
+\bibliography{references}
+
+\end{document}

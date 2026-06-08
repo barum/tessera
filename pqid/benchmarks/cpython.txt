@@ -1,9 +1,0 @@
-PQID CPython extension benchmarks (single thread)
--------------------------------------------------
-
-  Standard generation                    2,063,662 ops/sec   (   485 ns/op)
-  HLC generation (no observe)            2,779,397 ops/sec   (   360 ns/op)
-  encode Base64URL                      10,731,271 ops/sec   (    93 ns/op)
-  encode Crockford Base32               10,427,287 ops/sec   (    96 ns/op)
-  decode Base64URL                      12,009,008 ops/sec   (    83 ns/op)
-  decode Crockford Base32               10,868,105 ops/sec   (    92 ns/op)

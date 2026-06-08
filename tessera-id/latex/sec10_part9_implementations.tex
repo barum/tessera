@@ -1,0 +1,97 @@
+% ============================================================================
+%  Part IX: Reference Implementations and Benchmarks
+% ============================================================================
+\section{Reference Implementations and Benchmarks}
+\label{sec:implementations}
+
+Eight reference implementations accompany this specification: Python (canonical and performance-tuned variants), Go, Rust, TypeScript, C, C++, Java, and a CPython C-extension binding. Each implementation passes a shared test suite covering size, variant byte handling, uniqueness across 100{,}000 IDs, monotonicity within a generator, encoding round-trips, HLC observation, HLC drift bounds, clock-clamp behavior, and decoder validation. This part documents the design choices in each implementation and presents benchmark results from a single test machine.
+
+\begin{calloutwarning}[On the optimization headroom in these numbers]
+The reference implementations prioritize \emph{specification fidelity and code clarity} over peak throughput. They are written so that a porter can compare them line-by-line against the pseudocode in Part \ref{sec:spec} and convince themselves the implementation is correct; they are not written to extract every available cycle. Production deployments that need more than the numbers reported here have substantial headroom and several well-understood paths to it. None of these are taken in the reference code:
+\begin{itemize}
+  \item \textbf{Bulk CSPRNG buffering.} The reference Python ``fast'' variant pre-fills a CSPRNG buffer to amortize syscall cost; the other reference implementations call \code{getrandom(2)} (or its equivalent) once per generation. A buffered version typically gains 1.5--3$\times$ on generation throughput, at the cost of a larger per-thread memory footprint and slightly more complex state management.
+  \item \textbf{SIMD-accelerated encoding.} The Base64URL and Crockford encoders in the reference code use scalar byte-at-a-time loops. Production-grade Base64 implementations (e.g., the ones inside major language runtimes) use SSE/AVX2/AVX-512 to process 12--24 bytes per instruction, achieving 5--10$\times$ the throughput of the scalar reference.
+  \item \textbf{Thread-local generators.} Implementations using a global mutex-guarded generator (Python, TypeScript, Java with the default constructor) pay contention cost under high concurrency. One generator per thread, or per request handler, eliminates that cost.
+  \item \textbf{Hardware RNG offload.} The bulk of generation cost is the kernel-mode CSPRNG syscall. \code{RDSEED}/\code{RDRAND} on x86-64, or a vectorized hardware RNG, can drive generation rates above the syscall floor for workloads where the CSPRNG syscall is genuinely the bottleneck.
+\end{itemize}
+We chose not to fold these into the reference because they obscure the spec-to-code mapping that the references exist to make legible. Treat the numbers below as a reproducible floor on what the format can do, not a ceiling. A production deployment that wants 2--5$\times$ the throughput will not need to redesign anything.
+\end{calloutwarning}
+
+\subsection{Implementation summaries}
+
+\subsubsection{Python (\code{python/tessera\_id.py}, \code{python/tessera\_id\_fast.py})}
+
+The canonical Python implementation in \code{tessera\_id.py} prioritizes readability over performance. It is a faithful one-to-one translation of the specification's pseudocode, designed to serve as a reference for porters. Module-level functions operate on a singleton thread-safe generator (mutex-guarded). The performance-tuned variant in \code{tessera\_id\_fast.py} pre-fills a CSPRNG buffer to amortize syscall cost and uses bytearray manipulation to skip Python-object overhead in the hot path. All eleven Python-side tests pass on both implementations.
+
+\subsubsection{Go (\code{go/tessera\_id.go})}
+
+The Go implementation defines an explicit \code{StandardGenerator} struct and recommends one generator per goroutine to avoid mutex contention. \code{HLCGenerator} is internally locked, as required for correctness. Sortedness is enforced at the test level: the test suite generates 10{,}000 consecutive IDs and asserts that \code{bytes.Compare} returns positive for every consecutive pair. Seven Go tests pass.
+
+\subsubsection{Rust (\code{rust/src/lib.rs})}
+
+The Rust implementation uses Edition 2024 syntax and the \code{getrandom} 0.3 crate. The \code{TesseraId} type is a fixed-size struct with derived ordering traits, allowing TesseraIDs to be used directly in \code{BTreeMap} keys and sorted vectors with no allocation overhead. Build with \code{--release} for maximum optimization. Eight Rust tests pass.
+
+\subsubsection{TypeScript (\code{typescript/tessera\_id.ts})}
+
+The TypeScript implementation targets Node 20+ and modern browsers (relying on Web Crypto's \code{getRandomValues}). It pays close attention to JavaScript number-precision pitfalls: the 48-bit timestamp is decomposed into hi/lo 24-bit halves to avoid \code{Number}'s 53-bit precision floor, and the encoding routines use \code{Uint8Array} throughout. Eighteen TypeScript tests pass.
+
+\subsubsection{C (\code{c/tessera\_id.c}, \code{c/tessera\_id.h})}
+
+The C reference is a single .c/.h pair, no dynamic allocation, suitable for embedded use. It uses \code{getrandom(2)} on Linux and is portable to any POSIX system that provides \code{/dev/urandom}. Built with \code{gcc -O3 -std=c11}. Encoding hits 41M ops/sec for Base64URL, demonstrating that the encoding itself is essentially free on modern x86 even with the scalar loop. Thirteen C tests pass.
+
+\subsubsection{C++ (\code{cpp/tessera\_id.hpp})}
+
+The C++ reference is header-only, C++20, and adds strong typing on top of the C-level wire format. \code{TesseraId} is a struct with \code{operator<=>}, \code{StandardGenerator} and \code{HLCGenerator} are RAII types, and the HLC generator is \code{std::mutex}-protected. Built with \code{g++ -O3 -std=c++20}. Eleven C++ tests pass.
+
+\subsubsection{Java (\code{java/src/main/java/com/tessera/id/})}
+
+The Java reference targets OpenJDK 25 LTS. \code{TesseraId} is an immutable value class with \code{compareTo} delegating to \code{Arrays.compareUnsigned} on the wire bytes, allowing TesseraIDs to drop into \code{TreeMap} or \code{Comparator} chains directly. \code{StandardGenerator} synchronizes on the instance and offers an \code{unsynchronized()} variant for single-thread hot paths. \code{HLCGenerator} is always serialized (the HLC algorithm requires it) and surfaces a \code{DriftExceededException} when an observation exceeds the 60-second drift bound. The codec is a hand-rolled Base64URL encoder/decoder (the JDK's \code{java.util.Base64} pads and uses a different alphabet) plus a Crockford Base32 implementation with case-insensitive decoding and confusable canonicalization. Twenty Java tests pass.
+
+\subsubsection{CPython extension (\code{cpython/tessera\_id\_ext.c})}
+
+The CPython extension wraps the C reference implementation as a Python module, exposing \code{new()}, \code{new\_hlc()}, \code{encode\_b64()}, \code{decode\_b64()}, \code{encode\_b32()}, \code{decode\_b32()}, and field accessors. Built via \code{python3 setup.py build\_ext --inplace}. Performance lands roughly 3$\times$ the pure-Python ``fast'' variant, demonstrating the Python-overhead contribution. Sixteen CPython tests pass.
+
+\subsection{Cross-implementation benchmark results}
+
+\textbf{Test machine:} Intel Xeon @ 2.10 GHz, 1 vCPU, Ubuntu 24.04.4 LTS, Linux 6.18.5.
+
+\textbf{Toolchains (May 3, 2026):} GCC 13.3.0, Python 3.12.3, Go 1.26.2, Node.js 24.15.0 LTS (Krypton), TypeScript 6.0.3, Rust 1.95.0, OpenJDK 25.0.2 LTS.
+
+\textbf{Methodology:} Each implementation runs its own benchmark harness (10{,}000-iteration warmup, then a measurement run of 1{,}000{,}000 to 5{,}000{,}000 iterations depending on operation cost). Results report the steady-state ops/sec; the benchmarks are CPU-bound and do not require network or disk. The Java numbers are the median of three back-to-back runs after JIT warmup.
+
+\begin{center}
+\renewcommand{\arraystretch}{1.15}
+\footnotesize
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Implementation}     & \textbf{Std (ops/s)} & \textbf{HLC (ops/s)} & \textbf{enc B64 (ops/s)} & \textbf{dec B64 (ops/s)} \\
+\midrule
+Python (canonical)          &      630{,}071  &      698{,}594  &  2{,}340{,}667  &  1{,}439{,}692  \\
+Python (fast)               &      772{,}547  &      815{,}654  &  ---            &  ---            \\
+TypeScript (Node 24.15)     &      514{,}077  &      543{,}100  &  6{,}428{,}220  &  6{,}341{,}935  \\
+CPython extension           &  2{,}063{,}662  &  2{,}779{,}397  & 10{,}731{,}271  & 12{,}009{,}008  \\
+Java (OpenJDK 25 LTS)       &  2{,}183{,}220  &  2{,}504{,}867  & 11{,}198{,}514  &  9{,}176{,}518  \\
+C (\code{gcc -O3})          &  2{,}298{,}592  &  3{,}337{,}763  & 41{,}932{,}164  & 44{,}439{,}608  \\
+C++ (\code{g++ -O3})        &  2{,}383{,}425  &  3{,}397{,}694  & 31{,}023{,}429  & 75{,}129{,}334  \\
+Rust (1.95, opt-level 3)    &  2{,}320{,}288  &  3{,}303{,}234  & 26{,}116{,}146  & 27{,}724{,}737  \\
+Go (1.26.2)                 &  4{,}631{,}769  &  5{,}208{,}333  & 11{,}816{,}651  & ---             \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Observations}
+
+\textbf{Generation is CSPRNG-bound.} Across all native implementations (C, C++, Rust, Go, Java), Standard generation lands within a factor of 2 of each other (2.18M--4.6M ops/sec). The differences come down to syscall wrapper thinness; the work outside the syscall is essentially identical and well below the syscall cost. Go's edge over the others is its lighter-weight \code{getrandom} integration in the runtime.
+
+\textbf{HLC is faster than Standard.} Counterintuitively, HLC generation is consistently \emph{faster} than Standard generation in C, C++, Rust, and Java (3.3--3.4M and 2.5M vs 2.2--2.4M ops/sec, $\approx 15$--$30\%$ faster). The reason is that the Standard generator does an extra random-byte derivation for the counter step (\code{1 + (rnd[0] \& 0x0F)}) on every same-millisecond call, which adds a few CPU cycles compared to HLC's simpler increment. The CSPRNG fetch is the same size in both cases.
+
+\textbf{Java tracks the native pack.} OpenJDK 25's HotSpot JIT brings Java generation to roughly 95\% of C/Rust on Standard and to within 25\% on HLC. The encoder is slower than C or Rust but faster than Node's TypeScript --- the JIT-compiled scalar loop holds up well against hand-written native scalar code.
+
+\textbf{Encoding is essentially free in native code.} The C implementation encodes Base64URL at 42M ops/sec --- about 24 nanoseconds per encode. Crockford lands at 34M ops/sec. These rates are so high that for any practical use, the encoder is never the bottleneck; whatever consumes the encoded string (network I/O, JSON serialization, log writes) will dominate by orders of magnitude. As noted in the optimization caveat above, a SIMD-accelerated encoder would push these numbers another 5--10$\times$ higher, but the reference uses the scalar version for clarity.
+
+\textbf{Python's pure-Python overhead is real but predictable.} The canonical Python implementation runs at $\sim$0.6M ops/sec, about 4$\times$ slower than C. The CPython extension closes the gap to roughly 1$\times$, demonstrating that the Python-language overhead --- attribute lookups, integer boxing, function call frames --- is the dominant cost when the implementation is in pure Python.
+
+\textbf{TypeScript hits a JavaScript-runtime floor at $\sim$0.5M ops/sec.} The Node.js Web Crypto \code{getRandomValues} call is the floor; TypeScript's syntactic overhead on top is small. For TS workloads where 0.5M ops/sec is insufficient, calling out to a native module is the standard remedy.
+
+\textbf{No implementation is the bottleneck for any realistic workload.} A web service that issues TesseraIDs as part of every request can comfortably handle hundreds of thousands of requests per second on a single core; the rest of the request handling (JSON parsing, database I/O, business logic) will dominate by orders of magnitude before TesseraID generation does.
+

@@ -1,4 +1,4 @@
-# pqtoolkit — Post-Quantum Identifier, Hash & Encryption Toolkit
+# tessera — Post-Quantum Identifier, Hash & Encryption Toolkit
 
 [![conformance](https://github.com/bahramsamani/pqid/actions/workflows/conformance.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/conformance.yml)
 [![python](https://github.com/bahramsamani/pqid/actions/workflows/python.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/python.yml)
@@ -9,36 +9,38 @@
 [![typescript](https://github.com/bahramsamani/pqid/actions/workflows/typescript.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/typescript.yml)
 [![java](https://github.com/bahramsamani/pqid/actions/workflows/java.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/java.yml)
 [![cpython-extension](https://github.com/bahramsamani/pqid/actions/workflows/cpython.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/cpython.yml)
-[![pqcrypt](https://github.com/bahramsamani/pqid/actions/workflows/pqcrypt.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/pqcrypt.yml)
+[![tessera-seal](https://github.com/bahramsamani/pqid/actions/workflows/tessera-seal.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/tessera-seal.yml)
 
-`pqtoolkit` is a specification-first, polyglot monorepo of post-quantum-era data formats.
+`tessera` is a specification-first, polyglot monorepo of post-quantum-era data formats.
 Each project under this root is an independent spec with normative wire format, polyglot
-reference implementations, and (where applicable) its own whitepaper.
+reference implementations, and (where applicable) its own whitepaper. The CI badges above
+point at the legacy `bahramsamani/pqid` GitHub repo URL, which is outside this rename's
+scope; the suite itself is now **Tessera**.
 
 ## Projects
 
-### [pqid/](pqid/) — Post-Quantum Identifier
+### [tessera-id/](tessera-id/) — Post-Quantum Identifier
 
 A 41-byte, time-sortable identifier with a 256-bit random tail, designed to retain ~128-bit
 security against Grover-style quantum search while remaining a practical drop-in for
 ULID/UUIDv7-shaped workloads. Two variants share the wire format: Standard (wall-clock +
 monotonic counter) and HLC (Hybrid Logical Clock for distributed causality).
 
-- Whitepaper: [PQID_Whitepaper.pdf](PQID_Whitepaper.pdf)
-- Whitepaper sources: [pqid/latex/](pqid/latex/) (LaTeX) and [pqid/docs/](pqid/docs/) (DOCX pipeline)
-- Project README: [pqid/README.md](pqid/README.md)
-- Project CLAUDE.md (invariants + per-language guide): [pqid/CLAUDE.md](pqid/CLAUDE.md)
+- Whitepaper: [TesseraID_Whitepaper.pdf](TesseraID_Whitepaper.pdf)
+- Whitepaper sources: [tessera-id/latex/](tessera-id/latex/) (LaTeX) and [tessera-id/docs/](tessera-id/docs/) (DOCX pipeline)
+- Project README: [tessera-id/README.md](tessera-id/README.md)
+- Project CLAUDE.md (invariants + per-language guide): [tessera-id/CLAUDE.md](tessera-id/CLAUDE.md)
 
-### [pqhash/](pqhash/) — Post-Quantum Content Hash
+### [tessera-hash/](tessera-hash/) — Post-Quantum Content Hash
 
 A 73-byte SHAKE-256-based content identifier with a 512-bit hash tail and provenance
 metadata (timestamp + counter). NOT a hash function, NOT a MAC, NOT a signature — a
 content identifier with hash-derived collision resistance.
 
-- Project CLAUDE.md: [pqhash/CLAUDE.md](pqhash/CLAUDE.md)
-- Whitepaper: [pqhash/latex/PQHash_Whitepaper.pdf](pqhash/latex/PQHash_Whitepaper.pdf) (built from [pqhash/latex/](pqhash/latex/); version 1.0, 2026-05-21)
+- Project CLAUDE.md: [tessera-hash/CLAUDE.md](tessera-hash/CLAUDE.md)
+- Whitepaper: [tessera-hash/latex/TesseraHash_Whitepaper.pdf](tessera-hash/latex/TesseraHash_Whitepaper.pdf) (built from [tessera-hash/latex/](tessera-hash/latex/); version 1.0, 2026-05-21)
 
-### [pqcrypt/](pqcrypt/) — Post-Quantum Encryption Envelope
+### [tessera-seal/](tessera-seal/) — Post-Quantum Encryption Envelope
 
 A 16-byte-header variable-body envelope that wraps a plaintext such that **only the
 recipient's ML-KEM-1024 private key can open it**. v1 mandatory suite is ML-KEM-1024 +
@@ -47,13 +49,13 @@ core promise). v1.2 added an optional **hybrid suite `0x06`** (X25519 + ML-KEM-1
 AES-256-GCM + UtC) for callers who want a defense-in-depth layer; non-hybrid suites
 `0x01`/`0x02` remain the spec promise. Owns variant byte `0x04`.
 
-- Project README: [pqcrypt/README.md](pqcrypt/README.md)
-- Project CLAUDE.md: [pqcrypt/CLAUDE.md](pqcrypt/CLAUDE.md)
-- Whitepaper sources: [pqcrypt/latex/](pqcrypt/latex/)
-- Side-channel disclaimer: [pqcrypt/docs/side-channel-disclaimer.md](pqcrypt/docs/side-channel-disclaimer.md)
-- Security audit notes: [pqcrypt/docs/security-audit-v1.2.md](pqcrypt/docs/security-audit-v1.2.md)
-- Release notes index: [pqcrypt/docs/release-notes/CHANGELOG.md](pqcrypt/docs/release-notes/CHANGELOG.md)
-- CLI binary (Python): `python -m pqcrypt.cli` (keygen / pubkey / encrypt / decrypt / info)
+- Project README: [tessera-seal/README.md](tessera-seal/README.md)
+- Project CLAUDE.md: [tessera-seal/CLAUDE.md](tessera-seal/CLAUDE.md)
+- Whitepaper sources: [tessera-seal/latex/](tessera-seal/latex/)
+- Side-channel disclaimer: [tessera-seal/docs/side-channel-disclaimer.md](tessera-seal/docs/side-channel-disclaimer.md)
+- Security audit notes: [tessera-seal/docs/security-audit-v1.2.md](tessera-seal/docs/security-audit-v1.2.md)
+- Release notes index: [tessera-seal/docs/release-notes/CHANGELOG.md](tessera-seal/docs/release-notes/CHANGELOG.md)
+- CLI binary (Python): `python -m tessera_seal.cli` (keygen / pubkey / encrypt / decrypt / info)
 
 ## Shared infrastructure
 
@@ -75,18 +77,18 @@ harnesses, not library code; not part of either project's normative surface.
 ## Supported languages
 
 Each project ships reference implementations in 8 languages, all byte-identical for the
-same wire format. PQCrypt status as of v1.3 (2026-05-21):
+same wire format. TesseraSeal status as of v1.3 (2026-05-21):
 
-| Lang | PQID | PQHash | PQCrypt (suites `0x01`/`0x02`) | PQCrypt hybrid `0x06` |
+| Lang | TesseraID | TesseraHash | TesseraSeal (suites `0x01`/`0x02`) | TesseraSeal hybrid `0x06` |
 |------|------|--------|--------------------------------|------------------------|
-| Python      | [pqid/python/](pqid/python/)         | [pqhash/python/](pqhash/python/)         | [pqcrypt/python/](pqcrypt/python/)         | ✓ (v1.2) |
-| C           | [pqid/c/](pqid/c/)                   | [pqhash/c/](pqhash/c/)                   | [pqcrypt/c/](pqcrypt/c/) (OpenSSL 3.5+)    | — (v1.4) |
-| C++         | [pqid/cpp/](pqid/cpp/)               | [pqhash/cpp/](pqhash/cpp/)               | [pqcrypt/cpp/](pqcrypt/cpp/) (v1.1 wrapper)| — (v1.4) |
-| Go          | [pqid/go/](pqid/go/)                 | [pqhash/go/](pqhash/go/)                 | [pqcrypt/go/](pqcrypt/go/) (stdlib mlkem)  | ✓ (v1.3, PQCK-00029) |
-| Rust        | [pqid/rust/](pqid/rust/)             | [pqhash/rust/](pqhash/rust/)             | [pqcrypt/rust/](pqcrypt/rust/) (RustCrypto)| ✓ (v1.3, PQCK-00028) |
-| TypeScript  | [pqid/typescript/](pqid/typescript/) | [pqhash/typescript/](pqhash/typescript/) | [pqcrypt/typescript/](pqcrypt/typescript/) (@noble) | — (v1.4) |
-| Java        | [pqid/java/](pqid/java/)             | [pqhash/java/](pqhash/java/)             | [pqcrypt/java/](pqcrypt/java/) (SunJCE)    | — (v1.4) |
-| CPython ext | [pqid/cpython/](pqid/cpython/) (bundles PQHash) | [pqhash/cpython/](pqhash/cpython/) (placeholder) | [pqcrypt/cpython/](pqcrypt/cpython/) (v2 placeholder) | — (v1.4) |
+| Python      | [tessera-id/python/](tessera-id/python/)         | [tessera-hash/python/](tessera-hash/python/)         | [tessera-seal/python/](tessera-seal/python/)         | ✓ (v1.2) |
+| C           | [tessera-id/c/](tessera-id/c/)                   | [tessera-hash/c/](tessera-hash/c/)                   | [tessera-seal/c/](tessera-seal/c/) (OpenSSL 3.5+)    | — (v1.4) |
+| C++         | [tessera-id/cpp/](tessera-id/cpp/)               | [tessera-hash/cpp/](tessera-hash/cpp/)               | [tessera-seal/cpp/](tessera-seal/cpp/) (v1.1 wrapper)| — (v1.4) |
+| Go          | [tessera-id/go/](tessera-id/go/)                 | [tessera-hash/go/](tessera-hash/go/)                 | [tessera-seal/go/](tessera-seal/go/) (stdlib mlkem)  | ✓ (v1.3, TSEAL-00029) |
+| Rust        | [tessera-id/rust/](tessera-id/rust/)             | [tessera-hash/rust/](tessera-hash/rust/)             | [tessera-seal/rust/](tessera-seal/rust/) (RustCrypto)| ✓ (v1.3, TSEAL-00028) |
+| TypeScript  | [tessera-id/typescript/](tessera-id/typescript/) | [tessera-hash/typescript/](tessera-hash/typescript/) | [tessera-seal/typescript/](tessera-seal/typescript/) (@noble) | — (v1.4) |
+| Java        | [tessera-id/java/](tessera-id/java/)             | [tessera-hash/java/](tessera-hash/java/)             | [tessera-seal/java/](tessera-seal/java/) (SunJCE)    | — (v1.4) |
+| CPython ext | [tessera-id/cpython/](tessera-id/cpython/) (bundles TesseraHash) | [tessera-hash/cpython/](tessera-hash/cpython/) (placeholder) | [tessera-seal/cpython/](tessera-seal/cpython/) (v2 placeholder) | — (v1.4) |
 
 Per-language conformance runners live under [tools/conformance/](tools/conformance/).
 "✓" languages decrypt hybrid envelopes generated by any other "✓" language byte-identical;
@@ -104,13 +106,13 @@ bash tools/conformance/run.sh
 bash tools/conformance/run.sh python rust go
 
 # Skip a language (e.g., when its toolchain isn't installed locally):
-PQTK_CONFORMANCE_SKIP="cpython java" bash tools/conformance/run.sh
+TESSERA_CONFORMANCE_SKIP="cpython java" bash tools/conformance/run.sh
 
-# PQCrypt v1.3 alpha (Python + C + Go + Rust only):
-PQTK_CONFORMANCE_SKIP="cpp typescript java cpython" bash tools/conformance/run.sh
+# TesseraSeal v1.3 alpha (Python + C + Go + Rust only):
+TESSERA_CONFORMANCE_SKIP="cpp typescript java cpython" bash tools/conformance/run.sh
 ```
 
-Latest local run (2026-05-21, v1.3): **Python 265 / Rust 265 / Go 265 / C 256 PASS, 0 FAIL.**
+Latest local run (2026-05-21, v1.3): **Python 267 / Rust 267 / Go 267 / C 258 PASS, 0 FAIL.**
 Hybrid suite `0x06` vectors (9 records) are consumed by Python, Rust, and Go;
 C / TypeScript / Java / CPython ext skip them until their v1.4 hybrid ports land
 (harness skip wired in `tools/conformance/run.sh:hybrid_supported()`).
@@ -119,18 +121,18 @@ C / TypeScript / Java / CPython ext skip them until their v1.4 hybrid ports land
 
 See each project's CLAUDE.md for the canonical command per language:
 
-- [pqid/CLAUDE.md](pqid/CLAUDE.md)
-- [pqhash/CLAUDE.md](pqhash/CLAUDE.md)
-- [pqcrypt/CLAUDE.md](pqcrypt/CLAUDE.md)
+- [tessera-id/CLAUDE.md](tessera-id/CLAUDE.md)
+- [tessera-hash/CLAUDE.md](tessera-hash/CLAUDE.md)
+- [tessera-seal/CLAUDE.md](tessera-seal/CLAUDE.md)
 
 ## Contributing
 
 - Repo-wide conventions: [CLAUDE.md](CLAUDE.md)
 - Hard invariants that must not silently break: [AGENTS.md](AGENTS.md)
 - One project per PR. Cross-cutting (e.g., `common/` extraction) PRs explicitly noted in the title.
-- Branch naming: `<type>/<short-description>` (e.g., `feat/pqhash-keccak-vendoring`).
+- Branch naming: `<type>/<short-description>` (e.g., `feat/tessera-hash-keccak-vendoring`).
 - Commit messages: `<type>(<TICKET>) - <short description>` where TICKET names the project
-  (`PQID-NNNNN`, `PQHASH-NNNNN`, `PQCK-NNNNN` for PQCrypt, `PQTK-NNNNN` for umbrella/repo changes).
+  (`TID-NNNNN`, `THASH-NNNNN`, `TSEAL-NNNNN` for TesseraSeal, `TESS-NNNNN` for umbrella/repo changes).
 
 ## License
 

@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "pqid/latex/**"
+      - "tessera-id/latex/**"
       - ".github/workflows/latex.yml"
   pull_request:
     branches: [main]
     paths:
-      - "pqid/latex/**"
+      - "tessera-id/latex/**"
       - ".github/workflows/latex.yml"
 
 jobs:
@@ -27,10 +27,10 @@ jobs:
             texlive-science biber
       - name: Build whitepaper
         run: |
-          cd pqid/latex
+          cd tessera-id/latex
           make
       - name: Upload PDF artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pqid-whitepaper
-          path: pqid/latex/main.pdf
+          name: tessera-id-whitepaper
+          path: tessera-id/latex/main.pdf

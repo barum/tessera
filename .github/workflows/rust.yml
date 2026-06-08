@@ -24,10 +24,10 @@ jobs:
       - name: Build and run conformance runner
         run: |
           cargo build --release --bin conformance_runner
-          for f in pqid/conformance/vectors/*.json pqhash/conformance/vectors/*.json; do
+          for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
             ./target/release/conformance_runner "$f"
           done
-      - name: PQID fuzz smoke (60s)
+      - name: TesseraID fuzz smoke (60s)
         run: |
           cargo build --release --bin fuzz_decode
           timeout 60 ./target/release/fuzz_decode 5000000 || ec=$?

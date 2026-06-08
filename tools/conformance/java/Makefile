@@ -5,10 +5,10 @@ JAVA  ?= java
 
 REPO_ROOT  := ../../..
 COMMON_SRC := $(REPO_ROOT)/common/java
-PQID_SRC   := $(REPO_ROOT)/pqid/java/src/main/java/com/pqid
-PQHASH_SRC := $(REPO_ROOT)/pqhash/java/src/main/java/com/pqhash
+TESSERA_ID_SRC   := $(REPO_ROOT)/tessera-id/java/src/main/java/com/tessera/id
+TESSERA_HASH_SRC := $(REPO_ROOT)/tessera-hash/java/src/main/java/com/tessera/hash
 
-SRC_MAIN := src/main/java/com/pqtoolkit/conformance
+SRC_MAIN := src/main/java/com/tessera/conformance
 BUILD    := build
 
 .PHONY: build run clean
@@ -16,17 +16,17 @@ BUILD    := build
 build:
 	@mkdir -p $(BUILD)
 	$(JAVAC) -d $(BUILD) -implicit:none \
-		$(COMMON_SRC)/com/pqtoolkit/common/Keccak.java \
-		$(PQID_SRC)/Pqid.java \
-		$(PQID_SRC)/Codec.java \
-		$(PQID_SRC)/StandardGenerator.java \
-		$(PQID_SRC)/HLCGenerator.java \
-		$(PQHASH_SRC)/PQHash.java \
-		$(PQHASH_SRC)/PQHashCodec.java \
+		$(COMMON_SRC)/com/tessera/common/Keccak.java \
+		$(TESSERA_ID_SRC)/TesseraId.java \
+		$(TESSERA_ID_SRC)/Codec.java \
+		$(TESSERA_ID_SRC)/StandardGenerator.java \
+		$(TESSERA_ID_SRC)/HLCGenerator.java \
+		$(TESSERA_HASH_SRC)/TesseraHash.java \
+		$(TESSERA_HASH_SRC)/TesseraHashCodec.java \
 		$(SRC_MAIN)/ConformanceRunner.java
 
 run: build
-	$(JAVA) -cp $(BUILD) com.pqtoolkit.conformance.ConformanceRunner $(ARGS)
+	$(JAVA) -cp $(BUILD) com.tessera.conformance.ConformanceRunner $(ARGS)
 
 clean:
 	rm -rf $(BUILD)

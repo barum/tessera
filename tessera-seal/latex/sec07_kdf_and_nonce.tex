@@ -1,0 +1,36 @@
+\section{Key Derivation and Deterministic Nonce}
+\label{sec:kdf-nonce}
+
+\subsection{Key schedule}
+
+Let \code{ss\_session} be the 32-byte session shared secret. For suites \code{0x01}/\code{0x02} it is \code{ss\_mlkem} (the value returned by ML-KEM-1024 \code{Decaps}, or \code{Encaps} on the sender side); for suite \code{0x06} it is the SHAKE-256 combiner output defined in \cref{sec:hybrid}. The downstream schedule is identical:
+% frozen v1 wire tags — not rebrandable names: the four "pqcrypt v1 ..." labels below
+\begin{align*}
+\mathrm{salt} &= \mathrm{SHAKE256}(\text{``pqcrypt v1 header''} \,\|\, \mathrm{header\_bytes}[0\!:\!16],\ 32) \\
+\mathrm{prk}  &= \mathrm{HKDF\text{-}Extract}(\mathrm{salt},\ \texttt{ss\_session}) \\
+K_{\mathrm{aead}}   &= \mathrm{HKDF\text{-}Expand}(\mathrm{prk},\ \text{``pqcrypt v1 aead k''},\ 32) \\
+\mathrm{NONCE}      &= \mathrm{HKDF\text{-}Expand}(\mathrm{prk},\ \text{``pqcrypt v1 aead n''},\ 12) \\
+K_{\mathrm{commit}} &= \mathrm{HKDF\text{-}Expand}(\mathrm{prk},\ \text{``pqcrypt v1 commit''},\ 32)
+\end{align*}
+The PRF is HMAC-SHA3-256 \citep{fips202}. The same label strings are used for every suite --- the suite byte enters the schedule via the salt (which binds the full header, including the suite byte) rather than via separate labels, so an attacker who tries to re-tag a \code{0x01} envelope as \code{0x06} (or vice versa) gets a different \code{salt}, a different \code{prk}, and AEAD verification failure.
+
+\begin{calloutwarning}[Frozen v1 wire tags]
+The literal domain-separation labels \texttt{``pqcrypt v1 header''}, \texttt{``pqcrypt v1 aead k''}, \texttt{``pqcrypt v1 aead n''}, \texttt{``pqcrypt v1 commit''} (and, for the hybrid suite, \texttt{``pqcrypt v1 hybrid combiner''} of \cref{sec:hybrid}, plus the \texttt{``pqcrypt v1 timing pad''} of \cref{sec:failure-modes}) are \textbf{frozen v1 wire constants}: they are byte strings hashed \emph{into} every envelope. They are deliberately \emph{not} rebrandable product names and are preserved verbatim --- including the legacy token \texttt{pqcrypt} --- across the rename to \pqcrypt{}. Changing any of them would break every existing envelope and conformance vector. They are the only place the token \texttt{pqcrypt} legitimately remains.
+\end{calloutwarning}
+
+\subsection{Salt binding}
+
+The salt mixes a 16-byte project-and-version constant with the full envelope header (timestamp, variant, suite, counter, KEM CT length, AD length). Any header bit-flip therefore invalidates $K_{\mathrm{aead}}$ before the AEAD tag is even checked, providing a second line of defense against header tampering. The constant prevents cross-protocol reuse of the KDF.
+
+\subsection{Why deterministic nonce}
+
+Each ML-KEM-1024 encapsulation produces a fresh ephemeral shared secret, so $K_{\mathrm{aead}}$ is unique per envelope. For hybrid suite \code{0x06} (\cref{sec:hybrid}), the X25519 ephemeral keypair is also freshly generated per envelope and the SHAKE-256 combiner produces a fresh $K_{\mathrm{session}}$ regardless of which component KEM is broken. Deterministic derivation of \code{NONCE} from \code{prk} therefore cannot cause nonce reuse under the same key on any suite. This:
+\begin{itemize}
+\item Removes the encrypt-side CSPRNG dependency beyond ML-KEM's internal \code{Encaps} randomness.
+\item Matches PASETO v4.local's philosophy \citep{paseto-v4}: deterministic derivation under a per-message fresh key is structurally safer than per-message random nonce generation.
+\item Eliminates a class of misuse: an implementer who accidentally reuses a CSPRNG seed cannot create a nonce-collision oracle, because the seed cannot survive ML-KEM \code{Encaps} \citep{fips203}.
+\end{itemize}
+
+\subsection{Multi-user / multi-key bounds}
+
+The single-key birthday bound on AES-256-GCM is $2^{64}$ blocks; \pqcrypt{}'s plaintext cap of $2^{32}$ bytes per envelope keeps each invocation well below the bound. The multi-user attack analysis of Bose, Hoang, and Tessaro \citep{bose2018muser,hoang2024gcmsst} concerns adversaries who attack many keys simultaneously; \pqcrypt{}'s per-envelope fresh $K_{\mathrm{aead}}$ removes the long-key-lifetime axis of that attack class.

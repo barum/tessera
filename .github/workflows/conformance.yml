@@ -7,12 +7,13 @@ on:
     branches: [main]
 
 # Cross-language conformance gate: builds every implementation on a single
-# runner and runs the harness end-to-end against vectors from pqid/, pqhash/,
-# and pqcrypt/. The blocking gate is the alpha step below (python + c + go +
-# rust, which have pqcrypt runners); the full-8 step is informational
-# (continue-on-error) because cpp/typescript/java/cpython have no pqcrypt
-# runner yet and run pqid + pqhash only. The per-language workflows
-# (python.yml, c.yml, …) cover per-OS and per-toolchain variants independently.
+# runner and runs the harness end-to-end against vectors from tessera-id/,
+# tessera-hash/, and tessera-seal/. The blocking gate is the alpha step below
+# (python + c + go + rust, which have TesseraSeal runners); the full-8 step is
+# informational (continue-on-error) because cpp/typescript/java/cpython have no
+# TesseraSeal runner yet and run TesseraID + TesseraHash only. The per-language
+# workflows (python.yml, c.yml, …) cover per-OS and per-toolchain variants
+# independently.
 jobs:
   cross-language:
     runs-on: ubuntu-latest
@@ -22,10 +23,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install Python deps (pqcrypt requires kyber-py + cryptography)
+      - name: Install Python deps (TesseraSeal requires kyber-py + cryptography)
         run: |
           python3 -m pip install --upgrade pip setuptools
-          pip install -r pqcrypt/python/requirements.txt
+          pip install -r tessera-seal/python/requirements.txt
 
       - uses: actions/setup-go@v5
         with:
@@ -45,8 +46,8 @@ jobs:
       - name: Install OpenSSL 3.5+ (Ubuntu)
         run: sudo apt-get update && sudo apt-get install -y libssl-dev
 
-      - name: pqcrypt v1.2 alpha conformance (Python + C + Go + Rust)
-        run: PQTK_CONFORMANCE_SKIP="cpp typescript java cpython" bash tools/conformance/run.sh
+      - name: TesseraSeal v1.2 alpha conformance (Python + C + Go + Rust)
+        run: TESSERA_CONFORMANCE_SKIP="cpp typescript java cpython" bash tools/conformance/run.sh
 
       - name: Full cross-language conformance (all 8 ports)
         run: bash tools/conformance/run.sh

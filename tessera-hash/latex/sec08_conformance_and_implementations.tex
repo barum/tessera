@@ -1,0 +1,75 @@
+\section{Conformance and Reference Implementations}
+\label{sec:conformance}
+
+\tesserahash{} ships byte-identical reference implementations in eight languages, all consumed by the same cross-language KAT harness used by \tesseraid{} and \tesseraseal{}. The wire format is the contract; the per-language code is a reference.
+
+\subsection{KAT vector files}
+
+\texttt{tessera-hash/conformance/vectors/}:
+
+\begin{itemize}
+\item \texttt{tessera\_hash\_decode.json} --- 73-byte hex $\to$ \{variant, timestamp\_ms, counter, tail\_hex\}.
+\item \texttt{tessera\_hash\_hash\_only.json} --- known content $\to$ known 64-byte SHAKE-256 tail.
+\item \texttt{tessera\_hash\_encode\_b64.json}, \texttt{tessera\_hash\_decode\_b64.json} --- 98-char Base64URL round-trip.
+\item \texttt{tessera\_hash\_encode\_crockford.json}, \texttt{tessera\_hash\_decode\_crockford.json} --- 117-char Crockford round-trip.
+\item \texttt{tessera\_hash\_verify.json} --- positive (matching content) and negative (one-bit content flip) cases for \texttt{verify(raw, content)}.
+\item \texttt{tessera\_hash\_invalid.json} --- malformed inputs: wrong length, invalid variant byte (incl.\ cross-project \code{0x01}/\code{0x02}/\code{0x04}), non-canonical Base64URL/Crockford characters, padding-bit anomalies.
+\end{itemize}
+
+Vectors are generated against the Python reference (\texttt{tessera-hash/python/tessera\_hash.py}) by \texttt{tessera-hash/conformance/scripts/generate.py}; the generator is deterministic given fixed inputs, and re-running it on the same code MUST produce identical JSON.
+
+\subsection{Cross-language runner}
+
+\texttt{tools/conformance/run.sh} discovers per-language runners under \texttt{tools/conformance/\{python,c,cpp,go,rust,typescript,java,cpython\}/} and executes each against every KAT file under \texttt{tessera-id/conformance/vectors/}, \texttt{tessera-hash/conformance/vectors/}, and \texttt{tessera-seal/conformance/vectors/}. Exit code 0 means every runner passed every vector. The harness is a required check on \texttt{main} (\texttt{.github/workflows/conformance.yml}).
+
+\begin{lstlisting}[language=bash]
+bash tools/conformance/run.sh
+TESSERA_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh   # quick loop
+\end{lstlisting}
+
+\subsection{Reference implementations}
+
+\begin{center}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Language} & \textbf{Status} & \textbf{SHAKE-256 source}                          & \textbf{Notes} \\
+\midrule
+Python      & complete & stdlib \texttt{hashlib.shake\_256}            & Readable reference; lives at \texttt{tessera-hash/python/tessera\_hash.py} \\
+C           & complete & vendored \texttt{common/c/keccak.\{h,c\}}     & Canonical ABI; \texttt{tessera\_hash.h} pins offsets and error codes \\
+C++         & complete & wraps the C library                           & Header-only \texttt{tessera\_hash.hpp} \\
+Go          & complete & \texttt{golang.org/x/crypto/sha3}             & \texttt{tessera\_hash.go} \\
+Rust        & complete & RustCrypto \texttt{sha3} crate                & \texttt{lib.rs}; const-time docs from RustCrypto \\
+TypeScript  & complete & \texttt{@noble/hashes}                        & \texttt{tessera\_hash.ts}; browser + Node \\
+Java        & complete & vendored \texttt{common/java/com/tessera/common/Keccak.java} & Shared with \tesseraseal{} (Keccak only) \\
+CPython ext & planned  & wraps vendored C Keccak                       & Mirrors the Python API; v1.x backlog \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Tests that must keep passing in every language}
+\label{sec:conformance:tests}
+
+\begin{itemize}
+\item SHAKE-256 KAT vectors (canonical Keccak test vectors): hash of known inputs produces known outputs.
+\item Hash $\to$ Base64URL round-trip: exact 98-character length, no padding.
+\item Hash $\to$ Crockford Base32 round-trip: exact 117-character length, confusable folding on decode.
+\item Invalid-variant decode rejection: \code{0x00}, \code{0x01}, \code{0x02}, \code{0x04}, \code{0x05}--\code{0xFF} all rejected with \code{UNKNOWN\_VARIANT}.
+\item Cross-language conformance: a \tesserahash{} produced in one language MUST decode byte-identical in every other.
+\item Padding-bit guards: Base64URL final-character low-4-bits zero; Crockford final-character low-bit zero.
+\item Counter monotonicity within a millisecond.
+\end{itemize}
+
+\subsection{Benchmark methodology and reference numbers}
+\label{sec:conformance:bench}
+
+Each language's benchmark file lives in \texttt{tessera-hash/benchmarks/}. The harness measures four operations:
+
+\begin{enumerate}
+\item \texttt{hash\_only(content)} on a fixed 1 KiB content buffer.
+\item \texttt{Generator.new(content)} including header construction.
+\item \texttt{decode(raw)} on a fixed 73-byte input.
+\item \texttt{verify(raw, content)} on matching content.
+\end{enumerate}
+
+TesseraHash throughput is dominated by SHAKE-256 sponge cost; the wire-format work (parsing, counter advance, Base64URL/Crockford coding) is negligible relative to Keccak. Reference numbers from the alpha languages on Apple M-class silicon (release builds) place the \texttt{hash\_only(1\,KiB)} path in the low millions of ops/sec range for C, Go, and Rust; Python is bound by interpreter dispatch overhead at the low hundreds-of-thousands range; live numbers are in the per-language bench files and refreshed on each release.

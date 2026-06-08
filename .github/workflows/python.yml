@@ -19,22 +19,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Run PQID Python tests
+      - name: Run TesseraID Python tests
         run: |
-          cd pqid/python
-          python3 test_pqid.py
-      - name: Run PQHash Python tests
+          cd tessera-id/python
+          python3 test_tessera_id.py
+      - name: Run TesseraHash Python tests
         run: |
-          cd pqhash/python
-          python3 test_pqhash.py
+          cd tessera-hash/python
+          python3 test_tessera_hash.py
       - name: Run Python conformance runner against all vectors
         run: |
-          for f in pqid/conformance/vectors/*.json pqhash/conformance/vectors/*.json; do
+          for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
             python3 tools/conformance/python/python_runner.py "$f"
           done
-      - name: PQID fuzz smoke (60s)
+      - name: TesseraID fuzz smoke (60s)
         run: |
-          cd pqid/python
+          cd tessera-id/python
           timeout 60 python3 fuzz/fuzz_decode.py 1000000 || ec=$?
           if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
             exit "$ec"

@@ -1,7 +1,7 @@
 \section{Polyglot Discipline}
 \label{sec:polyglot}
 
-Every \pqtoolkit{} project ships byte-identical reference implementations in eight languages, all consumed by the same cross-language KAT harness. This section documents the discipline that makes that work.
+Every \tessera{} project ships byte-identical reference implementations in eight languages, all consumed by the same cross-language KAT harness. This section documents the discipline that makes that work.
 
 \subsection{The authority order}
 
@@ -9,8 +9,8 @@ When any two sources disagree, conflicts are resolved in the following order:
 
 \begin{enumerate}
 \item The project's whitepaper LaTeX (this document for cross-cutting concerns; the per-project document for project-specific normative content).
-\item The project's Python reference: \texttt{pqid/python/pqid.py}, \texttt{pqhash/python/pqhash.py}, \texttt{pqcrypt/python/pqcrypt.py}.
-\item The project's canonical C ABI header: \texttt{pqid/c/pqid.h}, \texttt{pqhash/c/pqhash.h}, \texttt{pqcrypt/c/pqcrypt.h}.
+\item The project's Python reference: \texttt{tessera-id/python/tessera\_id.py}, \texttt{tessera-hash/python/tessera\_hash.py}, \texttt{tessera-seal/python/tessera\_seal.py}.
+\item The project's canonical C ABI header: \texttt{tessera-id/c/tessera\_id.h}, \texttt{tessera-hash/c/tessera\_hash.h}, \texttt{tessera-seal/c/tessera\_seal.h}.
 \item Every other language port.
 \end{enumerate}
 
@@ -27,7 +27,7 @@ Every project ships reference implementations in:
 \textbf{Language} & \textbf{Role} & \textbf{Why} \\
 \midrule
 Python      & Readable canonical reference & The spec is the same shape as the Python; the Python is the test. \\
-C           & Canonical ABI                 & Offsets, error codes, function signatures pinned in \texttt{pqcrypt.h} / \texttt{pqid.h} / \texttt{pqhash.h}. \\
+C           & Canonical ABI                 & Offsets, error codes, function signatures pinned in \texttt{tessera\_seal.h} / \texttt{tessera\_id.h} / \texttt{tessera\_hash.h}. \\
 C++         & C-library wrapper             & RAII surface over C; no normative content of its own. \\
 Go          & Stdlib-heavy port             & Tests that the spec is implementable using only stdlib + audited deps. \\
 Rust        & Strongest constant-time toolchain & \code{\#![forbid(unsafe\_code)]}; tests the safety story. \\
@@ -38,11 +38,11 @@ CPython extension & Optimized Python      & Mirrors the Python API one-to-one; p
 \end{tabular}
 \end{center}
 
-For \pqcrypt{} specifically (post-quantum, more moving parts than the other two projects), the alpha language set during v1.x development was Python + C + Go + Rust --- the minimum that exercises a readable reference, a canonical ABI, a stdlib-heavy ecosystem, and the strongest constant-time toolchain. C++/TypeScript/Java/CPython ext joined in v1.1.
+For \tesseraseal{} specifically (post-quantum, more moving parts than the other two projects), the alpha language set during v1.x development was Python + C + Go + Rust --- the minimum that exercises a readable reference, a canonical ABI, a stdlib-heavy ecosystem, and the strongest constant-time toolchain. C++/TypeScript/Java/CPython ext joined in v1.1.
 
 \subsection{The cross-language KAT harness}
 
-\texttt{tools/conformance/run.sh} is the single entry point. It discovers per-language runners under \texttt{tools/conformance/python/}, \texttt{tools/conformance/c/}, etc., builds each one if needed, and runs each against every KAT file in \texttt{pqid/conformance/vectors/}, \texttt{pqhash/conformance/vectors/}, and \texttt{pqcrypt/conformance/vectors/}.
+\texttt{tools/conformance/run.sh} is the single entry point. It discovers per-language runners under \texttt{tools/conformance/python/}, \texttt{tools/conformance/c/}, etc., builds each one if needed, and runs each against every KAT file in \texttt{tessera-id/conformance/vectors/}, \texttt{tessera-hash/conformance/vectors/}, and \texttt{tessera-seal/conformance/vectors/}.
 
 \begin{lstlisting}[language=bash]
 # Full run: all eight languages times all three projects
@@ -52,17 +52,17 @@ bash tools/conformance/run.sh
 bash tools/conformance/run.sh python rust go
 
 # Skip languages whose toolchain isn't available locally
-PQTK_CONFORMANCE_SKIP="cpython java" bash tools/conformance/run.sh
+TESSERA_CONFORMANCE_SKIP="cpython java" bash tools/conformance/run.sh
 
-# PQCrypt v1.x alpha quick loop
-PQTK_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh
+# TesseraSeal v1.x alpha quick loop
+TESSERA_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh
 \end{lstlisting}
 
 \subsection{Branch protection}
 
 \texttt{.github/workflows/conformance.yml} runs the harness on every PR against \texttt{main}. Red harness $\Rightarrow$ no merge. Per-language workflows (\texttt{python.yml}, \texttt{c.yml}, \ldots) cover per-OS and per-toolchain variants independently; the cross-language harness is the only gate that catches polyglot drift.
 
-PQCrypt has an additional per-project workflow (\texttt{pqcrypt.yml}, added in PQCK-00023) that runs the PQCrypt-only matrix across Ubuntu and macOS for the alpha languages plus the LaTeX whitepaper build.
+TesseraSeal has an additional per-project workflow (\texttt{tessera\_seal.yml}, added in TSEAL-00023) that runs the TesseraSeal-only matrix across Ubuntu and macOS for the alpha languages plus the LaTeX whitepaper build.
 
 \subsection{What a spec change looks like}
 

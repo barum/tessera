@@ -1,14 +1,15 @@
-# Cargo workspace for the pqtoolkit monorepo.
+# Cargo workspace for the Tessera monorepo.
 #
-# Each project under pqid/ and pqhash/ is an independent crate;
-# tools/conformance/rust/ is a binary that depends on both. The workspace
-# unifies builds so a single `cargo build` from the root compiles everything.
+# Each project (tessera-id/, tessera-hash/, tessera-seal/) is an independent
+# crate; tools/conformance/rust/ is a binary that depends on all three. The
+# workspace unifies builds so a single `cargo build` from the root compiles
+# everything.
 
 [workspace]
 resolver = "3"
 members = [
-    "pqid/rust",
-    "pqcrypt/rust",
-    "pqhash/rust",
+    "tessera-id/rust",
+    "tessera-seal/rust",
+    "tessera-hash/rust",
     "tools/conformance/rust",
 ]
