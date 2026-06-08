@@ -1,0 +1,31 @@
+\section{Wire Format (Normative)}
+\label{sec:wire-format}
+
+Big-endian throughout. \textbf{Total length: 73 bytes. Fixed.}
+
+\begin{lstlisting}[language=Pseudocode]
+Offset  Size  Field
+------  ----  ---------------------------------------------------------
+0       6     TS         (timestamp_ms, 48-bit big-endian unsigned)
+6       1     VARIANT    (= 0x03 for PQHash v1)
+7       2     COUNTER    (16-bit big-endian unsigned, monotonic per ms)
+9       64    TAIL       (SHAKE-256(content, 64 bytes))
+\end{lstlisting}
+
+\subsection{Header (offsets 0--8)}
+
+The 9-byte header is \emph{layout-identical} to \pqid{}'s header (\code{TS(6) || VARIANT(1) || CTR(2)}). The same 9-byte parser used in \pqid{} works on a \pqhash{} for the timestamp, variant byte, and counter fields without modification. A shared C header at \texttt{common/c/pqtk\_header.h} pins those offsets across all three \pqtoolkit{} projects (\pqid{}, \pqhash{}, \pqcrypt{}).
+
+\textbf{Timestamp.} 48-bit unsigned millisecond Unix timestamp. The range $[2017\text{-}10\text{-}09\text{T}10\text{:}33\text{:}20\text{Z},\ 10889\text{-}08\text{-}02]$ covers the next several centuries of identifier generation. The constant \code{MIN\_TIMESTAMP\_MS = 1\_700\_000\_000\_000} (matching the analogous PQID constant) acts as a sanity-check lower bound: a generator that produces a timestamp before that gate is almost certainly running with a misconfigured clock.
+
+\textbf{Variant byte.} \code{0x03} owns this project. Every other byte is rejected at decode (\code{PQHASH\_E\_UNKNOWN\_VAR}). The reserved-future range is shared monorepo-wide: \pqid{} owns \code{0x01}/\code{0x02}, \pqcrypt{} owns \code{0x04}; \code{0x00} and \code{0xFF} are permanently reserved; \code{0x05}--\code{0xFE} are reserved-future. Cross-project rejection is gated by the \texttt{invalid.json} KAT files in every project's \texttt{conformance/vectors/} directory.
+
+\textbf{Counter.} 16-bit unsigned, big-endian. The generator increments the counter monotonically within a millisecond; on a new millisecond it resets to 0. Counter overflow (more than $2^{16}$ \pqhash{}es generated in the same millisecond by a single generator) bumps the timestamp by 1 and resets the counter --- the same approach taken by \pqid{}'s Standard variant.
+
+\subsection{Tail (offsets 9--72)}
+
+64 bytes of SHAKE-256 \citep{fips202} output computed deterministically from the input content. \pqhash{} uses SHAKE-256 in its standard arbitrary-output-length mode with a fixed output length of 64 bytes (512 bits). The choice of SHAKE-256 over fixed-output SHA3-512 is deliberate: the same primitive is vendored in \texttt{common/c/keccak.\{h,c\}} for use by \pqcrypt{}'s HKDF-SHA3-256 construction, so the C, C++, and Java implementations of all three projects share a single audited Keccak source.
+
+\subsection{Length and identifier-equality semantics}
+
+Two \pqhash{}es are \emph{content-equivalent} iff their 64-byte tails are identical. They are \emph{wire-equal} iff all 73 bytes are identical. Code that deduplicates content should compare bytes \code{9..73}; code that needs a generator-provenance view (e.g., ``which generator produced this identifier first?'') compares the full 73 bytes. The encodings (\cref{sec:encodings}) preserve both byte ranges.

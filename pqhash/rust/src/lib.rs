@@ -4,6 +4,8 @@
 //! Variant byte 0x03. Sibling to PQID, NOT a hash function. See spec
 //! sec03 / sec:pqhash.
 
+#![forbid(unsafe_code)]
+
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};

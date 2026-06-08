@@ -1,0 +1,42 @@
+\section{SHAKE-256 Binding}
+\label{sec:shake256}
+
+\pqhash{} invokes SHAKE-256 \citep{fips202} unchanged from FIPS 202: \code{SHAKE256(content, 64 bytes)} produces 512 bits of pseudorandom output deterministic in the input. There is no salt, no domain separator, no length-prefix wrapper, and no compression layer above SHAKE-256 itself. Two callers hashing identical content produce identical 64-byte tails.
+
+\subsection{Why SHAKE-256 over SHA3-512, SHA-512, BLAKE3, or Blake2b}
+
+\begin{itemize}
+  \item \textbf{Vs SHA3-512.} Both are Keccak-f[1600] sponge constructions with a 1024-bit output and 256-bit collision resistance. SHA3-512 \citep{fips202} pads with the SHA-3 domain separator \code{01}; SHAKE-256 pads with \code{1111}. We chose SHAKE-256 because (a) the SHAKE family's variable-output API is the one we want for any future PQHash variant that adjusts tail size, and (b) the rest of the \pqtoolkit{} monorepo uses SHAKE-256 (in \pqcrypt{}'s HKDF salt construction and hybrid combiner) and we already vendor and audit it once.
+  \item \textbf{Vs SHA-512.} SHA-512 is a Merkle--Damg{\aa}rd construction susceptible to length-extension attacks. \pqhash{} is not used as a MAC, so length extension is not directly exploitable, but Keccak-based primitives are the consensus PQ-era choice and we have no reason to swim against the standardization current \citep{fips202}.
+  \item \textbf{Vs BLAKE3 or Blake2b.} BLAKE3 and Blake2b are faster on x86 and ARM than SHAKE-256. We accept the speed cost (\cref{sec:conformance:bench}) in exchange for: (i) NIST-standardized primitive, (ii) zero new vendored crypto code (Keccak is already shared with \pqcrypt{}), (iii) FIPS 202 alignment for FIPS-relevant deployments. PQHash is not on the latency-critical path of most use cases; throughput numbers in \cref{sec:conformance:bench} are sufficient.
+\end{itemize}
+
+\subsection{Implementation sources}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Language} & \textbf{SHAKE-256 source}                                    & \textbf{Constant-time / audit} \\
+\midrule
+Python      & stdlib \texttt{hashlib.shake\_256}                              & CPython hashlib backed by OpenSSL \\
+C           & vendored Keccak under \texttt{common/c/keccak.\{h,c\}}          & shared with \pqcrypt{}; reviewed in pqcrypt v1.0 \\
+C++         & wraps the C Keccak source                                       & inherits C audit \\
+Go          & stdlib \texttt{golang.org/x/crypto/sha3} (\code{sha3.NewShake256}) & Go stdlib reviewed \\
+Rust        & RustCrypto \texttt{sha3} crate (\code{Shake256})                 & RustCrypto reviewed \\
+TypeScript  & \texttt{@noble/hashes} \texttt{shake\_256}                       & const-time documented \\
+Java        & vendored Keccak under \texttt{common/java/com/pqtoolkit/common/} & shared with \pqcrypt{}; reviewed \\
+CPython ext & wraps the vendored C Keccak                                     & inherits C audit \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The cross-project sharing of Keccak under \texttt{common/} is a deliberate scope decision: \pqhash{} alone could vendor its own copy, but \pqcrypt{} requires HMAC-SHA3-256 and HKDF-SHA3-256 for its KDF schedule, so the second consumer makes the \texttt{common/} extraction load-bearing.
+
+\subsection{What about salts?}
+
+Salts would defeat content-equivalence. A salted PQHash would no longer be a content identifier; it would be a randomized commitment. If your use case is ``commit to content without revealing it,'' you want a keyed MAC (HMAC-SHAKE-256, or KMAC256), not \pqhash{}. \pqhash{} is the unsalted content hash by design.
+
+\subsection{Variable-length input}
+
+SHAKE-256 takes arbitrary-length input and \pqhash{} passes it through unchanged. Content larger than memory should be streamed into the Keccak sponge using each language's incremental API (\texttt{shake.update(chunk)}); the cumulative output is identical to a single-shot hash of the concatenation. The Python reference \texttt{hash\_only(content)} accepts \texttt{bytes}, \texttt{bytearray}, or \texttt{memoryview}; the C reference takes a \texttt{const uint8\_t *} content pointer and a \texttt{size\_t} length and zero-copies into the sponge.

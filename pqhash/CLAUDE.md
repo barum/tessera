@@ -8,11 +8,11 @@ PQHash is a **SHAKE-256-based content hash** format with canonical Base64URL and
 
 Authoritative sources, in order:
 
-1. The whitepaper LaTeX under [latex/](latex/) (scaffold — content pending).
+1. The whitepaper LaTeX under [latex/](latex/) — 11 complete sections (`sec01`..`sec11`) plus the built `PQHash_Whitepaper.pdf` (version 1.0, 2026-05-21). **Normative.**
 2. The Python reference at [python/pqhash.py](python/pqhash.py) — the readable canonical source.
 3. The C reference at [c/pqhash.h](c/pqhash.h) and [c/pqhash.c](c/pqhash.c) — defines the C API shape.
 
-When sources disagree, the (eventual) whitepaper wins, then Python, then C.
+When sources disagree, the whitepaper wins, then Python, then C.
 
 ## Hard invariants
 
@@ -23,7 +23,7 @@ These are checked by tests in every language. Breaking them in one implementatio
 - **Canonical encodings**: Base64URL (no padding) and Crockford Base32 (case-insensitive, `I/L→1`, `O→0` confusables accepted on decode). Encoded lengths are fixed per variant and must match conformance vectors exactly.
 - **Variant discipline**: any unknown variant byte is a decode error (the equivalent of `PQHASH_E_UNKNOWN_VARIANT`).
 
-If a change is meant to alter any of the above, it is a spec change: update [latex/](latex/) once content lands, the [docs/](docs/) sources, AND every language implementation in lockstep.
+If a change is meant to alter any of the above, it is a spec change: update [latex/](latex/) and rebuild the whitepaper, the [docs/](docs/) sources, AND every language implementation in lockstep.
 
 ## Files to keep aligned
 
@@ -65,10 +65,10 @@ If you add a new test, mirror it to the other languages.
 
 ## Whitepaper
 
-The LaTeX source under [latex/](latex/) is currently a scaffold. When PQHash gets a real spec write-up, it follows the same dual-source pattern as PQID (LaTeX + JS DOCX pipeline).
+The LaTeX source under [latex/](latex/) is a complete whitepaper — 11 sections (`sec01_tldr` through `sec11_appendices`) built to `PQHash_Whitepaper.pdf` (version 1.0, 2026-05-21), following the same structure as the PQID and PQCrypt whitepapers. Build via `cd pqhash/latex && make`.
 
 ## Scope discipline
 
-- Do not introduce a new variant, new digest length, or new encoding without first updating the (future) whitepaper and aligning every language.
+- Do not introduce a new variant, new digest length, or new encoding without first updating the whitepaper and aligning every language.
 - Do not duplicate Keccak/SHAKE-256 code — always source it from [../common/](../common/).
 - Optimization PRs that only touch one language are fine, **as long as KAT vectors and conformance vectors still pass byte-identical**.

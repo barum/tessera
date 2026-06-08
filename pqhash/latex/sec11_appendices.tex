@@ -1,0 +1,117 @@
+\appendix
+
+\section{Test Vectors}
+\label{sec:appendix-vectors}
+
+\subsection*{Vector 1: empty content, deterministic header}
+
+\begin{itemize}
+\item \textbf{Content:} \texttt{b""} (zero bytes)
+\item \textbf{Timestamp (ms):} \texttt{1700000000000}
+\item \textbf{Counter:} \texttt{0}
+\item \textbf{Tail (SHAKE-256(\texttt{b""}, 64 bytes)):} the canonical FIPS 202 \citep{fips202} SHAKE-256 output for the empty string, truncated to 64 bytes.
+\end{itemize}
+
+The 73-byte binary is \texttt{TS(6, big-endian) || 0x03 || 0x00 0x00 || tail(64)}. The exact hex bytes for this vector live in \texttt{pqhash/conformance/vectors/pqhash\_hash\_only.json}.
+
+\subsection*{Vector 2: short content}
+
+\begin{itemize}
+\item \textbf{Content:} \texttt{b"abc"}
+\item \textbf{Tail:} SHAKE-256(\texttt{b"abc"}, 64 bytes), canonical FIPS 202 output.
+\end{itemize}
+
+Used by the round-trip tests in \texttt{pqhash\_verify.json}: a one-bit flip anywhere in the content changes the tail in many bit positions (avalanche property of Keccak-f[1600]), so \texttt{verify(raw, modified\_content)} returns \texttt{false}.
+
+\section{Quick Reference}
+\label{sec:appendix-quickref}
+
+\begin{center}
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Property} & \textbf{Value} \\
+\midrule
+Wire size                 & 73 bytes \\
+Header size               & 9 bytes \\
+Tail size                 & 64 bytes (512 bits) \\
+Tail primitive            & SHAKE-256 (FIPS 202) \\
+Timestamp field           & 48-bit big-endian ms, offset 0 \\
+Variant byte              & \code{0x03} at offset 6 \\
+Counter field             & 16-bit big-endian, offset 7 \\
+Encoding length: Base64URL & 98 chars, no padding \\
+Encoding length: Crockford & 117 chars, case-insensitive on decode \\
+Classical collision bound & $2^{256}$ \\
+Quantum collision bound (BHT) & $\sim 2^{170}$ \\
+Classical second-preimage & $2^{512}$ \\
+Quantum second-preimage (Grover) & $2^{256}$ \\
+Min sanity timestamp      & 1{,}700{,}000{,}000{,}000 ms (PQID-parity) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Glossary}
+\label{sec:appendix-glossary}
+
+\textbf{BHT (Brassard--H{\o}yer--Tapp).} Quantum collision-finding algorithm \citep{bht1998}. Costs $\sim 2^{n/3}$ operations for an $n$-bit space.
+
+\textbf{Birthday bound.} Classically $\sqrt{\pi/2} \cdot 2^{n/2}$ generations before an expected collision in an $n$-bit random space.
+
+\textbf{Content identifier.} An identifier derived deterministically from content (\pqhash{}, IPFS CID, Git commit hash) as opposed to a random unique identifier (\pqid{}, UUIDv4, ULID).
+
+\textbf{Crockford Base32.} Douglas Crockford's Base32 alphabet (\code{0--9} then \code{A--Z} minus \code{I/L/O/U}) \citep{crockford}. Case-insensitive on decode; ASCII-sort-preserving.
+
+\textbf{Grover's algorithm.} Quantum search reducing $O(N)$ to $O(\sqrt{N})$ \citep{grover1996}.
+
+\textbf{HMAC.} Keyed hash construction \citep{rfc2104}. \pqhash{} is not an HMAC; see Section~\ref{sec:security}.
+
+\textbf{KAT (Known-Answer Test).} A test vector pinning an exact expected output for a given input. \pqhash{}'s KAT vectors live in \texttt{conformance/vectors/}.
+
+\textbf{Keccak-f[1600].} The permutation underlying SHA-3 and SHAKE \citep{fips202}.
+
+\textbf{SHAKE-256.} The variable-output-length member of the SHA-3 family \citep{fips202}, with a 256-bit security level. PQHash uses it with a fixed 64-byte (512-bit) output.
+
+\textbf{Variant byte.} Byte at offset 6 of a \pqhash{}. Always \code{0x03} for v1.
+
+\section{The \texorpdfstring{\pqtoolkit{}}{pqtoolkit} Monorepo}
+\label{sec:appendix-monorepo}
+
+For the cross-project relationship (variant-byte allocation across \pqid{}/\pqhash{}/\pqcrypt{}, the canonical \pqid{}-as-AD and \pqhash{}-as-AD patterns, shared \texttt{common/} library code, shared conformance harness), see Section~\ref{sec:monorepo}. The summary of cross-project byte allocations:
+
+\begin{center}
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Byte} & \textbf{Owner} & \textbf{Meaning} & \textbf{Status} \\
+\midrule
+\code{0x00}     & ---        & Permanently reserved (never assign) & MUST reject \\
+\code{0x01}     & \pqid{}    & Standard generator                    & assigned \\
+\code{0x02}     & \pqid{}    & HLC generator                         & assigned \\
+\code{0x03}     & \pqhash{}  & SHAKE-256 / 64-byte tail              & assigned (this document) \\
+\code{0x04}     & \pqcrypt{} & Encryption envelope (suite byte at offset 7) & assigned \\
+\code{0x05}--\code{0xFE} & --- & Reserved-future                  & MUST reject \\
+\code{0xFF}     & ---        & Permanently reserved (never assign) & MUST reject \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Author and Document Provenance}
+\label{sec:appendix-provenance}
+
+\textbf{Author:} Bahram Samani, \pqtoolkit{} monorepo maintainer.
+
+This document is built from LaTeX sources under \texttt{pqhash/latex/} (\texttt{main.tex} + \texttt{secNN\_*.tex}); the build chain is \texttt{pdflatex $\rightarrow$ bibtex $\rightarrow$ pdflatex $\times$ 2} per the Makefile.
+
+\textbf{Authority order} (when sources disagree): this whitepaper, then the Python reference at \texttt{pqhash/python/pqhash.py}, then the canonical C ABI at \texttt{pqhash/c/pqhash.h}, then every other language. A cross-language disagreement is never resolved by changing the spec to match an outlier; the outlier is fixed.
+
+\textbf{Hard invariants} (from \texttt{pqhash/CLAUDE.md}):
+
+\begin{itemize}
+\item \textbf{Hash primitive: SHAKE-256.} Keccak-f[1600] sponge with arbitrary output length, used here with fixed 64-byte (512-bit) output.
+\item \textbf{Vendored Keccak.} C/C++/Java implementations use the shared Keccak source under \texttt{common/}; no project re-vendors a second copy.
+\item \textbf{Canonical encodings.} Base64URL (98 chars, no padding) and Crockford Base32 (117 chars, case-insensitive on decode, \code{I/L $\to$ 1} and \code{O $\to$ 0} confusables accepted on decode). Encoded lengths are fixed per variant.
+\item \textbf{Variant discipline.} \code{0x03} only; any unknown variant byte is \code{PQHASH\_E\_UNKNOWN\_VAR}. Cross-project bytes (\code{0x01}, \code{0x02}, \code{0x04}) and reserved-future bytes are rejected.
+\item \textbf{Generator locking.} The generator is internally locked; the \texttt{(last\_ts, counter)} read-modify-write is atomic.
+\end{itemize}
+
+\textbf{Conformance gate:} \texttt{tools/conformance/run.sh} is the branch-protection check on \texttt{main}; \pqid{}, \pqhash{}, and \pqcrypt{} flow through the same harness. PQHash's KAT count: 16 \texttt{decode}, 8 \texttt{hash\_only}, encode/decode round-trip pairs for both encodings, \texttt{verify} positive/negative cases, \texttt{invalid} negative cases. Latest cross-language run (2026-05-21) reports 0 failures across the alpha languages.

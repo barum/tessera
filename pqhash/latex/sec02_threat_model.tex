@@ -1,0 +1,34 @@
+\section{Threat Model}
+\label{sec:threat-model}
+
+\pqhash{} is a \emph{public artifact}: assume an attacker sees every byte of every identifier, can replay them, and may submit arbitrary content as input to a \pqhash{} computation. The identifier itself carries no secret. The security goals reduce to three properties of the wire format and the SHAKE-256 \citep{fips202} tail.
+
+\subsection{What \pqhash{} provides}
+
+\begin{enumerate}
+  \item \textbf{Collision resistance of the tail.} For any two distinct contents $c_1 \ne c_2$, the probability that $\mathrm{SHAKE\text{-}256}(c_1, 64) = \mathrm{SHAKE\text{-}256}(c_2, 64)$ is bounded by the SHAKE-256 collision-resistance assumption ($2^{256}$ classical, $\sim 2^{170}$ Brassard--H{\o}yer--Tapp \citep{bht1998} quantum).
+  \item \textbf{Second-preimage resistance of the tail.} Given a target $h$, the cost of finding any $c$ with $\mathrm{SHAKE\text{-}256}(c, 64) = h$ is $2^{512}$ classical / $2^{256}$ Grover \citep{grover1996} --- generations beyond any plausible attacker budget.
+  \item \textbf{Malleability resistance of the wire encoding.} The 73-byte binary and its canonical Base64URL / Crockford Base32 encodings round-trip byte-identical; canonical decoders reject non-canonical inputs (wrong length, invalid variant byte, padding-bit anomalies in Base32).
+\end{enumerate}
+
+\subsection{What \pqhash{} does not provide}
+
+\begin{itemize}
+  \item \textbf{Authentication.} Anyone with the content can recompute the same \pqhash{}-tail. \pqhash{} is keyless. If the question is ``did this specific party produce this hash,'' use a signature (PASETO \citep{paseto-v4}, ML-DSA \citep{fips204}, classical Ed25519 \citep{rfc8032}) over the \pqhash{} or its referenced content. \pqid{}'s security analysis makes the same point for identifier authentication; both sibling projects defer producer authentication to an outer envelope.
+  \item \textbf{Confidentiality.} The 64-byte SHAKE-256 tail leaks short-content guessability: for low-entropy content, an attacker who can guess the input can verify it by recomputing the tail. This is the same property that breaks ``hash the password and ship the hash'' patterns. If the content is low-entropy and must remain secret, wrap it in \pqcrypt{} (\cref{sec:monorepo}); do not rely on \pqhash{} for secrecy.
+  \item \textbf{Tamper-evidence of the identifier itself.} \pqhash{} has no MAC or checksum over the full 73-byte form. A bit-flipped \pqhash{} may decode to another valid \pqhash{} (with a different tail). If integrity matters, the \pqhash{} belongs inside a signed envelope or carried as the AEAD AD of a \pqcrypt{} envelope.
+  \item \textbf{Producer non-repudiation.} Two parties who agree on the content trivially agree on the tail. Provenance comes from the timestamp/counter \emph{and} the outer protocol, not from the \pqhash{} alone.
+  \item \textbf{Side-channel resistance.} \pqhash{} is keyless, so timing attacks on the generator are uninteresting (any timing signal an attacker recovers reveals only the content, which they may already control). When \pqhash{} is used \emph{inside} a security boundary (e.g., as part of a keyed protocol), the surrounding code's side-channel posture is the relevant one.
+\end{itemize}
+
+\subsection{Quantum-relevant attacks}
+
+\begin{itemize}
+  \item \textbf{Grover's algorithm \citep{grover1996}} reduces second-preimage cost from $2^n$ to $2^{n/2}$. For \pqhash{}'s 512-bit tail, that is $2^{256}$ --- astronomical.
+  \item \textbf{Brassard--H{\o}yer--Tapp \citep{bht1998}} reduces collision cost from $2^{n/2}$ to $2^{n/3}$. For 512 bits, that is $\sim 2^{170}$ --- comfortable but the dominant quantum bound for \pqhash{}.
+  \item \textbf{KyberSlash, PQShield power-analysis, Hertzbleed, GoFetch.} Not applicable: \pqhash{} has no asymmetric crypto and no secret-dependent control flow. SHAKE-256/Keccak is a fixed-structure permutation \citep{fips202} with no input-dependent timing in stock implementations.
+\end{itemize}
+
+\subsection{Random source quality}
+
+\pqhash{}'s tail is deterministic in the content; no CSPRNG is invoked for the tail. The 16-bit per-millisecond counter advances deterministically by 1 within a millisecond, with no randomness involved. The timestamp comes from the OS monotonic clock; PQID's discipline on \texttt{getrandom(2)} / \texttt{getentropy(3)} / \texttt{BCryptGenRandom} does not apply to \pqhash{} because the format has no random field.
