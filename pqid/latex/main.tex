@@ -1,6 +1,8 @@
 % ============================================================================
 %  PQID — A Post-Quantum Identifier for the Late 2020s and Beyond
-%  Whitepaper, version 1
+%  Whitepaper, version 1.1 (2026-05-21)
+%
+%  Author: Bahram Samani
 %
 %  Build:  make
 %          (or: pdflatex main && bibtex main && pdflatex main && pdflatex main)
@@ -100,6 +102,9 @@
 
 % ---- Custom commands ----
 \newcommand{\pqid}{\textsf{PQID}}
+\newcommand{\pqhash}{\textsf{PQHash}}
+\newcommand{\pqcrypt}{\textsf{PQCrypt}}
+\newcommand{\pqtoolkit}{\textsf{pqtoolkit}}
 \newcommand{\code}[1]{\texttt{#1}}
 
 % ============================================================================
@@ -111,21 +116,29 @@
 \input{_buildinfo.tex}  % generated at build time: \buildDate, \buildTime
 \begin{titlepage}
   \centering
-  \vspace*{2.5cm}
+  \vspace*{2.0cm}
   {\Huge\bfseries PQID\par}
   \vspace{0.6cm}
   {\Large A Post-Quantum Identifier for the\\Late 2020s and Beyond\par}
-  \vspace{2cm}
-  {\large\itshape Whitepaper, Version 1\par}
-  \vspace{2cm}
-  \begin{tcolorbox}[colback=gray!5,colframe=black!30,width=0.7\textwidth]
+  \vspace{0.3cm}
+  {\large\itshape Project 1 of 3 in the \pqtoolkit{} monorepo\par}
+  \vspace{1.6cm}
+  {\large\bfseries Bahram Samani\par}
+  \vspace{0.4em}
+  {\small\itshape \pqtoolkit{} monorepo maintainer\par}
+  \vspace{1.6cm}
+  {\large\itshape Whitepaper, Version 1.1\par}
+  \vspace{0.3em}
+  {\small Released 2026-05-21\par}
+  \vspace{1.6cm}
+  \begin{tcolorbox}[colback=gray!5,colframe=black!30,width=0.78\textwidth]
     \centering\small
-    \textbf{Build date:} \buildDate\\[0.3em]
-    \textbf{Build time:} \buildTime\\[0.3em]
-    \textbf{Source:} \texttt{pqid/latex/main.tex}
+    \textbf{Build date:} \buildDate \quad\textbf{Build time:} \buildTime\\[0.4em]
+    \textbf{Source:} \texttt{pqid/latex/main.tex}\\[0.4em]
+    \textbf{Spec version:} v1.1 \quad\textbf{Wire variants:} \texttt{0x01} (Standard), \texttt{0x02} (HLC)
   \end{tcolorbox}
   \vfill
-  {\small This document is the canonical reference for PQID v1.\par}
+  {\small This document is the canonical reference for PQID v1. PQID is the identifier project in the \pqtoolkit{} monorepo, which also contains \pqhash{} (variant \code{0x03}, 73-byte SHAKE-256 content hash) and \pqcrypt{} (variant \code{0x04}, ML-KEM-1024 encryption envelope). When PQID identifies a record whose content needs integrity, use \pqhash{}; when that content also needs confidentiality, use \pqcrypt{} with the PQID as AEAD associated data --- the canonical ``\pqid{}-as-AD'' pattern. See Appendix~\ref{sec:appendix-monorepo}.\par}
   \vspace{0.5cm}
 \end{titlepage}
 

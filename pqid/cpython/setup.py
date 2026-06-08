@@ -15,6 +15,10 @@ ext = Extension(
         "../c/pqid.c",
         "../../pqhash/c/pqhash.c",
         "../../common/c/keccak.c",
+        # pqid.c calls pqtk_csprng(), defined here. Omitting this source
+        # builds a .so with an unresolved '_pqtk_csprng' symbol that fails at
+        # import (dlopen) on flat-namespace platforms. (cf. pqid/c/Makefile.)
+        "../../common/c/random.c",
     ],
     include_dirs=["../c", "../../pqhash/c", "../../common/c"],
     extra_compile_args=[

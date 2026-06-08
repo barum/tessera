@@ -2,6 +2,7 @@
 
 Reverse-chronological. One entry per PR (or per logical change shipped together).
 
+- 2026-06-08 — [PQID-00016 — CPython CSPRNG link fix + Appendix A vector correction](2026-06-08-pqid-00016-cpython-csprng-link-and-appendix-vectors.md)
 - 2026-05-21 — [PQID-00015 — Cross-reject PQCrypt variant `0x04`](2026-05-21-pqid-00015-cross-reject-pqcrypt.md)
 - 2026-05-19 — [PQID-00014 — Bench methodology](2026-05-19-pqid-00014-bench-methodology.md)
 - 2026-05-19 — [PQID-00013 — `MIN_TIMESTAMP_MS` helper](2026-05-19-pqid-00013-min-timestamp-helper.md)

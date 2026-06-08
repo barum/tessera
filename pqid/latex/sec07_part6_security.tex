@@ -20,8 +20,8 @@ PQID is \emph{not} designed to provide:
 
 \begin{itemize}
   \item \textbf{Authentication of the producer.} Anyone with a CSPRNG can forge a valid-looking PQID. Use a signed envelope (PASETO, JWT, custom MAC) if you need to verify the producer.
-  \item \textbf{Integrity of the identifier itself.} PQID has no checksum, MAC, or hash. A bit-flipped PQID may decode to another valid PQID. If integrity matters, the PQID belongs inside a signed or HMAC'd \citep{rfc2104} container that protects it.
-  \item \textbf{Confidentiality of the timestamp.} The 48-bit timestamp is plaintext. An attacker who sees a PQID learns approximately when it was generated. If timestamp confidentiality matters, encrypt the entire identifier.
+  \item \textbf{Integrity of the identifier itself.} PQID has no checksum, MAC, or hash. A bit-flipped PQID may decode to another valid PQID. If integrity matters, the PQID belongs inside a signed or HMAC'd \citep{rfc2104} container that protects it. In the \pqtoolkit{} monorepo, two siblings address this gap natively: \pqhash{} (variant \code{0x03}, 73-byte SHAKE-256-based content hash) provides a tamper-evident binding from the PQID to its referenced content, and \pqcrypt{} (variant \code{0x04}, ML-KEM-1024 encryption envelope) authenticates the PQID via its AEAD AD path when the PQID is passed as \texttt{associated\_data} (the canonical ``\pqid{}-as-AD'' pattern; see Appendix~\ref{sec:appendix-monorepo}).
+  \item \textbf{Confidentiality of the identifier or its timestamp.} The 48-bit timestamp is plaintext. An attacker who sees a PQID learns approximately when it was generated. PQID has no built-in encryption. If timestamp confidentiality matters, wrap the entire identifier in \pqcrypt{} (or any AEAD); the PQID is then carried as the envelope's authenticated AD, not as cleartext.
 \end{itemize}
 
 \subsection{Quantum-relevant attacks}

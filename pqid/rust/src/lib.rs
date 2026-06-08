@@ -16,6 +16,8 @@
 //! +-------+------+-------+------------------------------+
 //! ```
 
+#![forbid(unsafe_code)]
+
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 

@@ -28,7 +28,7 @@ Binary form (41 bytes, hex):
 
 Base64URL: \code{AYvP5WgAAQBCqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo}
 
-Crockford Base32: \code{06EFZWB80020960NAJD1KAA9D40MAANMVAR50W2KEHRA8AKQGEN9D8AKQGEN9D80}
+Crockford Base32: \code{065WZSB8000G0GNANANANANANANANANANANANANANANANANANANANANANANANANAN8}
 
 \subsection*{Vector 2: HLC variant}
 
@@ -47,6 +47,10 @@ Binary form (41 bytes, hex):
                                 55 55 55 55 55 55 55 55
                                 55 55 55 55 55 55 55 55
 \end{lstlisting}
+
+Base64URL: \code{AYvP5Wh7AgABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU}
+
+Crockford Base32: \code{065WZSB8FC1000ANANANANANANANANANANANANANANANANANANANANANANANANANAM}
 
 \section{Quick Reference Card}
 \label{app:quickref}
@@ -132,4 +136,75 @@ The first 14 characters are identical across all 12 (the timestamp prefix); only
 
 \textbf{UUIDv7.} Time-sortable UUID variant (RFC 9562, 2024). 48-bit ms timestamp + 74 random bits + version + variant marker. Sortable between milliseconds; intra-millisecond ordering is implementation-defined.
 
-\textbf{Variant byte.} Byte at offset 6 of a PQID. \code{0x01} = Standard; \code{0x02} = HLC; other values reserved.
+\textbf{Variant byte.} Byte at offset 6 of a PQID. \code{0x01} = Standard; \code{0x02} = HLC; other values reserved. The reserved-future range is shared across the \pqtoolkit{} monorepo: \code{0x03} is assigned to \pqhash{}, \code{0x04} to \pqcrypt{}; \code{0x00} and \code{0xFF} are permanently reserved. PQID decoders MUST reject every byte they do not own.
+
+\section{The \texorpdfstring{\pqtoolkit{}}{pqtoolkit} Monorepo Context}
+\label{sec:appendix-monorepo}
+
+PQID v1 is the first of three projects under the \pqtoolkit{} monorepo. Each project ships an independent normative wire format, its own whitepaper, and byte-identical polyglot reference implementations across the same eight languages (Python, C, C++, Go, Rust, TypeScript, Java, CPython extension). The projects share a single variant-byte namespace and a single cross-language conformance harness.
+
+\subsection*{Project relationship}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lllr@{}}
+\toprule
+\textbf{Project} & \textbf{Concern} & \textbf{Variant byte} & \textbf{Wire size (bytes)} \\
+\midrule
+\pqid{}    & Post-quantum-era identifier            & \code{0x01} (Standard), \code{0x02} (HLC) & 41 \\
+\pqhash{}  & SHAKE-256 content hash                  & \code{0x03}                              & 73 \\
+\pqcrypt{} & ML-KEM-1024 encryption envelope         & \code{0x04}, suite byte \code{0x01}/\code{0x02}/\code{0x06} & variable (header 16 + body) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The first nine bytes of every project's wire format are layout-compatible: \code{TS(6) || VARIANT(1) || CTR(2)}. A single shared header \code{common/c/pqtk\_header.h} pins those offsets across all three. Decoders in each project reject every variant byte they do not own; the rejection contracts are covered by \texttt{invalid.json} KAT files in every project's \texttt{conformance/vectors/}.
+
+\subsection*{The ``\pqid{}-as-AD'' canonical pattern}
+
+When a PQID identifies a record whose content needs confidentiality and integrity:
+
+\begin{lstlisting}[language=Pseudocode]
+record_id  = pqid.new_hlc()                              # 41 bytes
+envelope   = pqcrypt.encrypt(plaintext, recipient_pub,
+                             associated_data=record_id)  # binds the PQID
+# ... after delivery ...
+plaintext  = pqcrypt.decrypt(envelope, recipient_priv,
+                             expected_ad=record_id)      # MUST match
+\end{lstlisting}
+
+Substituting the envelope under a different \pqid{} fails decryption (AEAD AD mismatch). This pattern costs zero additional cryptography --- the AEAD's AD path is free --- and binds the identifier and ciphertext into a single cryptographic guarantee. See the \pqcrypt{} whitepaper for the normative description.
+
+When a PQID identifies a record whose \emph{content bytes} need an integrity check independent of any encryption, use \pqhash{}: the \pqhash{} of the plaintext can be carried alongside the PQID (or used as the AEAD AD in a \pqcrypt{} envelope) to bind the envelope to ``this specific content,'' not just ``some content this recipient can decrypt.''
+
+\subsection*{Shared discipline}
+
+All three projects share:
+
+\begin{itemize}
+\item One specification-first methodology: whitepaper LaTeX is normative, Python is the readable reference, C pins the canonical ABI, every other language ports byte-identical.
+\item One cross-language KAT harness at \texttt{tools/conformance/run.sh}; CI's branch-protection gate.
+\item One shared library directory at \texttt{common/} for primitives used by more than one project (Keccak/SHAKE-256 for C/C++/Java; HKDF-SHA3 and shared header offsets for \pqcrypt{}-adjacent code).
+\item One author and one set of memory invariants: see Appendix~\ref{sec:appendix-provenance}.
+\end{itemize}
+
+\section{Author and Document Provenance}
+\label{sec:appendix-provenance}
+
+\textbf{Author:} Bahram Samani, \pqtoolkit{} monorepo maintainer.
+
+This document is built from LaTeX sources under \texttt{pqid/latex/} (\texttt{main.tex} + \texttt{secNN\_*.tex}); the build chain is \texttt{pdflatex $\rightarrow$ bibtex $\rightarrow$ pdflatex $\times$ 2} per the Makefile. The artifact at the repo root \texttt{PQID\_Whitepaper.pdf} is regenerated and committed alongside any normative change.
+
+\textbf{Authority order} (when sources disagree): this whitepaper, then the Python reference at \texttt{pqid/python/pqid.py} (with its optimized sibling \texttt{pqid\_fast.py}), then the canonical C ABI at \texttt{pqid/c/pqid.h}, then every other language. A cross-language disagreement is never resolved by changing the spec to match an outlier; the outlier is fixed.
+
+\textbf{Hard invariants} (from \texttt{pqid/CLAUDE.md}; security-relevant changes must update both):
+\begin{itemize}
+\item 41-byte layout: \code{TS(6) || VARIANT(1) || CTR(2) || RANDOM(32)}, big-endian.
+\item Variant byte: \code{0x01} = Standard, \code{0x02} = HLC; everything else (including the cross-project \code{0x03}/\code{0x04}) rejected.
+\item Canonical encodings: Base64URL (55 chars, no padding) and Crockford Base32 (66 chars, case-insensitive on decode). The final Crockford character carries 3 bits of value plus 2 bits of zero padding; Crockford decode rejects inputs whose 2 trailing low padding bits of that final character are non-zero (the implementations reject a non-zero low-2-bit pad).
+\item HLC drift bound: \texttt{HLC\_MAX\_DRIFT\_MS = 60\_000} ms. Peer HLC more than 60 s ahead of local physical time is a hard \texttt{HLCDriftError}, not a silent clamp.
+\item \texttt{StandardGenerator} is \emph{not} internally locked (deliberate); \texttt{HLCGenerator} \emph{is} internally locked (the \texttt{(l, c)} RMW must be atomic).
+\item Randomness comes from the OS CSPRNG only: \texttt{getrandom(2)} / \texttt{getentropy(3)} / \texttt{BCryptGenRandom} / \texttt{os.urandom} / \texttt{SecureRandom} / \texttt{crypto.getRandomValues}. No userspace PRNG fallback.
+\end{itemize}
+
+\textbf{Conformance gate}: \texttt{tools/conformance/run.sh} is the branch-protection check on \texttt{main}. PQID, \pqhash{}, and \pqcrypt{} all flow through the same harness; the latest cross-language run (2026-05-21) reports 0 failures across the v1.x alpha languages.
