@@ -1,21 +1,19 @@
 # tessera — Post-Quantum Identifier, Hash & Encryption Toolkit
 
-[![conformance](https://github.com/bahramsamani/pqid/actions/workflows/conformance.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/conformance.yml)
-[![python](https://github.com/bahramsamani/pqid/actions/workflows/python.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/python.yml)
-[![c](https://github.com/bahramsamani/pqid/actions/workflows/c.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/c.yml)
-[![cpp](https://github.com/bahramsamani/pqid/actions/workflows/cpp.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/cpp.yml)
-[![go](https://github.com/bahramsamani/pqid/actions/workflows/go.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/go.yml)
-[![rust](https://github.com/bahramsamani/pqid/actions/workflows/rust.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/rust.yml)
-[![typescript](https://github.com/bahramsamani/pqid/actions/workflows/typescript.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/typescript.yml)
-[![java](https://github.com/bahramsamani/pqid/actions/workflows/java.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/java.yml)
-[![cpython-extension](https://github.com/bahramsamani/pqid/actions/workflows/cpython.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/cpython.yml)
-[![tessera-seal](https://github.com/bahramsamani/pqid/actions/workflows/tessera-seal.yml/badge.svg)](https://github.com/bahramsamani/pqid/actions/workflows/tessera-seal.yml)
+[![conformance](https://github.com/barum/tessera/actions/workflows/conformance.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/conformance.yml)
+[![python](https://github.com/barum/tessera/actions/workflows/python.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/python.yml)
+[![c](https://github.com/barum/tessera/actions/workflows/c.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/c.yml)
+[![cpp](https://github.com/barum/tessera/actions/workflows/cpp.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/cpp.yml)
+[![go](https://github.com/barum/tessera/actions/workflows/go.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/go.yml)
+[![rust](https://github.com/barum/tessera/actions/workflows/rust.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/rust.yml)
+[![typescript](https://github.com/barum/tessera/actions/workflows/typescript.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/typescript.yml)
+[![java](https://github.com/barum/tessera/actions/workflows/java.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/java.yml)
+[![cpython-extension](https://github.com/barum/tessera/actions/workflows/cpython.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/cpython.yml)
+[![tessera-seal](https://github.com/barum/tessera/actions/workflows/tessera-seal.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/tessera-seal.yml)
 
 `tessera` is a specification-first, polyglot monorepo of post-quantum-era data formats.
 Each project under this root is an independent spec with normative wire format, polyglot
-reference implementations, and (where applicable) its own whitepaper. The CI badges above
-point at the legacy `bahramsamani/pqid` GitHub repo URL, which is outside this rename's
-scope; the suite itself is now **Tessera**.
+reference implementations, and (where applicable) its own whitepaper.
 
 ## Projects
 
