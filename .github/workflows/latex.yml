@@ -1,16 +1,7 @@
 name: latex
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "tessera-id/latex/**"
-      - ".github/workflows/latex.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "tessera-id/latex/**"
-      - ".github/workflows/latex.yml"
+  workflow_dispatch:   # manual only — no auto-build on push/PR (cost control)
 
 jobs:
   build:

@@ -1,10 +1,7 @@
 name: conformance
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:   # manual only — no auto-build on push/PR (cost control)
 
 # Cross-language conformance gate: builds every implementation on a single
 # runner and runs the harness end-to-end against vectors from tessera-id/,

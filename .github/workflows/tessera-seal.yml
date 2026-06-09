@@ -1,22 +1,7 @@
 name: TesseraSeal
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'tessera-seal/**'
-      - 'common/c/hkdf_sha3.*'
-      - 'common/c/random.*'
-      - 'common/c/tessera_header.h'
-      - '.github/workflows/tessera-seal.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'tessera-seal/**'
-      - 'common/c/hkdf_sha3.*'
-      - 'common/c/random.*'
-      - 'common/c/tessera_header.h'
-      - '.github/workflows/tessera-seal.yml'
+  workflow_dispatch:   # manual only — no auto-build on push/PR (cost control)
 
 jobs:
   python:

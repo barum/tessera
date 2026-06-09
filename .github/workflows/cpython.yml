@@ -1,10 +1,7 @@
 name: cpython-extension
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:   # manual only — no auto-build on push/PR (cost control)
 
 jobs:
   test:
