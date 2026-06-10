@@ -3,6 +3,9 @@ name: c
 on:
   workflow_dispatch:   # manual only — no auto-build on push/PR (cost control)
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -15,7 +18,49 @@ jobs:
           - os: macos-latest
             cc: gcc
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      # tools/conformance/c `make` also compiles the TesseraSeal C reference,
+      # which needs OpenSSL 3.5+ (ML-KEM). Ubuntu apt only has 3.0.x, so build
+      # 3.5.7 from source once and cache it (TP-007). macOS uses Homebrew
+      # openssl@3 via the Makefile's discovery order.
+      - name: Cache OpenSSL 3.5 (Ubuntu, TP-007)
+        if: runner.os == 'Linux'
+        id: cache-openssl
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/openssl-3.5
+          key: openssl-3.5.7-${{ runner.os }}-${{ runner.arch }}
+      - name: Build OpenSSL 3.5.7 from source (Ubuntu, cache miss only)
+        if: runner.os == 'Linux' && steps.cache-openssl.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl -fsSLO https://github.com/openssl/openssl/releases/download/openssl-3.5.7/openssl-3.5.7.tar.gz
+          echo "a8c0d28a529ca480f9f36cf5792e2cd21984552a3c8e4aa11a24aa31aeac98e8  openssl-3.5.7.tar.gz" | sha256sum -c -
+          tar xzf openssl-3.5.7.tar.gz
+          cd openssl-3.5.7
+          ./Configure --prefix="$HOME/openssl-3.5" --libdir=lib no-docs no-tests
+          make -s -j"$(nproc)"
+          make -s install_sw
+      - name: Point C builds at OpenSSL 3.5 (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          echo "OPENSSL_PREFIX=$HOME/openssl-3.5" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$HOME/openssl-3.5/lib" >> "$GITHUB_ENV"
+      - name: Assert OpenSSL >= 3.5 (fail fast — ML-KEM requires 3.5+)
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            brew list openssl@3 >/dev/null 2>&1 || brew install openssl@3
+            OPENSSL_BIN="$(brew --prefix openssl@3)/bin/openssl"
+          else
+            OPENSSL_BIN="$HOME/openssl-3.5/bin/openssl"
+          fi
+          "$OPENSSL_BIN" version
+          v="$("$OPENSSL_BIN" version | awk '{print $2}')"
+          case "$v" in
+            3.[5-9]*|3.[1-9][0-9]*|[4-9].*) echo "OpenSSL $v OK (>= 3.5)" ;;
+            *) echo "::error::OpenSSL $v < 3.5 — no ML-KEM provider"; exit 1 ;;
+          esac
       - name: TesseraID C build and test
         env:
           CC: ${{ matrix.cc }}
@@ -42,13 +87,13 @@ jobs:
           for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
             tools/conformance/c/conformance_runner "$f"
           done
-      - name: TesseraID fuzz smoke (60s)
+      # GNU `timeout` does not exist on macOS runners (exit 127). The harness
+      # takes an iteration budget as argv[1], which bounds the runtime portably
+      # (TP-009): 5M iterations measured ~1 s on an M-class laptop.
+      - name: TesseraID fuzz smoke (5M iterations)
         env:
           CC: ${{ matrix.cc }}
         run: |
           cd tessera-id/c
           make fuzz_decode
-          timeout 60 ./fuzz_decode 5000000 || ec=$?
-          if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
-            exit "$ec"
-          fi
+          ./fuzz_decode 5000000

@@ -3,6 +3,9 @@ name: go
 on:
   workflow_dispatch:   # manual only — no auto-build on push/PR (cost control)
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -10,12 +13,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        go: ["1.22", "1.23"]
+        # go.mod declares `go 1.26` in every module; older entries here were
+        # silently auto-upgraded by GOTOOLCHAIN, making the matrix fiction
+        # (TP-014). Test the version that actually executes.
+        go: ["1.26"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: ${{ matrix.go }}
+          cache-dependency-path: "**/go.sum"
       - name: TesseraID Go tests
         working-directory: tessera-id/go
         run: go test ./...

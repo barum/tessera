@@ -3,6 +3,9 @@ name: cpp
 on:
   workflow_dispatch:   # manual only — no auto-build on push/PR (cost control)
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -15,7 +18,7 @@ jobs:
           - os: macos-latest
             cxx: g++
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: TesseraID C++ build and test
         env:
           CXX: ${{ matrix.cxx }}
@@ -42,13 +45,13 @@ jobs:
           for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
             tools/conformance/cpp/conformance_runner "$f"
           done
-      - name: TesseraID fuzz smoke (60s)
+      # GNU `timeout` does not exist on macOS runners (exit 127). The harness
+      # takes an iteration budget as argv[1], which bounds the runtime portably
+      # (TP-009).
+      - name: TesseraID fuzz smoke (5M iterations)
         env:
           CXX: ${{ matrix.cxx }}
         run: |
           cd tessera-id/cpp
           make fuzz_decode
-          timeout 60 ./fuzz_decode 5000000 || ec=$?
-          if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
-            exit "$ec"
-          fi
+          ./fuzz_decode 5000000

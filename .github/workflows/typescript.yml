@@ -3,6 +3,9 @@ name: typescript
 on:
   workflow_dispatch:   # manual only — no auto-build on push/PR (cost control)
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -12,10 +15,12 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         node: ["20", "22"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: "**/package-lock.json"
       - name: TesseraID TypeScript test
         working-directory: tessera-id/typescript
         run: |
@@ -35,10 +40,9 @@ jobs:
           for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
             node tools/conformance/typescript/dist/conformance_runner.js "$f"
           done
-      - name: TesseraID fuzz smoke (60s)
+      # GNU `timeout` does not exist on macOS runners (exit 127). The harness
+      # takes an iteration budget as argv[2], which bounds the runtime portably
+      # (TP-009). 200k is the harness default smoke budget.
+      - name: TesseraID fuzz smoke (200k iterations)
         working-directory: tessera-id/typescript
-        run: |
-          timeout 60 node dist/fuzz/fuzz_decode.js 1000000 || ec=$?
-          if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
-            exit "$ec"
-          fi
+        run: node dist/fuzz/fuzz_decode.js 200000

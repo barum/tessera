@@ -3,6 +3,9 @@ name: cpython-extension
 on:
   workflow_dispatch:   # manual only — no auto-build on push/PR (cost control)
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -10,12 +13,14 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python: ["3.10", "3.11", "3.12"]
+        python: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: tessera-seal/python/requirements.txt
       - name: Install build deps
         run: python3 -m pip install --upgrade pip setuptools
       - name: Build extension
@@ -29,10 +34,9 @@ jobs:
           for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
             python3 tools/conformance/cpython/conformance_runner.py "$f"
           done
-      - name: Fuzz smoke (60s)
+      # GNU `timeout` does not exist on macOS runners (exit 127). The harness
+      # takes an iteration budget as argv[1], which bounds the runtime portably
+      # (TP-009). 200k is the harness default smoke budget.
+      - name: Fuzz smoke (200k iterations)
         working-directory: tessera-id/cpython
-        run: |
-          timeout 60 python3 fuzz/fuzz_decode.py 1000000 || ec=$?
-          if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
-            exit "$ec"
-          fi
+        run: python3 fuzz/fuzz_decode.py 200000

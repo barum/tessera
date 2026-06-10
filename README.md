@@ -1,15 +1,11 @@
 # tessera — Post-Quantum Identifier, Hash & Encryption Toolkit
 
-[![conformance](https://github.com/barum/tessera/actions/workflows/conformance.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/conformance.yml)
-[![python](https://github.com/barum/tessera/actions/workflows/python.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/python.yml)
-[![c](https://github.com/barum/tessera/actions/workflows/c.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/c.yml)
-[![cpp](https://github.com/barum/tessera/actions/workflows/cpp.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/cpp.yml)
-[![go](https://github.com/barum/tessera/actions/workflows/go.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/go.yml)
-[![rust](https://github.com/barum/tessera/actions/workflows/rust.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/rust.yml)
-[![typescript](https://github.com/barum/tessera/actions/workflows/typescript.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/typescript.yml)
-[![java](https://github.com/barum/tessera/actions/workflows/java.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/java.yml)
-[![cpython-extension](https://github.com/barum/tessera/actions/workflows/cpython.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/cpython.yml)
-[![tessera-seal](https://github.com/barum/tessera/actions/workflows/tessera-seal.yml/badge.svg)](https://github.com/barum/tessera/actions/workflows/tessera-seal.yml)
+[![conformance](https://github.com/barum/tessera/actions/workflows/conformance.yml/badge.svg?branch=main)](https://github.com/barum/tessera/actions/workflows/conformance.yml)
+
+The conformance badge tracks the cross-language gate, which runs on every push and pull request
+to `main`. The per-language suites (python, c, cpp, go, rust, typescript, java, cpython-extension,
+tessera-seal, latex) are manual-dispatch workflows — see the
+[Actions tab](https://github.com/barum/tessera/actions) for their latest runs.
 
 `tessera` is a specification-first, polyglot monorepo of post-quantum-era data formats.
 Each project under this root is an independent spec with normative wire format, polyglot

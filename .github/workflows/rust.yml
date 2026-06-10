@@ -3,6 +3,9 @@ name: rust
 on:
   workflow_dispatch:   # manual only — no auto-build on push/PR (cost control)
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -12,10 +15,11 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         toolchain: [stable, beta]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
         with:
           toolchain: ${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: cargo test (workspace)
         run: cargo test --workspace --release
       - name: Build and run conformance runner
@@ -24,10 +28,10 @@ jobs:
           for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
             ./target/release/conformance_runner "$f"
           done
-      - name: TesseraID fuzz smoke (60s)
+      # GNU `timeout` does not exist on macOS runners (exit 127). The harness
+      # takes an iteration budget as argv[1], which bounds the runtime portably
+      # (TP-009).
+      - name: TesseraID fuzz smoke (5M iterations)
         run: |
           cargo build --release --bin fuzz_decode
-          timeout 60 ./target/release/fuzz_decode 5000000 || ec=$?
-          if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
-            exit "$ec"
-          fi
+          ./target/release/fuzz_decode 5000000

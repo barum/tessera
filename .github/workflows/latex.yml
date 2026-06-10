@@ -3,11 +3,33 @@ name: latex
 on:
   workflow_dispatch:   # manual only — no auto-build on push/PR (cost control)
 
+permissions:
+  contents: read
+
+# Builds all four whitepapers (TP-012): the umbrella paper plus one per project.
+# Every main.tex loads lmodern, so the apt set must include the `lmodern`
+# package (texlive-fonts-recommended alone does not ship lmodern.sty).
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - paper: tessera-umbrella
+            dir: latex
+            pdf: latex/Tessera_Whitepaper.pdf
+          - paper: tessera-id
+            dir: tessera-id/latex
+            pdf: tessera-id/latex/TesseraID_Whitepaper.pdf
+          - paper: tessera-hash
+            dir: tessera-hash/latex
+            pdf: tessera-hash/latex/TesseraHash_Whitepaper.pdf
+          - paper: tessera-seal
+            dir: tessera-seal/latex
+            pdf: tessera-seal/latex/TesseraSeal_Whitepaper.pdf
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Install TeX Live
         run: |
           sudo apt-get update
@@ -15,13 +37,13 @@ jobs:
             texlive-latex-base texlive-latex-recommended \
             texlive-latex-extra texlive-fonts-recommended \
             texlive-fonts-extra texlive-bibtex-extra \
-            texlive-science biber
-      - name: Build whitepaper
+            texlive-science biber lmodern
+      - name: Build ${{ matrix.paper }} whitepaper
         run: |
-          cd tessera-id/latex
+          cd ${{ matrix.dir }}
           make
       - name: Upload PDF artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: tessera-id-whitepaper
-          path: tessera-id/latex/main.pdf
+          name: ${{ matrix.paper }}-whitepaper
+          path: ${{ matrix.pdf }}

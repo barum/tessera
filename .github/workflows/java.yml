@@ -3,6 +3,9 @@ name: java
 on:
   workflow_dispatch:   # manual only — no auto-build on push/PR (cost control)
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -12,8 +15,8 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         java: ["17", "21"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
@@ -33,10 +36,9 @@ jobs:
           for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
             java -cp tools/conformance/java/build com.tessera.conformance.ConformanceRunner "$f"
           done
-      - name: TesseraID fuzz smoke (60s)
+      # GNU `timeout` does not exist on macOS runners (exit 127). The harness
+      # takes an iteration budget as args[0], which bounds the runtime portably
+      # (TP-009).
+      - name: TesseraID fuzz smoke (1M iterations)
         working-directory: tessera-id/java
-        run: |
-          timeout 60 java -cp build com.tessera.id.FuzzDecode 1000000 || ec=$?
-          if [ "${ec:-0}" != "0" ] && [ "${ec:-0}" != "124" ]; then
-            exit "$ec"
-          fi
+        run: java -cp build com.tessera.id.FuzzDecode 1000000
