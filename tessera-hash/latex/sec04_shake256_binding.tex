@@ -24,7 +24,7 @@ C           & vendored Keccak under \texttt{common/c/keccak.\{h,c\}}          & 
 C++         & wraps the C Keccak source                                       & inherits C audit \\
 Go          & stdlib \texttt{golang.org/x/crypto/sha3} (\code{sha3.NewShake256}) & Go stdlib reviewed \\
 Rust        & RustCrypto \texttt{sha3} crate (\code{Shake256})                 & RustCrypto reviewed \\
-TypeScript  & \texttt{@noble/hashes} \texttt{shake\_256}                       & const-time documented \\
+TypeScript  & Node \texttt{node:crypto} (OpenSSL-backed)                       & Node 18+; Node-only \\
 Java        & vendored Keccak under \texttt{common/java/com/tessera/common/} & shared with \tesseraseal{}; reviewed \\
 CPython ext & wraps the vendored C Keccak                                     & inherits C audit \\
 \bottomrule
@@ -39,4 +39,4 @@ Salts would defeat content-equivalence. A salted TesseraHash would no longer be 
 
 \subsection{Variable-length input}
 
-SHAKE-256 takes arbitrary-length input and \tesserahash{} passes it through unchanged. Content larger than memory should be streamed into the Keccak sponge using each language's incremental API (\texttt{shake.update(chunk)}); the cumulative output is identical to a single-shot hash of the concatenation. The Python reference \texttt{hash\_only(content)} accepts \texttt{bytes}, \texttt{bytearray}, or \texttt{memoryview}; the C reference takes a \texttt{const uint8\_t *} content pointer and a \texttt{size\_t} length and zero-copies into the sponge.
+SHAKE-256 takes arbitrary-length input and \tesserahash{} passes it through unchanged. The shipped reference implementations are \textbf{one-shot today}: every public API accepts a complete in-memory buffer. The Python reference \texttt{hash\_only(content)} accepts \texttt{bytes}, \texttt{bytearray}, or \texttt{memoryview}; the C reference takes a \texttt{const uint8\_t *} content pointer and a \texttt{size\_t} length and zero-copies into the sponge. A streaming/incremental mode for content larger than memory (absorbing chunks into the sponge so the cumulative output equals a single-shot hash of the concatenation) is a tracked backlog item on the project roadmap; it is not part of v1, and the vendored \texttt{common/} Keccak deliberately exposes no incremental absorb/squeeze API yet.

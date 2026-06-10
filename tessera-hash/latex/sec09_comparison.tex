@@ -51,10 +51,10 @@ The deliberate scope difference: \tesseraid{} answers ``which record is this?'' 
 \subsection{Where \tesserahash{} wins}
 
 \begin{itemize}
-\item \textbf{Multi-decade collision margin.} 512-bit SHAKE-256 is the highest commonly-deployed standardized hash. $2^{256}$ classical collision is two orders of magnitude beyond what SHA-256-based formats (Git, Docker, IPFS-default) provide.
+\item \textbf{Multi-decade collision margin.} 512-bit SHAKE-256 is the highest commonly-deployed standardized hash. $2^{256}$ classical collision doubles the security exponent of what SHA-256-based formats (Git, Docker, IPFS-default) provide ($2^{128} \to 2^{256}$ --- a $2^{128}$-fold, roughly $10^{38}\times$, increase in attack cost, not a small constant factor).
 \item \textbf{Provenance built in.} The 9-byte header carries enough metadata to make a \tesserahash{} sortable by generation time, traceable to a single generator's counter sequence, and decode-rejectable from cross-project siblings. Bare hash digests carry none of this.
 \item \textbf{One primitive across the monorepo.} The same SHAKE-256 implementation that produces \tesserahash{} tails is reused inside \tesseraseal{}'s HKDF schedule (\cref{sec:monorepo}); two primitives audited, one used everywhere.
-\item \textbf{Canonical text encodings.} 98-char Base64URL and 117-char Crockford Base32 with explicit padding-bit guards. Bare hex (147 chars) is the default for SHA-512 digests in most ecosystems; \tesserahash{}'s encodings are 33--38\% shorter and the Crockford form sorts by generation time.
+\item \textbf{Canonical text encodings.} 98-char Base64URL and 117-char Crockford Base32 with explicit padding-bit guards. The same 73 bytes in bare hex --- the default presentation for SHA-512-class digests in most ecosystems --- would be 146 characters; the Base64URL form is $\approx$33\% shorter and the Crockford form $\approx$20\% shorter, and the Crockford form sorts by generation time.
 \end{itemize}
 
 \subsection{Where \tesserahash{} does not fit}

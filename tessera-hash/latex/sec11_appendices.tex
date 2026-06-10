@@ -43,9 +43,10 @@ Encoding length: Base64URL & 98 chars, no padding \\
 Encoding length: Crockford & 117 chars, case-insensitive on decode \\
 Classical collision bound & $2^{256}$ \\
 Quantum collision bound (BHT) & $\sim 2^{170}$ \\
-Classical second-preimage & $2^{512}$ \\
+Classical second-preimage & $\min(2^{d}, 2^{256}) = 2^{256}$ (FIPS 202 cap) \\
 Quantum second-preimage (Grover) & $2^{256}$ \\
-Min sanity timestamp      & 1{,}700{,}000{,}000{,}000 ms (TesseraID-parity) \\
+Timestamp field range     & $[0, 2^{48}-1]$ ms (1970 -- $\approx$10889) \\
+Min sanity timestamp (non-normative) & 1{,}700{,}000{,}000{,}000 ms $\approx$ 2023-11-14 (TesseraID-parity) \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -110,8 +111,8 @@ This document is built from LaTeX sources under \texttt{tessera-hash/latex/} (\t
 \item \textbf{Hash primitive: SHAKE-256.} Keccak-f[1600] sponge with arbitrary output length, used here with fixed 64-byte (512-bit) output.
 \item \textbf{Vendored Keccak.} C/C++/Java implementations use the shared Keccak source under \texttt{common/}; no project re-vendors a second copy.
 \item \textbf{Canonical encodings.} Base64URL (98 chars, no padding) and Crockford Base32 (117 chars, case-insensitive on decode, \code{I/L $\to$ 1} and \code{O $\to$ 0} confusables accepted on decode). Encoded lengths are fixed per variant.
-\item \textbf{Variant discipline.} \code{0x03} only; any unknown variant byte is \code{TESSERA\_HASH\_E\_UNKNOWN\_VAR}. Cross-project bytes (\code{0x01}, \code{0x02}, \code{0x04}) and reserved-future bytes are rejected.
-\item \textbf{Generator locking.} The generator is internally locked; the \texttt{(last\_ts, counter)} read-modify-write is atomic.
+\item \textbf{Variant discipline.} \code{0x03} only; any unknown variant byte is \code{TESSERA\_HASH\_E\_UNKNOWN\_VAR} --- enforced by the binary decoder and by both text decoders at decode time. Cross-project bytes (\code{0x01}, \code{0x02}, \code{0x04}) and reserved-future bytes are rejected.
+\item \textbf{Generator locking.} The generator is internally locked where the language has shared-memory threading; the \texttt{(last\_ts, counter)} read-modify-write is atomic. The C struct is caller-synchronized by documented contract (\texttt{tessera\_hash.h}: declare one per thread or wrap with a mutex); the C++ wrapper inherits that contract.
 \end{itemize}
 
-\textbf{Conformance gate:} \texttt{tools/conformance/run.sh} is the branch-protection check on \texttt{main}; \tesseraid{}, \tesserahash{}, and \tesseraseal{} flow through the same harness. TesseraHash's KAT count: 16 \texttt{decode}, 8 \texttt{hash\_only}, encode/decode round-trip pairs for both encodings, \texttt{verify} positive/negative cases, \texttt{invalid} negative cases. Latest cross-language run (2026-05-21) reports 0 failures across the alpha languages.
+\textbf{Conformance gate:} \texttt{tools/conformance/run.sh} runs on every pull request and push, and its cross-language job is a required branch-protection check on \texttt{main}; \tesseraid{}, \tesserahash{}, and \tesseraseal{} flow through the same harness. TesseraHash's KAT count: 16 \texttt{decode}, 8 \texttt{hash\_only}, encode/decode round-trip pairs for both encodings, \texttt{verify} positive/negative cases, 24 \texttt{invalid} negative cases (including text-form wrong-variant records). Latest cross-language run (2026-06-10) is green in all eight languages across the full three-project vector set: Python/Go/Rust 296 PASS, C 287 PASS (no TesseraSeal hybrid vectors yet), C++/TypeScript/Java 229 PASS, CPython ext 224 PASS + 11 SKIP (the non-seal languages skip the TesseraSeal vector directory).

@@ -5,16 +5,16 @@
 
 \subsection{Collision and second-preimage bounds}
 
-For an $n$-bit hash output:
+For an \emph{ideal} $n$-bit hash output, the generic bounds are $2^n$ classical second-preimage, $2^{n/2}$ classical collision, $2^{n/2}$ under Grover \citep{grover1996}, and $2^{n/3}$ under BHT \citep{bht1998}. SHAKE-256 is not an ideal $d$-bit hash for large $d$: FIPS 202 \citep{fips202} caps its generic preimage-class security at $\min(d, 256)$ bits (the sponge capacity bound) and collision at $\min(d/2, 256)$ bits. For \tesserahash{}'s $d = 512$ output, both caps bind at 256 bits:
 
 \begin{center}
 \small
-\begin{tabular}{@{}lcccc@{}}
+\begin{tabular}{@{}lcccl@{}}
 \toprule
-\textbf{Property} & \textbf{Classical} & \textbf{Grover} \citep{grover1996} & \textbf{BHT} \citep{bht1998} & \textbf{$n=512$ (TesseraHash)} \\
+\textbf{Property} & \textbf{Ideal} & \textbf{Grover} & \textbf{BHT} & \textbf{TesseraHash ($d=512$)} \\
 \midrule
-Second preimage  & $2^n$       & $2^{n/2}$ & ---       & $2^{512}$ classical, $2^{256}$ Grover \\
-Collision        & $2^{n/2}$   & ---       & $2^{n/3}$ & $2^{256}$ classical, $\sim 2^{170}$ BHT \\
+Second preimage  & $2^n$       & $2^{n/2}$ & ---       & $\min(2^{d}, 2^{256}) = 2^{256}$; Grover $2^{256}$ \\
+Collision        & $2^{n/2}$   & ---       & $2^{n/3}$ & $2^{256}$; BHT $\sim 2^{170}$ \\
 \bottomrule
 \end{tabular}
 \end{center}

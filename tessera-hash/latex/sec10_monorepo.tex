@@ -56,7 +56,7 @@ Cross-project code lives under \texttt{common/} only if more than one project de
 \item \texttt{common/c/hkdf\_sha3.\{h,c\}}: HMAC-SHA3-256 and HKDF-SHA3-256. \tesseraseal{}-only today, vendored alongside the Keccak source.
 \end{itemize}
 
-Python and Go use stdlib for SHAKE-256 (\texttt{hashlib.shake\_256}, \texttt{golang.org/x/crypto/sha3}); Rust uses the \texttt{sha3} crate; TypeScript uses \texttt{@noble/hashes}; C, C++, and Java pull from \texttt{common/}. Never re-vendor a second Keccak inside a project that already has \texttt{common/} on its include path.
+Python and Go use stdlib for SHAKE-256 (\texttt{hashlib.shake\_256}, \texttt{golang.org/x/crypto/sha3}); Rust uses the \texttt{sha3} crate; TypeScript uses Node's built-in \texttt{node:crypto} (OpenSSL-backed, Node 18+, Node-only); C, C++, and Java pull from \texttt{common/}. Never re-vendor a second Keccak inside a project that already has \texttt{common/} on its include path.
 
 \subsection{Shared discipline}
 

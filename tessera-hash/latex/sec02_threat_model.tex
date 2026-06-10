@@ -7,7 +7,7 @@
 
 \begin{enumerate}
   \item \textbf{Collision resistance of the tail.} For any two distinct contents $c_1 \ne c_2$, the probability that $\mathrm{SHAKE\text{-}256}(c_1, 64) = \mathrm{SHAKE\text{-}256}(c_2, 64)$ is bounded by the SHAKE-256 collision-resistance assumption ($2^{256}$ classical, $\sim 2^{170}$ Brassard--H{\o}yer--Tapp \citep{bht1998} quantum).
-  \item \textbf{Second-preimage resistance of the tail.} Given a target $h$, the cost of finding any $c$ with $\mathrm{SHAKE\text{-}256}(c, 64) = h$ is $2^{512}$ classical / $2^{256}$ Grover \citep{grover1996} --- generations beyond any plausible attacker budget.
+  \item \textbf{Second-preimage resistance of the tail.} Given a target $h$, the cost of finding any $c$ with $\mathrm{SHAKE\text{-}256}(c, 64) = h$ is $\min(2^{d}, 2^{256}) = 2^{256}$ classical per FIPS 202 \citep{fips202} (the SHAKE-256 sponge capacity caps generic preimage-class security at 256 bits regardless of output length $d$), and $2^{256}$ under Grover \citep{grover1996} on the 512-bit output --- generations beyond any plausible attacker budget.
   \item \textbf{Malleability resistance of the wire encoding.} The 73-byte binary and its canonical Base64URL / Crockford Base32 encodings round-trip byte-identical; canonical decoders reject non-canonical inputs (wrong length, invalid variant byte, padding-bit anomalies in Base32).
 \end{enumerate}
 
@@ -24,11 +24,11 @@
 \subsection{Quantum-relevant attacks}
 
 \begin{itemize}
-  \item \textbf{Grover's algorithm \citep{grover1996}} reduces second-preimage cost from $2^n$ to $2^{n/2}$. For \tesserahash{}'s 512-bit tail, that is $2^{256}$ --- astronomical.
+  \item \textbf{Grover's algorithm \citep{grover1996}} reduces generic search cost from $2^n$ to $2^{n/2}$. For \tesserahash{}'s 512-bit tail, that is $2^{256}$ --- coinciding with the FIPS 202 classical second-preimage cap of $\min(2^{d}, 2^{256})$, and astronomical either way.
   \item \textbf{Brassard--H{\o}yer--Tapp \citep{bht1998}} reduces collision cost from $2^{n/2}$ to $2^{n/3}$. For 512 bits, that is $\sim 2^{170}$ --- comfortable but the dominant quantum bound for \tesserahash{}.
   \item \textbf{KyberSlash, PQShield power-analysis, Hertzbleed, GoFetch.} Not applicable: \tesserahash{} has no asymmetric crypto and no secret-dependent control flow. SHAKE-256/Keccak is a fixed-structure permutation \citep{fips202} with no input-dependent timing in stock implementations.
 \end{itemize}
 
 \subsection{Random source quality}
 
-\tesserahash{}'s tail is deterministic in the content; no CSPRNG is invoked for the tail. The 16-bit per-millisecond counter advances deterministically by 1 within a millisecond, with no randomness involved. The timestamp comes from the OS monotonic clock; TesseraID's discipline on \texttt{getrandom(2)} / \texttt{getentropy(3)} / \texttt{BCryptGenRandom} does not apply to \tesserahash{} because the format has no random field.
+\tesserahash{}'s tail is deterministic in the content; no CSPRNG is invoked for the tail. The 16-bit per-millisecond counter advances deterministically by 1 within a millisecond, with no randomness involved. The timestamp comes from the OS wall clock (Unix real-time clock, milliseconds since the epoch); the generator clamps on backward clock jumps so emitted timestamps never regress (\cref{sec:wire-format}). TesseraID's discipline on \texttt{getrandom(2)} / \texttt{getentropy(3)} / \texttt{BCryptGenRandom} does not apply to \tesserahash{} because the format has no random field.

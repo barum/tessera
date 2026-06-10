@@ -1,0 +1,16 @@
+TesseraHash Python benchmarks (single thread)
+---------------------------------------------
+
+[hash_only — SHAKE-256/64 B tail; iters x1]
+  hash_only 64 B                              1,938,001 ops/sec   (   516 ns/op)
+  hash_only 1 KiB                               653,024 ops/sec   (  1531 ns/op)
+  hash_only 64 KiB                               14,258 ops/sec   ( 70135 ns/op)
+
+[generator — full 73-byte identifier]
+  Generator.new 1 KiB                           540,268 ops/sec   (  1851 ns/op)
+
+[encode/decode — 73-byte wire form]
+  encode Base64URL                            3,841,484 ops/sec   (   260 ns/op)
+  decode Base64URL                            1,556,988 ops/sec   (   642 ns/op)
+  encode Crockford Base32                        76,975 ops/sec   ( 12991 ns/op)
+  decode Crockford Base32                        80,469 ops/sec   ( 12427 ns/op)
