@@ -12,5 +12,5 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node"]
   },
-  "include": ["tessera_hash.ts"]
+  "include": ["tessera_hash.ts", "test_tessera_hash.ts"]
 }

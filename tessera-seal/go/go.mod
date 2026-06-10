@@ -1,4 +1,4 @@
-module tesseraseal
+module github.com/barum/tessera/tessera-seal/go
 
 go 1.26
 

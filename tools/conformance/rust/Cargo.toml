@@ -1,7 +1,11 @@
 [package]
 name = "conformance_runner"
-version = "0.1.0"
+version = "1.3.1"
 edition = "2024"
+license = "Apache-2.0"
+description = "Tessera cross-language conformance harness runner (internal tool, never published)"
+repository = "https://github.com/barum/tessera"
+publish = false
 
 [dependencies]
 tessera-id   = { path = "../../../tessera-id/rust" }
@@ -20,8 +24,3 @@ path = "src/bin/conformance_runner.rs"
 [[bin]]
 name = "tessera_seal_runner"
 path = "src/bin/tessera_seal_runner.rs"
-
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1

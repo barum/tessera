@@ -15,8 +15,8 @@ import (
 	"hash"
 	"os"
 
+	tesseraseal "github.com/barum/tessera/tessera-seal/go"
 	"golang.org/x/crypto/sha3"
-	"tesseraseal"
 )
 
 type Record struct {

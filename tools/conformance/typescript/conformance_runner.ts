@@ -9,11 +9,11 @@ import {
   validateMinTimestamp,
 } from "tessera-id";
 import {
-  TESSERA_HASH_SIZE_BYTES,
-  tesseraHashHashOnly,
-  tesseraHashDecode, tesseraHashVerify,
-  tesseraHashEncodeBase64URL, tesseraHashDecodeBase64URL,
-  tesseraHashEncodeCrockford, tesseraHashDecodeCrockford,
+  SIZE_BYTES as HASH_SIZE_BYTES,
+  hashOnly,
+  decode as hashDecode, verify as hashVerify,
+  encodeBase64URL as hashEncodeBase64URL, decodeBase64URL as hashDecodeBase64URL,
+  encodeCrockford as hashEncodeCrockford, decodeCrockford as hashDecodeCrockford,
 } from "tessera-hash";
 
 interface Record {
@@ -180,7 +180,7 @@ function runValidateMinTimestamp(r: Record): Result {
 
 function runTesseraHashHashOnly(r: Record): Result {
   const content = hexToBytes(r.input_hex!);
-  const tail = tesseraHashHashOnly(content);
+  const tail = hashOnly(content);
   const got = bytesToHex(tail);
   if (got !== r.expected_tail_hex) return { ok: false, detail: `got=${got} want=${r.expected_tail_hex}` };
   return { ok: true };
@@ -189,7 +189,7 @@ function runTesseraHashHashOnly(r: Record): Result {
 function runTesseraHashDecode(r: Record): Result {
   const raw = hexToBytes(r.input_hex!);
   try {
-    const d = tesseraHashDecode(raw);
+    const d = hashDecode(raw);
     const exp = r.expected;
     if (d.variant !== exp.variant) return { ok: false, detail: "variant" };
     if (d.timestampMs !== exp.timestamp_ms) return { ok: false, detail: `ts got=${d.timestampMs} want=${exp.timestamp_ms}` };
@@ -204,14 +204,14 @@ function runTesseraHashDecode(r: Record): Result {
 
 function runTesseraHashEncodeB64(r: Record): Result {
   const raw = hexToBytes(r.input_hex!);
-  const s = tesseraHashEncodeBase64URL(raw);
+  const s = hashEncodeBase64URL(raw);
   if (s !== r.expected_str) return { ok: false, detail: `got=${s} want=${r.expected_str}` };
   return { ok: true };
 }
 
 function runTesseraHashDecodeB64(r: Record): Result {
   try {
-    const raw = tesseraHashDecodeBase64URL(r.input_str!);
+    const raw = hashDecodeBase64URL(r.input_str!);
     const got = bytesToHex(raw);
     if (got !== r.expected_hex) return { ok: false, detail: `got=${got} want=${r.expected_hex}` };
     return { ok: true };
@@ -222,14 +222,14 @@ function runTesseraHashDecodeB64(r: Record): Result {
 
 function runTesseraHashEncodeCrockford(r: Record): Result {
   const raw = hexToBytes(r.input_hex!);
-  const s = tesseraHashEncodeCrockford(raw);
+  const s = hashEncodeCrockford(raw);
   if (s !== r.expected_str) return { ok: false, detail: `got=${s} want=${r.expected_str}` };
   return { ok: true };
 }
 
 function runTesseraHashDecodeCrockford(r: Record): Result {
   try {
-    const raw = tesseraHashDecodeCrockford(r.input_str!);
+    const raw = hashDecodeCrockford(r.input_str!);
     const got = bytesToHex(raw);
     if (got !== r.expected_hex) return { ok: false, detail: `got=${got} want=${r.expected_hex}` };
     return { ok: true };
@@ -242,12 +242,12 @@ function runTesseraHashValidateInvalid(r: Record): Result {
   try {
     if (r.input_kind === "binary_hex") {
       const h = r.input_hex!;
-      if (h.length !== 2 * TESSERA_HASH_SIZE_BYTES) return { ok: true };
-      tesseraHashDecode(hexToBytes(h));
+      if (h.length !== 2 * HASH_SIZE_BYTES) return { ok: true };
+      hashDecode(hexToBytes(h));
     } else if (r.input_kind === "b64") {
-      tesseraHashDecodeBase64URL(r.input_str!);
+      hashDecodeBase64URL(r.input_str!);
     } else if (r.input_kind === "crockford") {
-      tesseraHashDecodeCrockford(r.input_str!);
+      hashDecodeCrockford(r.input_str!);
     } else {
       return { ok: false, detail: `unknown input_kind ${r.input_kind}` };
     }
@@ -260,7 +260,7 @@ function runTesseraHashValidateInvalid(r: Record): Result {
 function runTesseraHashVerify(r: Record): Result {
   const raw = hexToBytes(r.input_hex!);
   const content = hexToBytes(r.content_hex!);
-  const got = tesseraHashVerify(raw, content);
+  const got = hashVerify(raw, content);
   const want = r.expected as boolean;
   if (got !== want) return { ok: false, detail: `got=${got} want=${want}` };
   return { ok: true };

@@ -19,44 +19,41 @@ import (
 )
 
 const (
-	// TesseraHashSizeBytes is the binary length of a TesseraHash.
-	TesseraHashSizeBytes = 73
-	// TesseraHashTailBytes is the SHAKE-256 output length used as the tail.
-	TesseraHashTailBytes = 64
-	// TesseraHashTailOffset is the offset of the tail within the wire layout.
-	TesseraHashTailOffset = 9
+	// SizeBytes is the binary length of a TesseraHash.
+	SizeBytes = 73
+	// TailBytes is the SHAKE-256 output length used as the tail.
+	TailBytes = 64
+	// TailOffset is the offset of the tail within the wire layout.
+	TailOffset = 9
 
-	// VariantTesseraHash is the variant byte for TesseraHash.
-	VariantTesseraHash byte = 0x03
+	// VariantHash is the variant byte for TesseraHash.
+	VariantHash byte = 0x03
 
-	// TesseraHashEncodedLengthB64 is the canonical Base64URL length.
-	TesseraHashEncodedLengthB64 = 98
-	// TesseraHashEncodedLengthB32 is the Crockford Base32 length.
-	TesseraHashEncodedLengthB32 = 117
+	// EncodedLengthB64 is the canonical Base64URL length.
+	EncodedLengthB64 = 98
+	// EncodedLengthB32 is the Crockford Base32 length.
+	EncodedLengthB32 = 117
 
-	// TesseraHashMinTimestampMS is the project epoch for the optional helper.
-	TesseraHashMinTimestampMS int64 = 1_700_000_000_000
+	// MinTimestampMS is the project epoch for the optional helper.
+	MinTimestampMS int64 = 1_700_000_000_000
 
-	// TesseraHashMaxTimestampMS is the largest timestamp representable in
+	// MaxTimestampMS is the largest timestamp representable in
 	// the 48-bit wire field.
-	TesseraHashMaxTimestampMS uint64 = (1 << 48) - 1
+	MaxTimestampMS uint64 = (1 << 48) - 1
 
-	tesserahashMaxCounter uint16 = 0xFFFF
+	maxCounter uint16 = 0xFFFF
 )
 
 var (
-	ErrTesseraHashInvalidLength   = errors.New("tessera_hash: invalid length")
-	ErrTesseraHashUnknownVariant  = errors.New("tessera_hash: variant must be 0x03")
-	ErrTesseraHashInvalidEncoding = errors.New("tessera_hash: invalid encoding")
-	ErrTesseraHashRange           = errors.New("tessera_hash: timestamp_ms out of range")
+	ErrInvalidLength   = errors.New("tessera_hash: invalid length")
+	ErrUnknownVariant  = errors.New("tessera_hash: variant must be 0x03")
+	ErrInvalidEncoding = errors.New("tessera_hash: invalid encoding")
+	ErrRange           = errors.New("tessera_hash: timestamp_ms out of range")
 )
 
 // nowMS returns the current time as ms since the Unix epoch. Indirected
 // for testability. (Duplicated from tessera_id; package-private to tesserahash.)
 var nowMS = func() int64 { return time.Now().UnixMilli() }
-
-// tesserahashNowMS — clock indirected for testability.
-var tesserahashNowMS = nowMS
 
 // crockfordAlphabet / crockfordDecode — duplicated from tessera_id. Crockford
 // Base32 alphabet (32 chars, deliberately omits I, L, O, U).
@@ -78,62 +75,62 @@ var crockfordDecode = func() [256]int8 {
 	return t
 }()
 
-// SetTesseraHashNowMSForTesting overrides the TesseraHash clock source.
-func SetTesseraHashNowMSForTesting(fn func() int64) func() int64 {
-	prev := tesserahashNowMS
-	tesserahashNowMS = fn
+// SetNowMSForTesting overrides the TesseraHash clock source.
+func SetNowMSForTesting(fn func() int64) func() int64 {
+	prev := nowMS
+	nowMS = fn
 	return prev
 }
 
-// tesserahashShake256 computes SHAKE-256(content) truncated to 64 bytes.
-func tesserahashShake256(content []byte) [TesseraHashTailBytes]byte {
-	var out [TesseraHashTailBytes]byte
+// shake256 computes SHAKE-256(content) truncated to 64 bytes.
+func shake256(content []byte) [TailBytes]byte {
+	var out [TailBytes]byte
 	sk := sha3.NewShake256()
 	_, _ = sk.Write(content)
 	_, _ = sk.Read(out[:])
 	return out
 }
 
-// TesseraHashHashOnly returns just the 64-byte SHAKE-256 tail.
-func TesseraHashHashOnly(content []byte) [TesseraHashTailBytes]byte {
-	return tesserahashShake256(content)
+// HashOnly returns just the 64-byte SHAKE-256 tail.
+func HashOnly(content []byte) [TailBytes]byte {
+	return shake256(content)
 }
 
-// tesserahashWriteHeader serializes the 9-byte (ts, variant, counter) header.
-func tesserahashWriteHeader(out []byte, ts uint64, counter uint16) {
+// writeHeader serializes the 9-byte (ts, variant, counter) header.
+func writeHeader(out []byte, ts uint64, counter uint16) {
 	out[0] = byte(ts >> 40)
 	out[1] = byte(ts >> 32)
 	out[2] = byte(ts >> 24)
 	out[3] = byte(ts >> 16)
 	out[4] = byte(ts >> 8)
 	out[5] = byte(ts)
-	out[6] = VariantTesseraHash
+	out[6] = VariantHash
 	binary.BigEndian.PutUint16(out[7:9], counter)
 }
 
-// TesseraHashAt constructs a TesseraHash with an explicit timestamp and counter.
-// Out-of-range timestamps (> 2^48-1) return ErrTesseraHashRange — they are an
+// HashAt constructs a TesseraHash with an explicit timestamp and counter.
+// Out-of-range timestamps (> 2^48-1) return ErrRange — they are an
 // error, never silently masked to 48 bits (matches the Python reference).
-func TesseraHashAt(content []byte, timestampMs uint64, counter uint16) ([TesseraHashSizeBytes]byte, error) {
-	var out [TesseraHashSizeBytes]byte
-	if timestampMs > TesseraHashMaxTimestampMS {
-		return out, fmt.Errorf("%w: got %d", ErrTesseraHashRange, timestampMs)
+func HashAt(content []byte, timestampMs uint64, counter uint16) ([SizeBytes]byte, error) {
+	var out [SizeBytes]byte
+	if timestampMs > MaxTimestampMS {
+		return out, fmt.Errorf("%w: got %d", ErrRange, timestampMs)
 	}
-	tesserahashWriteHeader(out[:], timestampMs, counter)
-	tail := tesserahashShake256(content)
-	copy(out[TesseraHashTailOffset:], tail[:])
+	writeHeader(out[:], timestampMs, counter)
+	tail := shake256(content)
+	copy(out[TailOffset:], tail[:])
 	return out, nil
 }
 
-// TesseraHashGenerator produces TesseraHash identifiers. Safe for concurrent use.
-type TesseraHashGenerator struct {
+// Generator produces TesseraHash identifiers. Safe for concurrent use.
+type Generator struct {
 	mu      sync.Mutex
 	lastTS  uint64
 	counter uint16
 }
 
 // SetStateForTesting forces the generator's internal state.
-func (g *TesseraHashGenerator) SetStateForTesting(ts uint64, counter uint16) {
+func (g *Generator) SetStateForTesting(ts uint64, counter uint16) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.lastTS = ts
@@ -141,23 +138,23 @@ func (g *TesseraHashGenerator) SetStateForTesting(ts uint64, counter uint16) {
 }
 
 // New returns a TesseraHash for the given content using the live clock.
-func (g *TesseraHashGenerator) New(content []byte) [TesseraHashSizeBytes]byte {
-	tail := tesserahashShake256(content)
+func (g *Generator) New(content []byte) [SizeBytes]byte {
+	tail := shake256(content)
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	ts := uint64(tesserahashNowMS())
+	ts := uint64(nowMS())
 	if ts < g.lastTS {
 		ts = g.lastTS
 	}
 	if ts == g.lastTS {
 		next := uint32(g.counter) + 1
-		if next > uint32(tesserahashMaxCounter) {
+		if next > uint32(maxCounter) {
 			// Spin to next ms.
-			for uint64(tesserahashNowMS()) <= g.lastTS {
+			for uint64(nowMS()) <= g.lastTS {
 			}
-			ts = uint64(tesserahashNowMS())
+			ts = uint64(nowMS())
 			g.counter = 0
 		} else {
 			g.counter = uint16(next)
@@ -167,105 +164,105 @@ func (g *TesseraHashGenerator) New(content []byte) [TesseraHashSizeBytes]byte {
 	}
 	g.lastTS = ts
 
-	var out [TesseraHashSizeBytes]byte
-	tesserahashWriteHeader(out[:], ts, g.counter)
-	copy(out[TesseraHashTailOffset:], tail[:])
+	var out [SizeBytes]byte
+	writeHeader(out[:], ts, g.counter)
+	copy(out[TailOffset:], tail[:])
 	return out
 }
 
-// TesseraHashDecoded is a parsed TesseraHash.
-type TesseraHashDecoded struct {
+// Decoded is a parsed TesseraHash.
+type Decoded struct {
 	Variant     byte
 	TimestampMS int64
 	Counter     uint16
-	Tail        [TesseraHashTailBytes]byte
+	Tail        [TailBytes]byte
 }
 
-// TesseraHashDecode parses a 73-byte TesseraHash into its fields.
-func TesseraHashDecode(raw []byte) (TesseraHashDecoded, error) {
-	var d TesseraHashDecoded
-	if len(raw) != TesseraHashSizeBytes {
-		return d, fmt.Errorf("%w: got %d", ErrTesseraHashInvalidLength, len(raw))
+// Decode parses a 73-byte TesseraHash into its fields.
+func Decode(raw []byte) (Decoded, error) {
+	var d Decoded
+	if len(raw) != SizeBytes {
+		return d, fmt.Errorf("%w: got %d", ErrInvalidLength, len(raw))
 	}
-	if raw[6] != VariantTesseraHash {
-		return d, fmt.Errorf("%w: got 0x%02x", ErrTesseraHashUnknownVariant, raw[6])
+	if raw[6] != VariantHash {
+		return d, fmt.Errorf("%w: got 0x%02x", ErrUnknownVariant, raw[6])
 	}
 	d.Variant = raw[6]
 	d.TimestampMS = int64(uint64(raw[0])<<40 |
 		uint64(raw[1])<<32 | uint64(raw[2])<<24 |
 		uint64(raw[3])<<16 | uint64(raw[4])<<8 | uint64(raw[5]))
 	d.Counter = binary.BigEndian.Uint16(raw[7:9])
-	copy(d.Tail[:], raw[TesseraHashTailOffset:])
+	copy(d.Tail[:], raw[TailOffset:])
 	return d, nil
 }
 
-// TesseraHashVerify returns true iff raw is a valid TesseraHash AND its tail
+// Verify returns true iff raw is a valid TesseraHash AND its tail
 // equals SHAKE-256(content). Constant-time on the tail compare.
-func TesseraHashVerify(raw []byte, content []byte) bool {
-	if len(raw) != TesseraHashSizeBytes {
+func Verify(raw []byte, content []byte) bool {
+	if len(raw) != SizeBytes {
 		return false
 	}
-	if raw[6] != VariantTesseraHash {
+	if raw[6] != VariantHash {
 		return false
 	}
-	expected := tesserahashShake256(content)
-	return subtle.ConstantTimeCompare(raw[TesseraHashTailOffset:], expected[:]) == 1
+	expected := shake256(content)
+	return subtle.ConstantTimeCompare(raw[TailOffset:], expected[:]) == 1
 }
 
-// TesseraHashValidate checks variant + length.
-func TesseraHashValidate(raw []byte) error {
-	if len(raw) != TesseraHashSizeBytes {
-		return fmt.Errorf("%w: got %d", ErrTesseraHashInvalidLength, len(raw))
+// Validate checks variant + length.
+func Validate(raw []byte) error {
+	if len(raw) != SizeBytes {
+		return fmt.Errorf("%w: got %d", ErrInvalidLength, len(raw))
 	}
-	if raw[6] != VariantTesseraHash {
-		return fmt.Errorf("%w: got 0x%02x", ErrTesseraHashUnknownVariant, raw[6])
+	if raw[6] != VariantHash {
+		return fmt.Errorf("%w: got 0x%02x", ErrUnknownVariant, raw[6])
 	}
 	return nil
 }
 
-// TesseraHashValidateMinTimestamp is a non-normative defensive helper.
-func TesseraHashValidateMinTimestamp(raw []byte) bool {
-	if len(raw) != TesseraHashSizeBytes {
+// ValidateMinTimestamp is a non-normative defensive helper.
+func ValidateMinTimestamp(raw []byte) bool {
+	if len(raw) != SizeBytes {
 		return false
 	}
 	ts := int64(uint64(raw[0])<<40 | uint64(raw[1])<<32 | uint64(raw[2])<<24 |
 		uint64(raw[3])<<16 | uint64(raw[4])<<8 | uint64(raw[5]))
-	return ts >= TesseraHashMinTimestampMS
+	return ts >= MinTimestampMS
 }
 
 // ---------------------------------------------------------------------------
 // Base64URL
 // ---------------------------------------------------------------------------
 
-// TesseraHashEncodeBase64URL returns the canonical 98-character Base64URL form.
-func TesseraHashEncodeBase64URL(raw [TesseraHashSizeBytes]byte) string {
+// EncodeBase64URL returns the canonical 98-character Base64URL form.
+func EncodeBase64URL(raw [SizeBytes]byte) string {
 	return base64.RawURLEncoding.EncodeToString(raw[:])
 }
 
-// TesseraHashDecodeBase64URL parses a 98-character Base64URL TesseraHash string.
+// DecodeBase64URL parses a 98-character Base64URL TesseraHash string.
 // Enforces canonical pad bits (final char's low 4 bits must be 0) and rejects
 // any variant byte other than 0x03 (spec sec03: every other byte is rejected
 // at decode).
-func TesseraHashDecodeBase64URL(s string) ([TesseraHashSizeBytes]byte, error) {
-	var out [TesseraHashSizeBytes]byte
-	if len(s) != TesseraHashEncodedLengthB64 {
+func DecodeBase64URL(s string) ([SizeBytes]byte, error) {
+	var out [SizeBytes]byte
+	if len(s) != EncodedLengthB64 {
 		return out, fmt.Errorf("%w: expected %d chars, got %d",
-			ErrTesseraHashInvalidEncoding, TesseraHashEncodedLengthB64, len(s))
+			ErrInvalidEncoding, EncodedLengthB64, len(s))
 	}
 	b, err := base64.RawURLEncoding.DecodeString(s)
 	if err != nil {
-		return out, fmt.Errorf("%w: %v", ErrTesseraHashInvalidEncoding, err)
+		return out, fmt.Errorf("%w: %v", ErrInvalidEncoding, err)
 	}
-	if len(b) != TesseraHashSizeBytes {
-		return out, fmt.Errorf("%w: decoded %d bytes", ErrTesseraHashInvalidEncoding, len(b))
+	if len(b) != SizeBytes {
+		return out, fmt.Errorf("%w: decoded %d bytes", ErrInvalidEncoding, len(b))
 	}
 	copy(out[:], b)
 	// Bijection check: re-encode and compare.
 	if base64.RawURLEncoding.EncodeToString(out[:]) != s {
-		return out, fmt.Errorf("%w: non-canonical Base64URL (pad bits non-zero)", ErrTesseraHashInvalidEncoding)
+		return out, fmt.Errorf("%w: non-canonical Base64URL (pad bits non-zero)", ErrInvalidEncoding)
 	}
-	if out[6] != VariantTesseraHash {
-		return out, fmt.Errorf("%w: got 0x%02x", ErrTesseraHashUnknownVariant, out[6])
+	if out[6] != VariantHash {
+		return out, fmt.Errorf("%w: got 0x%02x", ErrUnknownVariant, out[6])
 	}
 	return out, nil
 }
@@ -274,9 +271,9 @@ func TesseraHashDecodeBase64URL(s string) ([TesseraHashSizeBytes]byte, error) {
 // Crockford Base32
 // ---------------------------------------------------------------------------
 
-// TesseraHashEncodeCrockford returns the 117-char Crockford Base32 form (uppercase).
-func TesseraHashEncodeCrockford(raw [TesseraHashSizeBytes]byte) string {
-	out := make([]byte, TesseraHashEncodedLengthB32)
+// EncodeCrockford returns the 117-char Crockford Base32 form (uppercase).
+func EncodeCrockford(raw [SizeBytes]byte) string {
+	out := make([]byte, EncodedLengthB32)
 	var buf uint64
 	var bits int
 	idx := 0
@@ -294,15 +291,15 @@ func TesseraHashEncodeCrockford(raw [TesseraHashSizeBytes]byte) string {
 		out[idx] = crockfordAlphabet[(buf<<uint(5-bits))&0x1F]
 		idx++
 	}
-	return string(out[:TesseraHashEncodedLengthB32])
+	return string(out[:EncodedLengthB32])
 }
 
-// TesseraHashDecodeCrockford parses a 117-character Crockford Base32 TesseraHash string.
-func TesseraHashDecodeCrockford(s string) ([TesseraHashSizeBytes]byte, error) {
-	var out [TesseraHashSizeBytes]byte
-	if len(s) != TesseraHashEncodedLengthB32 {
+// DecodeCrockford parses a 117-character Crockford Base32 TesseraHash string.
+func DecodeCrockford(s string) ([SizeBytes]byte, error) {
+	var out [SizeBytes]byte
+	if len(s) != EncodedLengthB32 {
 		return out, fmt.Errorf("%w: expected %d chars, got %d",
-			ErrTesseraHashInvalidEncoding, TesseraHashEncodedLengthB32, len(s))
+			ErrInvalidEncoding, EncodedLengthB32, len(s))
 	}
 	var buf uint64
 	var bits int
@@ -310,27 +307,27 @@ func TesseraHashDecodeCrockford(s string) ([TesseraHashSizeBytes]byte, error) {
 	for i := 0; i < len(s); i++ {
 		v := crockfordDecode[s[i]]
 		if v < 0 {
-			return out, fmt.Errorf("%w: invalid char %q", ErrTesseraHashInvalidEncoding, s[i])
+			return out, fmt.Errorf("%w: invalid char %q", ErrInvalidEncoding, s[i])
 		}
 		buf = (buf << 5) | uint64(v)
 		bits += 5
 		if bits >= 8 {
 			bits -= 8
-			if idx >= TesseraHashSizeBytes {
-				return out, fmt.Errorf("%w: overflow", ErrTesseraHashInvalidEncoding)
+			if idx >= SizeBytes {
+				return out, fmt.Errorf("%w: overflow", ErrInvalidEncoding)
 			}
 			out[idx] = byte((buf >> uint(bits)) & 0xFF)
 			idx++
 		}
 	}
-	if idx != TesseraHashSizeBytes {
-		return out, fmt.Errorf("%w: decoded %d bytes", ErrTesseraHashInvalidEncoding, idx)
+	if idx != SizeBytes {
+		return out, fmt.Errorf("%w: decoded %d bytes", ErrInvalidEncoding, idx)
 	}
 	if bits > 0 && buf&((1<<uint(bits))-1) != 0 {
-		return out, fmt.Errorf("%w: non-canonical Crockford (pad bits non-zero)", ErrTesseraHashInvalidEncoding)
+		return out, fmt.Errorf("%w: non-canonical Crockford (pad bits non-zero)", ErrInvalidEncoding)
 	}
-	if out[6] != VariantTesseraHash {
-		return out, fmt.Errorf("%w: got 0x%02x", ErrTesseraHashUnknownVariant, out[6])
+	if out[6] != VariantHash {
+		return out, fmt.Errorf("%w: got 0x%02x", ErrUnknownVariant, out[6])
 	}
 	return out, nil
 }

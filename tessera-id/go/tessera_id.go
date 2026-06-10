@@ -34,7 +34,7 @@ const (
 	VariantStandard byte = 0x01
 	VariantHLC      byte = 0x02
 
-	maxCounter      uint16 = 0xFFFF
+	maxCounter uint16 = 0xFFFF
 	// MinTimestampMS is the project epoch for the optional, non-normative
 	// validate_min_timestamp helper. Any decoded TesseraID with a timestamp below
 	// this is presumed malformed. The standard decoder accepts everything in
@@ -44,8 +44,8 @@ const (
 	// HLCMaxDriftMS is the normative outer drift bound for HLC observations.
 	// An observation whose logical time exceeds the local physical clock by
 	// more than this is rejected. Spec sec03 / sec:csprng.
-	HLCMaxDriftMS   int64  = 60_000
-	hlcMaxDriftMS          = HLCMaxDriftMS // back-compat alias for internal callers
+	HLCMaxDriftMS int64 = 60_000
+	hlcMaxDriftMS       = HLCMaxDriftMS // back-compat alias for internal callers
 
 	// Base64URL canonical encoded length (no padding).
 	EncodedLengthB64 = 55
@@ -55,10 +55,10 @@ const (
 
 // Errors.
 var (
-	ErrInvalidLength    = errors.New("tessera_id: invalid length")
-	ErrUnknownVariant   = errors.New("tessera_id: unknown variant byte")
-	ErrHLCDrift         = errors.New("tessera_id: observed HLC exceeds drift bound")
-	ErrInvalidEncoding  = errors.New("tessera_id: invalid encoding")
+	ErrInvalidLength   = errors.New("tessera_id: invalid length")
+	ErrUnknownVariant  = errors.New("tessera_id: unknown variant byte")
+	ErrHLCDrift        = errors.New("tessera_id: observed HLC exceeds drift bound")
+	ErrInvalidEncoding = errors.New("tessera_id: invalid encoding")
 )
 
 // nowMS returns the current time as milliseconds since the Unix epoch.

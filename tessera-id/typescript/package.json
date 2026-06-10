@@ -1,11 +1,30 @@
 {
   "name": "tessera-id",
-  "version": "0.1.0",
+  "version": "1.3.1",
+  "description": "TesseraID: 41-byte sortable identifier (Standard + HLC variants) - TypeScript reference implementation",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/barum/tessera.git",
+    "directory": "tessera-id/typescript"
+  },
+  "private": false,
   "type": "module",
   "main": "./dist/tessera_id.js",
   "types": "./dist/tessera_id.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/tessera_id.d.ts",
+      "default": "./dist/tessera_id.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepare": "npm run build",
     "test": "tsc && node dist/test_tessera_id.js",
     "bench": "tsc && node dist/bench.js"
   },

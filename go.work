@@ -1,8 +1,11 @@
 go 1.26
 
 use (
-	./tessera-id/go
+	./tessera-hash/examples/go
 	./tessera-hash/go
+	./tessera-id/examples/go
+	./tessera-id/go
+	./tessera-seal/examples/go
 	./tessera-seal/go
 	./tools/conformance/go
 	./tools/conformance/go/tessera_seal_runner

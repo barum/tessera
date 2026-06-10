@@ -1,7 +1,7 @@
 // Microbenchmarks for the Go TesseraSeal reference.
 // Output mirrors tessera-id/go/bench_test.go.
 //
-//   cd tessera-seal/go && go test -bench=. -benchmem
+//	cd tessera-seal/go && go test -bench=. -benchmem
 package tesseraseal
 
 import "testing"

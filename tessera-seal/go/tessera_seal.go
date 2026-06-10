@@ -34,25 +34,25 @@ import (
 const (
 	VariantTesseraSeal = 0x04
 
-	SuiteMLKEM1024AESGCM                = 0x01
-	SuiteMLKEM1024ChaCha                = 0x02
-	SuiteHybridX25519MLKEM1024AESGCM    = 0x06
+	SuiteMLKEM1024AESGCM             = 0x01
+	SuiteMLKEM1024ChaCha             = 0x02
+	SuiteHybridX25519MLKEM1024AESGCM = 0x06
 
 	HeaderBytes = 16
 
-	MLKem1024PKBytes = 1568
-	MLKem1024SKBytes = 3168
-	MLKem1024CTBytes = 1568
-	MLKem1024SSBytes = 32
+	MLKem1024PKBytes   = 1568
+	MLKem1024SKBytes   = 3168
+	MLKem1024CTBytes   = 1568
+	MLKem1024SSBytes   = 32
 	MLKem1024SeedBytes = 64 // FIPS 203 (d || z)
 
 	X25519PKBytes = 32
 	X25519SKBytes = 32
 	X25519SSBytes = 32
 
-	HybridPKBytes   = MLKem1024PKBytes + X25519PKBytes  // 1600
-	HybridSKBytes   = MLKem1024SKBytes + X25519SKBytes  // 3200
-	HybridCTBytes   = MLKem1024CTBytes + X25519PKBytes  // 1600
+	HybridPKBytes   = MLKem1024PKBytes + X25519PKBytes   // 1600
+	HybridSKBytes   = MLKem1024SKBytes + X25519SKBytes   // 3200
+	HybridCTBytes   = MLKem1024CTBytes + X25519PKBytes   // 1600
 	HybridSeedBytes = MLKem1024SeedBytes + X25519SKBytes // 96
 
 	AEADNonceBytes = 12
@@ -66,29 +66,29 @@ const (
 
 // Wire-layout offsets within the 16-byte header.
 const (
-	tsOffset         = 0
-	tsBytes          = 6
-	variantOffset    = 6
-	suiteOffset      = 7
-	ctrOffset        = 8
-	ctrBytes         = 2
-	kemCTLenOffset   = 10
-	kemCTLenBytes    = 2
-	adLenOffset      = 12
-	adLenBytes       = 4
+	tsOffset       = 0
+	tsBytes        = 6
+	variantOffset  = 6
+	suiteOffset    = 7
+	ctrOffset      = 8
+	ctrBytes       = 2
+	kemCTLenOffset = 10
+	kemCTLenBytes  = 2
+	adLenOffset    = 12
+	adLenBytes     = 4
 )
 
 // KDF domain separators — must match python/tessera_seal.py and c/tessera_seal.c.
 var (
-	saltLabel            = []byte("pqcrypt v1 header")         // frozen v1 wire tag — not a rebrandable name
-	infoAEADKey          = []byte("pqcrypt v1 aead k")         // frozen v1 wire tag — not a rebrandable name
-	infoAEADNonce        = []byte("pqcrypt v1 aead n")         // frozen v1 wire tag — not a rebrandable name
-	infoCommitKey        = []byte("pqcrypt v1 commit")         // frozen v1 wire tag — not a rebrandable name
-	infoTimingPad        = []byte("pqcrypt v1 timing pad")     // frozen v1 wire tag — not a rebrandable name
-	hybridCombinerLabel  = []byte("pqcrypt v1 hybrid combiner") // frozen v1 wire tag — not a rebrandable name
+	saltLabel           = []byte("pqcrypt v1 header")          // frozen v1 wire tag — not a rebrandable name
+	infoAEADKey         = []byte("pqcrypt v1 aead k")          // frozen v1 wire tag — not a rebrandable name
+	infoAEADNonce       = []byte("pqcrypt v1 aead n")          // frozen v1 wire tag — not a rebrandable name
+	infoCommitKey       = []byte("pqcrypt v1 commit")          // frozen v1 wire tag — not a rebrandable name
+	infoTimingPad       = []byte("pqcrypt v1 timing pad")      // frozen v1 wire tag — not a rebrandable name
+	hybridCombinerLabel = []byte("pqcrypt v1 hybrid combiner") // frozen v1 wire tag — not a rebrandable name
 )
 
-func isHybrid(suite uint8) bool   { return suite == SuiteHybridX25519MLKEM1024AESGCM }
+func isHybrid(suite uint8) bool { return suite == SuiteHybridX25519MLKEM1024AESGCM }
 func suiteAllowed(suite uint8) bool {
 	return suite == SuiteMLKEM1024AESGCM || suite == SuiteMLKEM1024ChaCha || isHybrid(suite)
 }
@@ -171,10 +171,10 @@ type PublicKey struct {
 // alongside the seed (d || z) — 64 bytes for non-hybrid, 96 bytes for hybrid
 // (ML-KEM seed || 32-byte X25519 scalar).
 type PrivateKey struct {
-	seed   []byte // 64 or 96 bytes
-	dk     *mlkem.DecapsulationKey1024
-	xPriv  *ecdh.PrivateKey // non-nil for hybrid
-	Suite  uint8
+	seed  []byte // 64 or 96 bytes
+	dk    *mlkem.DecapsulationKey1024
+	xPriv *ecdh.PrivateKey // non-nil for hybrid
+	Suite uint8
 }
 
 // PublicBytes returns a copy of the ML-KEM-1024 encapsulation key
@@ -447,6 +447,33 @@ func PeekHeader(env []byte) (DecodedHeader, error) {
 	return h, nil
 }
 
+// PeekAD returns a copy of the cleartext-on-wire associated-data bytes
+// WITHOUT decrypting — the routing-before-decrypt companion to PeekHeader
+// (TSEAL-00047). The canonical use case is the TesseraID-as-AD pattern:
+// route an envelope by the 41-byte TesseraID it is bound to, then decrypt.
+//
+// WARNING: the returned bytes are UNAUTHENTICATED until Decrypt succeeds —
+// every byte is attacker-controlled. Use them only for routing/lookup;
+// never act on them as trusted data.
+//
+// Rejects exactly what PeekHeader rejects (unknown variant/suite, bad
+// declared lengths) plus ErrInvalidLength when the declared AD region
+// extends past the envelope (truncated input).
+func PeekAD(env []byte) ([]byte, error) {
+	h, err := PeekHeader(env)
+	if err != nil {
+		return nil, err
+	}
+	start := HeaderBytes + int(h.KEMCTLen)
+	end := start + int(h.ADLen)
+	if len(env) < end {
+		return nil, fmt.Errorf("%w: ad region extends past envelope end", ErrInvalidLength)
+	}
+	out := make([]byte, h.ADLen)
+	copy(out, env[start:end])
+	return out, nil
+}
+
 // Validate reports whether the envelope is structurally well-formed.
 // Does NOT authenticate.
 func Validate(env []byte) bool {
@@ -494,7 +521,7 @@ func shake256(in []byte, n int) []byte {
 	return out
 }
 
-func newSHA3 () hash.Hash { return sha3.New256() }
+func newSHA3() hash.Hash { return sha3.New256() }
 
 func hmacSHA3_256(key, msg []byte) []byte {
 	mac := hmac.New(newSHA3, key)
@@ -534,9 +561,9 @@ func hkdfExpand(prk, info []byte, length int) ([]byte, error) {
 // ---------------------------------------------------------------------------
 
 type sessionKeys struct {
-	kAEAD    []byte // 32 B
-	nonce    []byte // 12 B
-	kCommit  []byte // 32 B
+	kAEAD   []byte // 32 B
+	nonce   []byte // 12 B
+	kCommit []byte // 32 B
 }
 
 func deriveSessionKeys(headerBytes, ssMLKEM []byte) (*sessionKeys, error) {

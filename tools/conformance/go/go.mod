@@ -3,8 +3,8 @@ module conformance_runner
 go 1.26
 
 require (
-	tesserahash v0.0.0
-	tesseraid v0.0.0
+	github.com/barum/tessera/tessera-hash/go v0.0.0
+	github.com/barum/tessera/tessera-id/go v0.0.0
 )
 
 require (
@@ -13,6 +13,6 @@ require (
 )
 
 replace (
-	tesserahash => ../../../tessera-hash/go
-	tesseraid => ../../../tessera-id/go
+	github.com/barum/tessera/tessera-hash/go => ../../../tessera-hash/go
+	github.com/barum/tessera/tessera-id/go => ../../../tessera-id/go
 )

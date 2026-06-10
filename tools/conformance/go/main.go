@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"os"
 
-	"tesserahash"
-	"tesseraid"
+	tesserahash "github.com/barum/tessera/tessera-hash/go"
+	tesseraid "github.com/barum/tessera/tessera-id/go"
 )
 
 type Record struct {
@@ -189,7 +189,7 @@ func runTesseraHashHashOnly(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	tail := tesserahash.TesseraHashHashOnly(content)
+	tail := tesserahash.HashOnly(content)
 	got := hex.EncodeToString(tail[:])
 	if got != r.ExpectedTailHex {
 		return false, fmt.Sprintf("got=%s want=%s", got, r.ExpectedTailHex)
@@ -202,7 +202,7 @@ func runTesseraHashDecode(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	d, err := tesserahash.TesseraHashDecode(raw)
+	d, err := tesserahash.Decode(raw)
 	if err != nil {
 		return false, fmt.Sprintf("decode: %v", err)
 	}
@@ -231,9 +231,9 @@ func runTesseraHashEncodeB64(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	var arr [tesserahash.TesseraHashSizeBytes]byte
+	var arr [tesserahash.SizeBytes]byte
 	copy(arr[:], raw)
-	got := tesserahash.TesseraHashEncodeBase64URL(arr)
+	got := tesserahash.EncodeBase64URL(arr)
 	if got != r.ExpectedStr {
 		return false, fmt.Sprintf("got=%q want=%q", got, r.ExpectedStr)
 	}
@@ -241,7 +241,7 @@ func runTesseraHashEncodeB64(r Record) (bool, string) {
 }
 
 func runTesseraHashDecodeB64(r Record) (bool, string) {
-	arr, err := tesserahash.TesseraHashDecodeBase64URL(r.InputStr)
+	arr, err := tesserahash.DecodeBase64URL(r.InputStr)
 	if err != nil {
 		return false, fmt.Sprintf("decode: %v", err)
 	}
@@ -257,9 +257,9 @@ func runTesseraHashEncodeCrockford(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("bad hex: %v", err)
 	}
-	var arr [tesserahash.TesseraHashSizeBytes]byte
+	var arr [tesserahash.SizeBytes]byte
 	copy(arr[:], raw)
-	got := tesserahash.TesseraHashEncodeCrockford(arr)
+	got := tesserahash.EncodeCrockford(arr)
 	if got != r.ExpectedStr {
 		return false, fmt.Sprintf("got=%q want=%q", got, r.ExpectedStr)
 	}
@@ -267,7 +267,7 @@ func runTesseraHashEncodeCrockford(r Record) (bool, string) {
 }
 
 func runTesseraHashDecodeCrockford(r Record) (bool, string) {
-	arr, err := tesserahash.TesseraHashDecodeCrockford(r.InputStr)
+	arr, err := tesserahash.DecodeCrockford(r.InputStr)
 	if err != nil {
 		return false, fmt.Sprintf("decode: %v", err)
 	}
@@ -285,17 +285,17 @@ func runTesseraHashValidateInvalid(r Record) (bool, string) {
 		if err != nil {
 			return true, ""
 		}
-		if _, err := tesserahash.TesseraHashDecode(raw); err != nil {
+		if _, err := tesserahash.Decode(raw); err != nil {
 			return true, ""
 		}
 		return false, "expected error, got success"
 	case "b64":
-		if _, err := tesserahash.TesseraHashDecodeBase64URL(r.InputStr); err != nil {
+		if _, err := tesserahash.DecodeBase64URL(r.InputStr); err != nil {
 			return true, ""
 		}
 		return false, "expected error, got success"
 	case "crockford":
-		if _, err := tesserahash.TesseraHashDecodeCrockford(r.InputStr); err != nil {
+		if _, err := tesserahash.DecodeCrockford(r.InputStr); err != nil {
 			return true, ""
 		}
 		return false, "expected error, got success"
@@ -312,7 +312,7 @@ func runTesseraHashVerify(r Record) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("bad content_hex: %v", err)
 	}
-	got := tesserahash.TesseraHashVerify(raw, content)
+	got := tesserahash.Verify(raw, content)
 	var want bool
 	if err := json.Unmarshal(r.Expected, &want); err != nil {
 		return false, "no expected bool"

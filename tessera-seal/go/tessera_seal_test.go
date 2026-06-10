@@ -201,6 +201,61 @@ func TestPeekHeader(t *testing.T) {
 	}
 }
 
+// TestPeekAD covers the structural AD peek (TSEAL-00047 / TP-081):
+// unauthenticated until Decrypt; every returned byte is attacker-controlled.
+func TestPeekAD(t *testing.T) {
+	_, pub, err := GenerateKeypair(SuiteMLKEM1024AESGCM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ad := make([]byte, 41)
+	for i := range ad {
+		ad[i] = byte(i)
+	}
+	env, err := Encrypt([]byte("x"), pub, SuiteMLKEM1024AESGCM, ad, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := PeekAD(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(ad) {
+		t.Errorf("AD mismatch: got %x want %x", got, ad)
+	}
+
+	// Empty AD: returns an empty slice, no error.
+	envNoAD, err := Encrypt([]byte("x"), pub, SuiteMLKEM1024AESGCM, nil, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := PeekAD(envNoAD); err != nil || len(got) != 0 {
+		t.Errorf("empty AD: got %x err %v", got, err)
+	}
+
+	// Truncated mid-AD: declared AD region extends past the envelope.
+	trunc := HeaderBytes + MLKem1024CTBytes + len(ad) - 1
+	if _, err := PeekAD(env[:trunc]); !errors.Is(err, ErrInvalidLength) {
+		t.Errorf("truncated: want ErrInvalidLength, got %v", err)
+	}
+	// Shorter than a header.
+	if _, err := PeekAD(env[:HeaderBytes-1]); !errors.Is(err, ErrInvalidLength) {
+		t.Errorf("short header: want ErrInvalidLength, got %v", err)
+	}
+
+	// Unknown variant / suite: rejected exactly like PeekHeader.
+	bad := append([]byte(nil), env...)
+	bad[6] = 0x03
+	if _, err := PeekAD(bad); !errors.Is(err, ErrUnknownVariant) {
+		t.Errorf("variant: want ErrUnknownVariant, got %v", err)
+	}
+	bad = append([]byte(nil), env...)
+	bad[7] = 0x07
+	if _, err := PeekAD(bad); !errors.Is(err, ErrUnknownSuite) {
+		t.Errorf("suite: want ErrUnknownSuite, got %v", err)
+	}
+}
+
 func TestSenderContextMonotonic(t *testing.T) {
 	_, pub, err := GenerateKeypair(SuiteMLKEM1024AESGCM)
 	if err != nil {
@@ -234,15 +289,15 @@ func TestSenderContextMonotonic(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 type kdr struct {
-	Name             string `json:"name"`
-	Op               string `json:"op"`
-	Suite            int    `json:"suite,omitempty"`
-	PrivateKeySeed   string `json:"private_key_seed_hex,omitempty"`
-	PrivateKeyHex    string `json:"private_key_hex,omitempty"`
-	EnvelopeHex      string `json:"envelope_hex"`
-	ExpectedADHex    string `json:"expected_ad_hex,omitempty"`
-	ExpectedPTHex    string `json:"expected_plaintext_hex,omitempty"`
-	ErrorKind        string `json:"error_kind,omitempty"`
+	Name           string `json:"name"`
+	Op             string `json:"op"`
+	Suite          int    `json:"suite,omitempty"`
+	PrivateKeySeed string `json:"private_key_seed_hex,omitempty"`
+	PrivateKeyHex  string `json:"private_key_hex,omitempty"`
+	EnvelopeHex    string `json:"envelope_hex"`
+	ExpectedADHex  string `json:"expected_ad_hex,omitempty"`
+	ExpectedPTHex  string `json:"expected_plaintext_hex,omitempty"`
+	ErrorKind      string `json:"error_kind,omitempty"`
 }
 
 func mustHex(t *testing.T, s string) []byte {
@@ -319,6 +374,43 @@ func TestKATADBinding(t *testing.T) {
 			} else {
 				if decErr == nil {
 					t.Fatalf("expected failure")
+				}
+			}
+		})
+	}
+}
+
+// TestKATPeekAD consumes ad_binding.json through PeekAD (TSEAL-00047): the
+// positive records bind a 41-byte TesseraID-style AD; PeekAD must return
+// exactly those bytes without decrypting and must reject truncated input.
+// Negative records carry a deliberately wrong expected_ad, so only
+// structural success is asserted for them.
+func TestKATPeekAD(t *testing.T) {
+	recs := loadVectors(t, "ad_binding.json")
+	if len(recs) == 0 {
+		t.Fatal("no records")
+	}
+	for _, r := range recs {
+		t.Run(r.Name, func(t *testing.T) {
+			env := mustHex(t, r.EnvelopeHex)
+			got, err := PeekAD(env)
+			if err != nil {
+				t.Fatalf("PeekAD: %v", err)
+			}
+			if r.Op == "decrypt" {
+				want := mustHex(t, r.ExpectedADHex)
+				if string(got) != string(want) {
+					t.Fatalf("AD mismatch: got %x want %x", got, want)
+				}
+			}
+			if len(got) > 0 {
+				h, err := PeekHeader(env)
+				if err != nil {
+					t.Fatal(err)
+				}
+				trunc := HeaderBytes + int(h.KEMCTLen) + int(h.ADLen) - 1
+				if _, err := PeekAD(env[:trunc]); !errors.Is(err, ErrInvalidLength) {
+					t.Errorf("truncated: want ErrInvalidLength, got %v", err)
 				}
 			}
 		})
