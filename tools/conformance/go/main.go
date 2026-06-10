@@ -322,9 +322,7 @@ func runTesseraHashVerify(r Record) (bool, string) {
 }
 
 func runHLCOverflow(r Record) (bool, string) {
-	if r.Name == "doc" {
-		return true, ""
-	}
+	// 'doc' pseudo-records never reach this handler — main() emits SKIP for them.
 	g := &tesseraid.HLCGenerator{}
 	g.SetHLCStateForTesting(r.Start["l_old"], uint16(r.Start["c_old"]))
 
@@ -426,7 +424,10 @@ func main() {
 
 	failures := 0
 	for _, r := range records {
+		// 'doc' pseudo-records are documentation, not executable tests. Emit an
+		// explicit SKIP line so the harness can reconcile record counts (TP-021).
 		if r.Name == "doc" {
+			fmt.Printf("SKIP %s (doc pseudo-record)\n", r.Name)
 			continue
 		}
 		ok, detail := dispatch(r)

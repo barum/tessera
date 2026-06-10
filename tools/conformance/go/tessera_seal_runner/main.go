@@ -1,7 +1,7 @@
 // tessera_seal_runner — Go conformance runner for TesseraSeal KAT vectors.
 //
-// Reads a vectors.json with TesseraSeal op records and emits PASS/FAIL lines
-// the harness aggregates. Mirrors tools/conformance/c/tessera_seal_runner.c.
+// Reads a vectors.json with TesseraSeal op records and emits PASS/FAIL/SKIP
+// lines the harness aggregates. Mirrors tools/conformance/c/tessera_seal_runner.c.
 //
 // Usage: tessera_seal_runner <vectors.json>
 package main
@@ -10,6 +10,7 @@ import (
 	"crypto/hmac"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash"
 	"os"
@@ -19,23 +20,31 @@ import (
 )
 
 type Record struct {
-	Name                  string `json:"name"`
-	Op                    string `json:"op"`
-	Suite                 *byte  `json:"suite,omitempty"`
-	PrivateKeySeedHex     string `json:"private_key_seed_hex,omitempty"`
-	PrivateKeyHex         string `json:"private_key_hex,omitempty"`
-	EnvelopeHex           string `json:"envelope_hex,omitempty"`
-	HeaderHex             string `json:"header_hex,omitempty"`
-	ExpectedADHex         string `json:"expected_ad_hex,omitempty"`
-	ExpectedPlaintextHex  string `json:"expected_plaintext_hex,omitempty"`
-	ExpectedCommitHex     string `json:"expected_commit_hex,omitempty"`
-	KCommitHex            string `json:"k_commit_hex,omitempty"`
-	KemCtHex              string `json:"kem_ct_hex,omitempty"`
-	ADHex                 string `json:"ad_hex,omitempty"`
-	AeadCtHex             string `json:"aead_ct_hex,omitempty"`
-	MinMs                 uint64 `json:"min_ms,omitempty"`
-	Expected              any    `json:"expected,omitempty"`
+	Name                 string `json:"name"`
+	Op                   string `json:"op"`
+	Suite                *byte  `json:"suite,omitempty"`
+	PrivateKeySeedHex    string `json:"private_key_seed_hex,omitempty"`
+	PrivateKeyHex        string `json:"private_key_hex,omitempty"`
+	EnvelopeHex          string `json:"envelope_hex,omitempty"`
+	HeaderHex            string `json:"header_hex,omitempty"`
+	ExpectedADHex        string `json:"expected_ad_hex,omitempty"`
+	ExpectedPlaintextHex string `json:"expected_plaintext_hex,omitempty"`
+	ExpectedCommitHex    string `json:"expected_commit_hex,omitempty"`
+	KCommitHex           string `json:"k_commit_hex,omitempty"`
+	KemCtHex             string `json:"kem_ct_hex,omitempty"`
+	ADHex                string `json:"ad_hex,omitempty"`
+	AeadCtHex            string `json:"aead_ct_hex,omitempty"`
+	MinMs                uint64 `json:"min_ms,omitempty"`
+	ErrorKind            string `json:"error_kind,omitempty"`
+	Expected             any    `json:"expected,omitempty"`
 }
+
+// dispatch outcome statuses.
+const (
+	statusPass = "PASS"
+	statusFail = "FAIL"
+	statusSkip = "SKIP"
+)
 
 func unhex(s string) []byte {
 	if s == "" {
@@ -55,52 +64,87 @@ func suiteOf(r Record) byte {
 	return tesseraseal.SuiteMLKEM1024AESGCM
 }
 
-func runDecrypt(r Record, shouldFail bool) bool {
+// errorKind maps the Go error taxonomy to the vector schema's error_kind enum
+// (TESS-00007 / TP-022). The harness asserts this per should-fail record so the
+// normative BAD_KEY-vs-auth-class distinction is mechanically enforced.
+func errorKind(err error) string {
+	switch {
+	case errors.Is(err, tesseraseal.ErrUnknownVariant):
+		return "UNKNOWN_VARIANT"
+	case errors.Is(err, tesseraseal.ErrUnknownSuite):
+		return "UNKNOWN_SUITE"
+	case errors.Is(err, tesseraseal.ErrInvalidLength):
+		return "INVALID_LEN"
+	case errors.Is(err, tesseraseal.ErrBadKey):
+		return "BAD_KEY"
+	case errors.Is(err, tesseraseal.ErrDecrypt):
+		return "DECRYPT_FAILED"
+	default:
+		return "<unmapped>"
+	}
+}
+
+// checkErrorKind asserts the record's error_kind against the observed error
+// (no-op when the vector carries no error_kind).
+func checkErrorKind(r Record, err error) (string, string) {
+	if r.ErrorKind == "" {
+		return statusPass, ""
+	}
+	if got := errorKind(err); got != r.ErrorKind {
+		return statusFail, fmt.Sprintf("error_kind got=%s want=%s", got, r.ErrorKind)
+	}
+	return statusPass, ""
+}
+
+func runDecrypt(r Record, shouldFail bool) (string, string) {
 	seed := unhex(r.PrivateKeySeedHex)
 	// 64 bytes = ML-KEM-1024 (suites 0x01/0x02); 96 bytes = hybrid (suite 0x06).
 	if len(seed) != 64 && len(seed) != 96 {
-		return false
+		return statusFail, "bad private_key_seed_hex length"
 	}
 	priv, _, err := tesseraseal.GenerateKeypairFromSeed(seed, suiteOf(r))
 	if err != nil {
-		return false
+		return statusFail, "keygen from seed failed"
 	}
 	env := unhex(r.EnvelopeHex)
 	ad := unhex(r.ExpectedADHex)
 	pt, err := tesseraseal.Decrypt(env, priv, ad)
 	if shouldFail {
-		return err != nil
+		if err == nil {
+			return statusFail, "expected failure, got success"
+		}
+		return checkErrorKind(r, err)
 	}
 	if err != nil {
-		return false
+		return statusFail, "decrypt error: " + err.Error()
 	}
 	expected := unhex(r.ExpectedPlaintextHex)
 	if len(pt) != len(expected) {
-		return false
+		return statusFail, "plaintext length mismatch"
 	}
 	for i := range pt {
 		if pt[i] != expected[i] {
-			return false
+			return statusFail, "plaintext mismatch"
 		}
 	}
-	return true
+	return statusPass, ""
 }
 
-func runPeekHeader(r Record) bool {
+func runPeekHeader(r Record) (string, string) {
 	hdr := unhex(r.HeaderHex)
 	if len(hdr) < 16 {
-		return false
+		return statusFail, "bad header_hex"
 	}
 	// Pad with zeros so the structural checks have something to read.
 	padded := make([]byte, 16+1700)
 	copy(padded, hdr[:16])
 	h, err := tesseraseal.PeekHeader(padded)
 	if err != nil {
-		return false
+		return statusFail, "peek_header error: " + err.Error()
 	}
 	expMap, ok := r.Expected.(map[string]any)
 	if !ok {
-		return false
+		return statusFail, "no expected object"
 	}
 	check := func(k string, got int64) bool {
 		v, ok := expMap[k]
@@ -110,21 +154,27 @@ func runPeekHeader(r Record) bool {
 		want, ok := v.(float64)
 		return ok && int64(want) == got
 	}
-	return check("timestamp_ms", int64(h.TimestampMs)) &&
+	if check("timestamp_ms", int64(h.TimestampMs)) &&
 		check("variant", int64(h.Variant)) &&
 		check("suite", int64(h.Suite)) &&
 		check("counter", int64(h.Counter)) &&
 		check("kem_ct_len", int64(h.KEMCTLen)) &&
-		check("ad_len", int64(h.ADLen))
+		check("ad_len", int64(h.ADLen)) {
+		return statusPass, ""
+	}
+	return statusFail, "header field mismatch"
 }
 
-func runPeekHeaderShouldFail(r Record) bool {
+func runPeekHeaderShouldFail(r Record) (string, string) {
 	env := unhex(r.EnvelopeHex)
 	_, err := tesseraseal.PeekHeader(env)
-	return err != nil
+	if err == nil {
+		return statusFail, "peek succeeded, expected failure"
+	}
+	return checkErrorKind(r, err)
 }
 
-func runUtcCommit(r Record) bool {
+func runUtcCommit(r Record) (string, string) {
 	k := unhex(r.KCommitHex)
 	hdr := unhex(r.HeaderHex)
 	kemCt := unhex(r.KemCtHex)
@@ -132,18 +182,18 @@ func runUtcCommit(r Record) bool {
 	aeadCt := unhex(r.AeadCtHex)
 	want := unhex(r.ExpectedCommitHex)
 	if k == nil || want == nil {
-		return false
+		return statusFail, "missing k_commit_hex/expected_commit_hex"
 	}
 	got := tesserasealUtcCommit(k, hdr, kemCt, ad, aeadCt)
 	if len(got) != len(want) {
-		return false
+		return statusFail, "commit length mismatch"
 	}
 	for i := range got {
 		if got[i] != want[i] {
-			return false
+			return statusFail, "commit mismatch"
 		}
 	}
-	return true
+	return statusPass, ""
 }
 
 // tesserasealUtcCommit re-implements the commit inline for the runner; the
@@ -158,52 +208,46 @@ func tesserasealUtcCommit(k, header, kemCt, ad, aeadCt []byte) []byte {
 	return mac.Sum(nil)
 }
 
-func concat(parts ...[]byte) []byte {
-	n := 0
-	for _, p := range parts {
-		n += len(p)
-	}
-	out := make([]byte, 0, n)
-	for _, p := range parts {
-		out = append(out, p...)
-	}
-	return out
-}
-
-func runValidateMinTimestamp(r Record) bool {
+func runValidateMinTimestamp(r Record) (string, string) {
 	env := unhex(r.EnvelopeHex)
 	got := tesseraseal.ValidateMinTimestamp(env, r.MinMs)
 	want, _ := r.Expected.(bool)
-	return got == want
+	if got != want {
+		return statusFail, fmt.Sprintf("got=%v want=%v", got, want)
+	}
+	return statusPass, ""
 }
 
-func dispatch(r Record) (bool, string) {
+func dispatch(r Record) (string, string) {
 	switch r.Op {
 	case "decrypt":
-		return runDecrypt(r, false), ""
+		return runDecrypt(r, false)
 	case "decrypt_should_fail":
 		// For records with no key (truncation cases), fall back to peek.
 		if r.PrivateKeySeedHex == "" {
 			env := unhex(r.EnvelopeHex)
 			_, err := tesseraseal.PeekHeader(env)
-			return err != nil, ""
+			if err == nil {
+				return statusFail, "peek succeeded, expected failure"
+			}
+			return checkErrorKind(r, err)
 		}
-		return runDecrypt(r, true), ""
+		return runDecrypt(r, true)
 	case "peek_header":
-		return runPeekHeader(r), ""
+		return runPeekHeader(r)
 	case "peek_header_should_fail":
-		return runPeekHeaderShouldFail(r), ""
+		return runPeekHeaderShouldFail(r)
 	case "utc_commit":
-		return runUtcCommit(r), ""
+		return runUtcCommit(r)
 	case "validate_min_timestamp":
 		// TesseraID has a same-named op with a different shape; we only handle
 		// the TesseraSeal shape (envelope_hex + expected:bool).
 		if r.EnvelopeHex == "" {
-			return true, "skipped (TesseraID shape)"
+			return statusSkip, "TesseraID-shape validate_min_timestamp"
 		}
-		return runValidateMinTimestamp(r), ""
+		return runValidateMinTimestamp(r)
 	default:
-		return true, "skipped"
+		return statusSkip, "unsupported op " + r.Op
 	}
 }
 
@@ -224,14 +268,24 @@ func main() {
 	}
 	fails := 0
 	for _, r := range recs {
-		ok, note := dispatch(r)
-		if note == "skipped (TesseraID shape)" || note == "skipped" {
+		// 'doc' pseudo-records are documentation, not executable tests. Emit an
+		// explicit SKIP line so the harness can reconcile record counts (TP-021).
+		if r.Name == "doc" {
+			fmt.Printf("SKIP %s (doc pseudo-record)\n", r.Name)
 			continue
 		}
-		if ok {
+		status, detail := dispatch(r)
+		switch status {
+		case statusPass:
 			fmt.Printf("PASS %s\n", r.Name)
-		} else {
-			fmt.Printf("FAIL %s\n", r.Name)
+		case statusSkip:
+			fmt.Printf("SKIP %s (%s)\n", r.Name, detail)
+		default:
+			if detail != "" {
+				fmt.Printf("FAIL %s %s\n", r.Name, detail)
+			} else {
+				fmt.Printf("FAIL %s\n", r.Name)
+			}
 			fails++
 		}
 	}
@@ -239,5 +293,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-
-var _ = concat

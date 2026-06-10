@@ -657,7 +657,9 @@ int main(int argc, char **argv) {
         get_str(rec, "name", name, sizeof(name));
         get_str(rec, "op", op, sizeof(op));
 
-        if (strcmp(name, "doc") == 0) { free(rec); continue; }
+        /* 'doc' pseudo-records are documentation, not executable tests. Emit an
+         * explicit SKIP line so the harness can reconcile record counts (TP-021). */
+        if (strcmp(name, "doc") == 0) { printf("SKIP %s (doc pseudo-record)\n", name); free(rec); continue; }
 
         char err[256] = {0};
         int ok = 0;

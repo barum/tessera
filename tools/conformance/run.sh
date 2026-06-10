@@ -12,8 +12,18 @@
 #   TESSERA_CONFORMANCE_SKIP="cpp typescript java cpython" run.sh   # TesseraSeal v1 alpha set
 #
 # Portable bash 3.2 compatible — no associative arrays.
-
-set -o pipefail
+#
+# Each runner emits exactly one PASS/FAIL/SKIP line per JSON record ('doc'
+# pseudo-records and unexecutable records emit SKIP). The harness checks every
+# runner invocation's exit code AND reconciles PASS+FAIL+SKIP against the
+# file's record count, so a crashed, missing, or silently-undercounting
+# runner turns the run red instead of contributing 0/0 (TESS-00007 / TP-020).
+#
+# set -u: undefined variables are bugs. `set -e` is DELIBERATELY omitted
+# (TP-024): runners exit nonzero whenever a vector record fails, and the
+# harness must keep aggregating per-language results rather than abort at the
+# first red file — every exit status below is checked explicitly instead.
+set -u -o pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"             # tools/conformance/
 TOOLS="$(cd "$HERE/.." && pwd)"                   # tools/
@@ -81,6 +91,19 @@ else
 fi
 
 SKIP="${TESSERA_CONFORMANCE_SKIP:-}"
+
+# Warn loudly on unknown skip tokens (TP-024): a typo'd token would otherwise
+# no-op silently while you believe the language was skipped.
+for s in $SKIP; do
+    known=0
+    for l in $ALL_LANGS; do
+        [ "$s" = "$l" ] && known=1
+    done
+    if [ "$known" = "0" ]; then
+        echo "WARNING: TESSERA_CONFORMANCE_SKIP token '$s' is not a known language (expected one of: $ALL_LANGS)" >&2
+    fi
+done
+
 FILTERED=""
 for l in $LANGS; do
     skip=0
@@ -116,6 +139,34 @@ echo
 overall_fail=0
 TESSERA_SEAL_VEC_DIR="$ROOT/tessera-seal/conformance/vectors"
 
+# --- Record-count enforcement (TP-020) -------------------------------------
+# Precompute the record count of every vector file once. Runners must emit
+# exactly one PASS/FAIL/SKIP line per record; any shortfall or excess means a
+# crash mid-file, a silently-dropped record, or double counting — all hard
+# failures. python3 is a hard prerequisite of the harness (the python runner
+# needs it anyway).
+COUNTS_FILE="$(mktemp /tmp/tessera_vector_counts.XXXXXX)"
+trap 'rm -f "$COUNTS_FILE"' EXIT
+if ! python3 - $VECTOR_DIRS >"$COUNTS_FILE" <<'PYEOF'
+import glob
+import json
+import os
+import sys
+
+for d in sys.argv[1:]:
+    for p in sorted(glob.glob(os.path.join(d, "*.json"))):
+        with open(p) as f:
+            print(p, len(json.load(f)))
+PYEOF
+then
+    echo "FATAL: cannot count vector records (python3 + valid JSON required)" >&2
+    exit 2
+fi
+
+expected_count() {
+    awk -v f="$1" '$1 == f { print $2 }' "$COUNTS_FILE"
+}
+
 # Languages with hybrid (suite 0x06) support. Vectors matching hybrid_*.json
 # are only fed to these languages; others would FAIL with UNKNOWN_SUITE.
 # Hybrid (suite 0x06) shipped in Python (TSEAL-00021), Rust (TSEAL-00028), and
@@ -135,6 +186,7 @@ for lang in $LANGS; do
     seal_cmd=$(tessera_seal_runner_cmd "$lang" 2>/dev/null || echo "")
     pass=0
     fail=0
+    skip=0
     for vdir in $VECTOR_DIRS; do
         if [ "$vdir" = "$TESSERA_SEAL_VEC_DIR" ]; then
             if [ -n "$seal_cmd" ]; then
@@ -159,28 +211,53 @@ for lang in $LANGS; do
                     ;;
             esac
             out=$($this_cmd "$v" 2>&1)
+            rc=$?
             p=$(echo "$out" | grep -c "^PASS")
             f=$(echo "$out" | grep -c "^FAIL")
+            s=$(echo "$out" | grep -c "^SKIP")
             pass=$((pass + p))
             fail=$((fail + f))
+            skip=$((skip + s))
             if [ "$f" -gt 0 ]; then
                 echo "[$lang] $base:"
                 echo "$out" | grep "^FAIL" | sed 's/^/  /'
             fi
+            hard=0
+            # TP-020: nonzero exit with zero FAIL lines = the runner crashed
+            # (segfault, missing binary, unhandled exception) before it could
+            # report. Count and report it — never a silent 0/0.
+            if [ "$rc" -ne 0 ] && [ "$f" -eq 0 ]; then
+                echo "[$lang] $base: HARD FAILURE — runner exited rc=$rc with no FAIL lines"
+                echo "$out" | tail -5 | sed 's/^/  /'
+                fail=$((fail + 1))
+                hard=1
+            fi
+            # TP-020: reconcile emitted result lines against the record count.
+            if [ "$hard" -eq 0 ]; then
+                expected=$(expected_count "$v")
+                if [ -z "$expected" ]; then
+                    echo "[$lang] $base: HARD FAILURE — no record count known for $v"
+                    fail=$((fail + 1))
+                elif [ $((p + f + s)) -ne "$expected" ]; then
+                    echo "[$lang] $base: COUNT MISMATCH — PASS+FAIL+SKIP=$((p + f + s)) but file has $expected records"
+                    fail=$((fail + 1))
+                fi
+            fi
         done
     done
-    printf "%s %d %d\n" "$lang" "$pass" "$fail" > "/tmp/tessera_result_${lang}"
+    printf "%s %d %d %d\n" "$lang" "$pass" "$fail" "$skip" > "/tmp/tessera_result_${lang}"
     [ "$fail" -gt 0 ] && overall_fail=1
 done
 
 echo
 echo "=== Summary ==="
-printf "%-12s %8s %8s\n" "language" "PASS" "FAIL"
+printf "%-12s %8s %8s %8s\n" "language" "PASS" "FAIL" "SKIP"
 for lang in $LANGS; do
     line=$(cat "/tmp/tessera_result_${lang}")
-    printf "%-12s %8s %8s\n" "$(echo "$line" | awk '{print $1}')" \
+    printf "%-12s %8s %8s %8s\n" "$(echo "$line" | awk '{print $1}')" \
         "$(echo "$line" | awk '{print $2}')" \
-        "$(echo "$line" | awk '{print $3}')"
+        "$(echo "$line" | awk '{print $3}')" \
+        "$(echo "$line" | awk '{print $4}')"
 done
 
 if [ "$overall_fail" = "0" ]; then

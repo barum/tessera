@@ -156,9 +156,7 @@ fn run_validate_min_timestamp(r: &Record) -> Result<(), String> {
 }
 
 fn run_hlc_overflow(r: &Record) -> Result<(), String> {
-    if r.name == "doc" {
-        return Ok(());
-    }
+    // 'doc' pseudo-records never reach this handler — main() emits SKIP for them.
     let start = r.start.as_ref().unwrap();
     let l_old = start["l_old"].as_i64().unwrap();
     let c_old = start["c_old"].as_i64().unwrap() as u16;
@@ -365,7 +363,10 @@ fn main() -> ExitCode {
 
     let mut failures = 0;
     for r in &records {
+        // 'doc' pseudo-records are documentation, not executable tests. Emit an
+        // explicit SKIP line so the harness can reconcile record counts (TP-021).
         if r.name == "doc" {
+            println!("SKIP {} (doc pseudo-record)", r.name);
             continue;
         }
         match dispatch(r) {

@@ -200,8 +200,10 @@ def run_tessera_hash_verify(rec):
 
 
 def run_hlc_overflow(rec):
-    # Skipped: extension does not expose HLC state hooks. Covered by C runner.
-    return True, "(skipped — covered by C reference)"
+    # The extension does not expose HLC state hooks, so these records cannot be
+    # executed here; the underlying C reference covers them via the C runner.
+    # Emit an explicit SKIP (TESS-00007 / TP-021) — never a fake PASS.
+    return "skip", "extension exposes no HLC state hooks; covered by C reference runner"
 
 
 def run_validate_min_timestamp(rec):
@@ -242,7 +244,10 @@ def main(argv):
 
     failures = 0
     for rec in records:
+        # 'doc' pseudo-records are documentation, not executable tests. Emit an
+        # explicit SKIP line so the harness can reconcile record counts (TP-021).
         if rec.get("name") == "doc":
+            print(f"SKIP {rec['name']} (doc pseudo-record)")
             continue
         op = rec.get("op")
         if op not in DISPATCH:
@@ -250,7 +255,9 @@ def main(argv):
             failures += 1
             continue
         ok, detail = DISPATCH[op](rec)
-        if ok:
+        if ok == "skip":
+            print(f"SKIP {rec['name']} ({detail})")
+        elif ok:
             print(f"PASS {rec['name']}")
         else:
             print(f"FAIL {rec['name']} {detail}")

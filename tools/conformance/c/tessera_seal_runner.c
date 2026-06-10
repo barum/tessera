@@ -17,8 +17,11 @@
  *   - validate_min_timestamp        (envelope_hex, min_ms, expected) — TesseraSeal-shape only
  *
  * The runner uses a string-search JSON parser (the schema is machine-
- * generated and stable). For unrecognized ops it prints "FAIL ... unknown
- * op" so the harness's grep catches it.
+ * generated and stable). For unrecognized / non-TesseraSeal ops and 'doc'
+ * pseudo-records it prints "SKIP <name> ..." so the harness can reconcile
+ * record counts (TESS-00007 / TP-021). When a should-fail record carries an
+ * error_kind, the observed status code is mapped to the vector enum and
+ * asserted (TP-022).
  */
 #define _POSIX_C_SOURCE 200809L
 #include "tessera_seal.h"
@@ -182,6 +185,37 @@ static int extract_bool(const char *obj_start, const char *obj_end, const char *
 
 static int g_pass = 0, g_fail = 0;
 
+/* Map the C status-code taxonomy to the vector schema's error_kind enum
+ * (TESS-00007 / TP-022). The harness asserts this per should-fail record so
+ * the normative BAD_KEY-vs-auth-class distinction is mechanically enforced. */
+static const char *error_kind_of(int rc) {
+    switch (rc) {
+        case TESSERA_SEAL_E_INVALID_LEN:     return "INVALID_LEN";
+        case TESSERA_SEAL_E_UNKNOWN_VARIANT: return "UNKNOWN_VARIANT";
+        case TESSERA_SEAL_E_UNKNOWN_SUITE:   return "UNKNOWN_SUITE";
+        case TESSERA_SEAL_E_DECRYPT_FAILED:  return "DECRYPT_FAILED";
+        case TESSERA_SEAL_E_BAD_KEY:         return "BAD_KEY";
+        default:                             return "<unmapped>";
+    }
+}
+
+/* Assert the record's error_kind (when present) against the observed status.
+ * Prints PASS/FAIL and updates counters. */
+static void finish_should_fail(const char *obj_start, const char *obj_end,
+                               const char *name, int rc) {
+    char want[64];
+    if (extract_str(obj_start, obj_end, "error_kind", want, sizeof(want)) != 0) {
+        printf("PASS %s\n", name); g_pass++;
+        return;
+    }
+    const char *got = error_kind_of(rc);
+    if (strcmp(got, want) == 0) {
+        printf("PASS %s\n", name); g_pass++;
+    } else {
+        printf("FAIL %s: error_kind got=%s want=%s\n", name, got, want); g_fail++;
+    }
+}
+
 static int handle_decrypt(const char *obj_start, const char *obj_end, int should_fail) {
     char name[128];
     if (extract_str(obj_start, obj_end, "name", name, sizeof(name)) != 0) {
@@ -232,7 +266,7 @@ static int handle_decrypt(const char *obj_start, const char *obj_end, int should
     } else {
         if (have_sk) {
             tessera_seal_priv_t priv = {0};
-            priv.suite = TESSERA_SEAL_SUITE_MLKEM1024_AESGCM;
+            priv.suite = rec_suite;
             memcpy(priv.sk, sk, TESSERA_SEAL_MLKEM1024_SK_BYTES);
             static uint8_t out[2048];
             size_t out_len = sizeof(out);
@@ -240,7 +274,7 @@ static int handle_decrypt(const char *obj_start, const char *obj_end, int should
             if (rc == TESSERA_SEAL_OK) {
                 printf("FAIL %s: expected failure, got OK\n", name); g_fail++;
             } else {
-                printf("PASS %s\n", name); g_pass++;
+                finish_should_fail(obj_start, obj_end, name, rc);
             }
         } else {
             /* No key: try peek_header. */
@@ -249,7 +283,7 @@ static int handle_decrypt(const char *obj_start, const char *obj_end, int should
             if (rc == TESSERA_SEAL_OK) {
                 printf("FAIL %s: peek_header OK, expected fail\n", name); g_fail++;
             } else {
-                printf("PASS %s\n", name); g_pass++;
+                finish_should_fail(obj_start, obj_end, name, rc);
             }
         }
     }
@@ -304,7 +338,7 @@ static int handle_peek_header_should_fail(const char *obj_start, const char *obj
     }
     tessera_seal_header_t h;
     int rc = tessera_seal_peek_header(env, env_len, &h);
-    if (rc != TESSERA_SEAL_OK) { printf("PASS %s\n", name); g_pass++; }
+    if (rc != TESSERA_SEAL_OK) { finish_should_fail(obj_start, obj_end, name, rc); }
     else { printf("FAIL %s: peek OK, expected fail\n", name); g_fail++; }
     return 0;
 }
@@ -365,9 +399,17 @@ static int handle_validate_min_ts(const char *obj_start, const char *obj_end) {
 /* --- Dispatcher --------------------------------------------------------- */
 
 static int dispatch_record(const char *obj_start, const char *obj_end) {
+    char name[128] = "?";
+    (void)extract_str(obj_start, obj_end, "name", name, sizeof(name));
+    /* 'doc' pseudo-records are documentation, not executable tests. Emit an
+     * explicit SKIP line so the harness can reconcile record counts (TP-021). */
+    if (strcmp(name, "doc") == 0) {
+        printf("SKIP %s (doc pseudo-record)\n", name);
+        return 0;
+    }
     char op[64];
     if (extract_str(obj_start, obj_end, "op", op, sizeof(op)) != 0) {
-        /* No op field — skip silently (some files have leading metadata records). */
+        printf("SKIP %s (no op field)\n", name);
         return 0;
     }
     if (strcmp(op, "decrypt") == 0)                    return handle_decrypt(obj_start, obj_end, 0);
@@ -376,7 +418,8 @@ static int dispatch_record(const char *obj_start, const char *obj_end) {
     if (strcmp(op, "peek_header_should_fail") == 0)    return handle_peek_header_should_fail(obj_start, obj_end);
     if (strcmp(op, "utc_commit") == 0)                 return handle_utc_commit(obj_start, obj_end);
     if (strcmp(op, "validate_min_timestamp") == 0)     return handle_validate_min_ts(obj_start, obj_end);
-    /* Other ops (TesseraID, TesseraHash) — not our job. Skip silently. */
+    /* Other ops (TesseraID, TesseraHash) — not our job. */
+    printf("SKIP %s (unsupported op %s)\n", name, op);
     return 0;
 }
 

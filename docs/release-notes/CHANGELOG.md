@@ -8,6 +8,8 @@ whitepaper, repo-wide doc/git hygiene. Per-project changes live in
 reference the former PQToolkit / PQID / PQHash / PQCrypt names are a historical
 ledger — kept verbatim; see TESS-00001 for the rename.)
 
+- 2026-06-10 — [TESS-00007 — Conformance harness enforcement: exit codes, record counts, SKIP column, vector freeze](2026-06-10-tess-00007-harness-enforcement.md)
+- 2026-06-10 — [TESS-00006 — CI restoration: OpenSSL 3.5 build, PR gate for conformance, SHA-pinned actions, portable macOS steps](2026-06-10-tess-00006-ci-restoration.md)
 - 2026-06-09 — [TESS-00004 — Disable CI auto-build on push/PR (manual dispatch only)](2026-06-09-tess-00004-ci-manual-dispatch-only.md)
 - 2026-06-09 — [TESS-00003 — tsconfig moduleResolution "node" → "bundler"](2026-06-09-tess-00003-tsconfig-bundler-resolution.md)
 - 2026-06-09 — [TESS-00002 — Repoint README CI badges to barum/tessera](2026-06-09-tess-00002-readme-badge-repoint.md)

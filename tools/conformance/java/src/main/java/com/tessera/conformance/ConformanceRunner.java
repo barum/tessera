@@ -9,16 +9,18 @@ import com.tessera.hash.TesseraHashCodec;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Java conformance runner. Usage: java com.tessera.conformance.ConformanceRunner <vectors.json>
  *
- * Uses regex string-search rather than a real JSON parser (the vector schema
- * is fixed and we're zero-dep on purpose).
+ * Uses iterative string-search rather than a real JSON parser (the vector
+ * schema is fixed and we're zero-dep on purpose). Field extraction is
+ * deliberately regex-free: java.util.regex recurses once per character for
+ * patterns like ((?:[^"\\]|\\.)*) , which overflows a 1 MB Linux default
+ * thread stack on the 2048-char hex fields in the tessera-hash vectors
+ * (StackOverflowError, TESS-00007 / TP-011).
  */
 public final class ConformanceRunner {
 
@@ -58,23 +60,99 @@ public final class ConformanceRunner {
         return out;
     }
 
+    /**
+     * Iteratively locate the first occurrence of {@code key} used as a JSON
+     * key (a string immediately followed by ':') and return the index of the
+     * first character of its value, or -1. Tracks in-string state with escape
+     * handling, exactly like {@link #splitObjects}. Constant stack depth.
+     */
+    static int valueStart(String rec, String key) {
+        boolean inStr = false;
+        boolean esc = false;
+        int strBegin = -1;
+        int n = rec.length();
+        for (int i = 0; i < n; i++) {
+            char c = rec.charAt(i);
+            if (esc) { esc = false; continue; }
+            if (inStr) {
+                if (c == '\\') { esc = true; continue; }
+                if (c != '"') continue;
+                inStr = false;
+                int j = i + 1;
+                while (j < n && Character.isWhitespace(rec.charAt(j))) j++;
+                if (j < n && rec.charAt(j) == ':'
+                        && i - strBegin - 1 == key.length()
+                        && rec.regionMatches(strBegin + 1, key, 0, key.length())) {
+                    j++;
+                    while (j < n && Character.isWhitespace(rec.charAt(j))) j++;
+                    return j < n ? j : -1;
+                }
+            } else if (c == '"') {
+                inStr = true;
+                strBegin = i;
+            }
+        }
+        return -1;
+    }
+
+    /** Raw content of the string value for {@code key} (escapes kept verbatim,
+     *  matching the old regex group semantics), or null. Iterative. */
     static String getStr(String rec, String key) {
-        Pattern p = Pattern.compile("\"" + key + "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
-        Matcher m = p.matcher(rec);
-        return m.find() ? m.group(1) : null;
+        int v = valueStart(rec, key);
+        if (v < 0 || rec.charAt(v) != '"') return null;
+        int n = rec.length();
+        for (int i = v + 1; i < n; i++) {
+            char c = rec.charAt(i);
+            if (c == '\\') { i++; continue; }
+            if (c == '"') return rec.substring(v + 1, i);
+        }
+        return null;
     }
 
     static Long getInt(String rec, String key) {
-        Pattern p = Pattern.compile("\"" + key + "\"\\s*:\\s*(-?\\d+)");
-        Matcher m = p.matcher(rec);
-        return m.find() ? Long.parseLong(m.group(1)) : null;
+        int v = valueStart(rec, key);
+        if (v < 0) return null;
+        int n = rec.length();
+        int i = v;
+        if (i < n && rec.charAt(i) == '-') i++;
+        int digitsBegin = i;
+        while (i < n && rec.charAt(i) >= '0' && rec.charAt(i) <= '9') i++;
+        if (i == digitsBegin) return null;
+        return Long.parseLong(rec.substring(v, i));
     }
 
-    static String getNested(String rec, String obj, String key) {
-        Pattern p = Pattern.compile("\"" + obj + "\"\\s*:\\s*\\{([^{}]*)\\}");
-        Matcher m = p.matcher(rec);
-        if (!m.find()) return null;
-        return m.group(1);
+    /** Body (between braces, exclusive) of the object value for {@code key},
+     *  or null. Handles nested braces and strings iteratively. */
+    static String getObj(String rec, String key) {
+        int v = valueStart(rec, key);
+        if (v < 0 || rec.charAt(v) != '{') return null;
+        int depth = 0;
+        boolean inStr = false;
+        boolean esc = false;
+        for (int i = v; i < rec.length(); i++) {
+            char c = rec.charAt(i);
+            if (esc) { esc = false; continue; }
+            if (inStr) {
+                if (c == '\\') esc = true;
+                else if (c == '"') inStr = false;
+                continue;
+            }
+            if (c == '"') inStr = true;
+            else if (c == '{') depth++;
+            else if (c == '}') {
+                depth--;
+                if (depth == 0) return rec.substring(v + 1, i);
+            }
+        }
+        return null;
+    }
+
+    static Boolean getBool(String rec, String key) {
+        int v = valueStart(rec, key);
+        if (v < 0) return null;
+        if (rec.startsWith("true", v)) return Boolean.TRUE;
+        if (rec.startsWith("false", v)) return Boolean.FALSE;
+        return null;
     }
 
     static byte[] hexToBytes(String h) {
@@ -92,8 +170,8 @@ public final class ConformanceRunner {
     }
 
     static boolean isNullField(String rec, String key) {
-        Pattern p = Pattern.compile("\"" + key + "\"\\s*:\\s*null");
-        return p.matcher(rec).find();
+        int v = valueStart(rec, key);
+        return v >= 0 && rec.startsWith("null", v);
     }
 
     static class Result {
@@ -107,10 +185,8 @@ public final class ConformanceRunner {
         try {
             TesseraId p = new TesseraId(raw);
             // "expected" is a JSON object; pull its body, then read fields out of it.
-            Pattern exp = Pattern.compile("\"expected\"\\s*:\\s*\\{(.*?)\\}", Pattern.DOTALL);
-            Matcher m = exp.matcher(rec);
-            if (!m.find()) return new Result(false, "no expected");
-            String e = m.group(1);
+            String e = getObj(rec, "expected");
+            if (e == null) return new Result(false, "no expected");
             long wantVariant = getInt(e, "variant");
             long wantTs = getInt(e, "timestamp_ms");
             long wantCtr = getInt(e, "counter");
@@ -200,10 +276,8 @@ public final class ConformanceRunner {
         TesseraId p = new TesseraId(raw);
         boolean got = p.validateMinTimestamp();
         // "expected" is a bare boolean.
-        Pattern p2 = Pattern.compile("\"expected\"\\s*:\\s*(true|false)");
-        Matcher m = p2.matcher(rec);
-        if (!m.find()) return new Result(false, "no expected bool");
-        boolean want = Boolean.parseBoolean(m.group(1));
+        Boolean want = getBool(rec, "expected");
+        if (want == null) return new Result(false, "no expected bool");
         if (got != want) return new Result(false, "got=" + got + " want=" + want);
         return new Result(true, "");
     }
@@ -223,10 +297,8 @@ public final class ConformanceRunner {
         byte[] raw = hexToBytes(getStr(rec, "input_hex"));
         try {
             TesseraHash p = new TesseraHash(raw);
-            Pattern exp = Pattern.compile("\"expected\"\\s*:\\s*\\{(.*?)\\}", Pattern.DOTALL);
-            Matcher m = exp.matcher(rec);
-            if (!m.find()) return new Result(false, "no expected");
-            String e = m.group(1);
+            String e = getObj(rec, "expected");
+            if (e == null) return new Result(false, "no expected");
             long wantVariant = getInt(e, "variant");
             long wantTs = getInt(e, "timestamp_ms");
             long wantCtr = getInt(e, "counter");
@@ -310,24 +382,20 @@ public final class ConformanceRunner {
         byte[] content = hexToBytes(getStr(rec, "content_hex"));
         TesseraHash p = new TesseraHash(raw);
         boolean got = p.verify(content);
-        Pattern boolPat = Pattern.compile("\"expected\"\\s*:\\s*(true|false)");
-        Matcher m = boolPat.matcher(rec);
-        if (!m.find()) return new Result(false, "no expected bool");
-        boolean want = Boolean.parseBoolean(m.group(1));
+        Boolean want = getBool(rec, "expected");
+        if (want == null) return new Result(false, "no expected bool");
         if (got != want) return new Result(false, "got=" + got + " want=" + want);
         return new Result(true, "");
     }
 
     static Result opHlcOverflow(String rec) {
-        String startBody = getNested(rec, "start", "");
+        String startBody = getObj(rec, "start");
         if (startBody == null) return new Result(false, "no start");
         long lOld = getInt(startBody, "l_old");
         long cOld = getInt(startBody, "c_old");
         long pt = getInt(rec, "physical_time_ms");
-        Pattern exp = Pattern.compile("\"expected\"\\s*:\\s*\\{(.*?)\\}", Pattern.DOTALL);
-        Matcher m = exp.matcher(rec);
-        if (!m.find()) return new Result(false, "no expected");
-        String e = m.group(1);
+        String e = getObj(rec, "expected");
+        if (e == null) return new Result(false, "no expected");
         long expL = getInt(e, "l_new");
         long expC = getInt(e, "c_new");
 
@@ -340,7 +408,7 @@ public final class ConformanceRunner {
             if (isNullField(rec, "observe")) {
                 out = g.next();
             } else {
-                String obsBody = getNested(rec, "observe", "");
+                String obsBody = getObj(rec, "observe");
                 long lMsg = getInt(obsBody, "l_msg");
                 long cMsg = getInt(obsBody, "c_msg");
                 out = g.nextObserving(lMsg, (int) cMsg);
@@ -370,7 +438,10 @@ public final class ConformanceRunner {
         for (String rec : records) {
             String name = getStr(rec, "name");
             String op = getStr(rec, "op");
-            if ("doc".equals(name)) continue;
+            // 'doc' pseudo-records are documentation, not executable tests.
+            // Emit an explicit SKIP line so the harness can reconcile record
+            // counts (TESS-00007 / TP-021).
+            if ("doc".equals(name)) { System.out.println("SKIP " + name + " (doc pseudo-record)"); continue; }
             Result r;
             try {
                 switch (op) {

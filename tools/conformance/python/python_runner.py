@@ -5,6 +5,7 @@ Python conformance runner. Usage: python_runner.py <vectors.json>
 Emits one line per vector:
     PASS <name>
     FAIL <name> got=<x> want=<y>
+    SKIP <name> <reason>        (doc pseudo-records)
 
 Exits 0 if every vector passes, 1 otherwise.
 """
@@ -22,7 +23,23 @@ sys.path.insert(0, str(REPO_ROOT / "tessera-seal" / "python"))
 
 import tessera_id  # noqa: E402
 import tessera_hash  # noqa: E402
-import tessera_seal  # noqa: E402
+
+# tessera_seal is imported LAZILY (TESS-00007 / TP-010): it pulls crypto
+# dependencies (kyber-py, cryptography, pycryptodome) that id/hash-only
+# environments — e.g. python.yml CI legs — do not need. The import happens on
+# first dispatch of a TesseraSeal op; tessera-id/tessera-hash vector files
+# never trigger it.
+tessera_seal = None  # type: ignore[assignment]
+
+
+def _ensure_tessera_seal():
+    """Import tessera_seal on first TesseraSeal-op dispatch (lazy, TP-010)."""
+    global tessera_seal
+    if tessera_seal is None:
+        import importlib
+
+        tessera_seal = importlib.import_module("tessera_seal")
+    return tessera_seal
 
 
 def run_decode(rec: dict) -> tuple[bool, str]:
@@ -106,10 +123,8 @@ def run_validate_invalid(rec: dict) -> tuple[bool, str]:
 
 
 def run_hlc_overflow(rec: dict) -> tuple[bool, str]:
-    """Drive an HLC generator into the overflow case and check (l_new, c_new)."""
-    if rec["name"] == "doc":
-        return True, ""
-
+    """Drive an HLC generator into the overflow case and check (l_new, c_new).
+    'doc' pseudo-records never reach this handler — main() emits SKIP for them."""
     g = tessera_id.HLCGenerator()
     g._state.l = rec["start"]["l_old"]
     g._state.c = rec["start"]["c_old"]
@@ -249,6 +264,35 @@ def run_tessera_hash_verify(rec):
 # TesseraSeal ops
 # ---------------------------------------------------------------------------
 
+def _seal_error_kind(exc) -> str:
+    """Map a tessera_seal exception to the vector schema's error_kind enum
+    (TESS-00007 / TP-022). The harness asserts this per should-fail record so
+    the normative BAD_KEY-vs-auth-class distinction is mechanically enforced."""
+    if isinstance(exc, tessera_seal.UnknownVariant):
+        return "UNKNOWN_VARIANT"
+    if isinstance(exc, tessera_seal.UnknownSuite):
+        return "UNKNOWN_SUITE"
+    if isinstance(exc, tessera_seal.InvalidLength):
+        return "INVALID_LEN"
+    if isinstance(exc, tessera_seal.BadKey):
+        return "BAD_KEY"
+    if isinstance(exc, tessera_seal.DecryptionError):
+        return "DECRYPT_FAILED"
+    return f"<unmapped {type(exc).__name__}>"
+
+
+def _check_error_kind(rec, exc):
+    """Return (ok, detail) for a should-fail record, asserting error_kind
+    when the vector carries one."""
+    want = rec.get("error_kind")
+    if want is None:
+        return True, ""
+    got = _seal_error_kind(exc)
+    if got != want:
+        return False, f"error_kind got={got} want={want}"
+    return True, ""
+
+
 def _pqc_priv(rec):
     """Reconstruct a TesseraSeal PrivateKey from the record's key form."""
     if "private_key_seed_hex" in rec:
@@ -264,6 +308,7 @@ def _pqc_priv(rec):
 
 
 def run_tessera_seal_decrypt(rec):
+    _ensure_tessera_seal()
     env = bytes.fromhex(rec["envelope_hex"])
     ad = bytes.fromhex(rec.get("expected_ad_hex", ""))
     try:
@@ -277,28 +322,30 @@ def run_tessera_seal_decrypt(rec):
 
 
 def run_tessera_seal_decrypt_should_fail(rec):
+    _ensure_tessera_seal()
     env = bytes.fromhex(rec["envelope_hex"])
     ad = bytes.fromhex(rec.get("expected_ad_hex", ""))
     if "private_key_hex" in rec or "private_key_seed_hex" in rec:
         try:
             tessera_seal.decrypt(env, _pqc_priv(rec), expected_ad=ad)
         except (tessera_seal.DecryptionError, tessera_seal.UnknownVariant,
-                tessera_seal.UnknownSuite, tessera_seal.InvalidLength, tessera_seal.BadKey):
-            return True, ""
+                tessera_seal.UnknownSuite, tessera_seal.InvalidLength, tessera_seal.BadKey) as e:
+            return _check_error_kind(rec, e)
         except Exception as e:
             return False, f"non-TesseraSealError: {type(e).__name__}: {e}"
         return False, "expected failure, got success"
     # No key — exercise peek_header / validate.
     try:
         tessera_seal.peek_header(env)
-    except (tessera_seal.UnknownVariant, tessera_seal.UnknownSuite, tessera_seal.InvalidLength):
-        return True, ""
+    except (tessera_seal.UnknownVariant, tessera_seal.UnknownSuite, tessera_seal.InvalidLength) as e:
+        return _check_error_kind(rec, e)
     except Exception as e:
         return False, f"non-TesseraSealError: {type(e).__name__}: {e}"
     return False, "expected failure, got success"
 
 
 def run_tessera_seal_peek_header(rec):
+    _ensure_tessera_seal()
     # The vector stores header_hex (16 bytes); pad with zeros for the runner.
     header = bytes.fromhex(rec["header_hex"]) + b"\x00" * 2000
     try:
@@ -313,17 +360,19 @@ def run_tessera_seal_peek_header(rec):
 
 
 def run_tessera_seal_peek_header_should_fail(rec):
+    _ensure_tessera_seal()
     env = bytes.fromhex(rec["envelope_hex"])
     try:
         tessera_seal.peek_header(env)
-    except (tessera_seal.UnknownVariant, tessera_seal.UnknownSuite, tessera_seal.InvalidLength):
-        return True, ""
+    except (tessera_seal.UnknownVariant, tessera_seal.UnknownSuite, tessera_seal.InvalidLength) as e:
+        return _check_error_kind(rec, e)
     except Exception as e:
         return False, f"non-TesseraSealError: {type(e).__name__}: {e}"
     return False, "expected failure, got success"
 
 
 def run_tessera_seal_utc_commit(rec):
+    _ensure_tessera_seal()
     got = tessera_seal._utc_commit(
         bytes.fromhex(rec["k_commit_hex"]),
         bytes.fromhex(rec["header_hex"]),
@@ -337,6 +386,7 @@ def run_tessera_seal_utc_commit(rec):
 
 
 def run_tessera_seal_validate_min_timestamp(rec):
+    _ensure_tessera_seal()
     env = bytes.fromhex(rec["envelope_hex"])
     got = tessera_seal.validate_min_timestamp(env, rec["min_ms"])
     if got != rec["expected"]:
@@ -399,12 +449,15 @@ def main(argv: list[str]) -> int:
 
     failures = 0
     for rec in records:
+        # 'doc' pseudo-records are documentation, not executable tests. Emit an
+        # explicit SKIP line so the harness can reconcile record counts (TP-021).
+        if rec.get("name") == "doc":
+            print(f"SKIP {rec['name']} (doc pseudo-record)")
+            continue
         op = rec.get("op")
         if op not in DISPATCH:
             print(f"FAIL {rec.get('name', '?')} unknown op {op!r}")
             failures += 1
-            continue
-        if rec.get("name") == "doc":
             continue
         ok, detail = DISPATCH[op](rec)
         if ok:

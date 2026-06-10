@@ -32,7 +32,7 @@ Each project ships reference implementations in: Python, C, C++, Go, Rust, TypeS
 1. **Spec first** — update `<project>/latex/` and rebuild the whitepaper.
 2. **Python next** — land in `<project>/python/` as the readable reference.
 3. **Port to every other language in lockstep** — wire output generated in one language MUST decode byte-identically in every other.
-4. **Conformance vectors** — regenerate `<project>/conformance/vectors/*.json` from the Python reference; commit verbatim.
+4. **Conformance vectors** — regenerate `<project>/conformance/vectors/*.json` from the Python reference; commit verbatim. **Shipped vectors are frozen (append-only):** regeneration may add records or files but MUST NOT change any existing record's bytes — the vectors are the cross-language compatibility contract proving today's wire artifacts still decode tomorrow. `tools/scripts/check-vector-freeze.sh` enforces this against HEAD; run it before committing regenerated vectors.
 5. **Run the cross-language harness** — `bash tools/conformance/run.sh` must stay green. Skip languages locally with `TESSERA_CONFORMANCE_SKIP="cpython java"`.
 
 Optimization PRs that only touch one language are fine and don't require porting, **as long as observable behavior is identical and KAT vectors still pass**.
@@ -84,7 +84,7 @@ These are cross-cutting and apply to every project in this monorepo:
 
    Every project's decoder rejects every byte it does not own. New variant byte = ABI break = whitepaper update required.
 
-4. **Crockford 2-bit guard.** A 66-char Crockford string carries 330 bits; the high 2 must be zero. Removing this check accepts non-canonical inputs. (TesseraID only; TesseraHash uses a 117-char Crockford with analogous guard; TesseraSeal v1 ships binary-only.)
+4. **Crockford 2-bit guard.** A 66-char Crockford string carries 330 bits for a 328-bit (41-byte) value; the 2 stream-trailing pad bits — the **low 2 bits of the final character** — must be zero. Removing this check accepts non-canonical inputs. (TesseraID only; TesseraHash uses a 117-char Crockford with an analogous final-character pad-bit guard; TesseraSeal v1 ships binary-only.)
 5. **HLC drift bound.** `HLC_MAX_DRIFT_MS = 60_000`. Peer HLC > 60s ahead → hard error (`HLCDriftError`), never clamp. Relaxing this defeats the monotonicity guarantee.
 6. **No unsafe Rust, no cgo, no FFI shortcuts.** Implementations are pure within their language. The TesseraID CPython extension is implemented in C against `tessera_id_fast.py`'s API; the TesseraSeal CPython extension currently wraps the C reference directly (`tessera-seal/cpython/tessera_seal_ext.c` compiles against `../c/tessera_seal.c`) — a `tessera_seal_fast.py` mirror is a planned v1.1 optimization, not an existing file. Do not add new FFI bridges without a security review note in the PR.
 7. **Supply-chain hygiene.** No new third-party crypto dependencies — SHAKE-256/Keccak must come from stdlib (Python, Go) or the vendored `common/` source (C, C++, Java). ML-KEM-1024 in TesseraSeal comes from one pinned verified implementation per language: **OpenSSL 3.5+ `EVP_PKEY` ML-KEM (encapsulate/decapsulate)** for C (not vendored mlkem-native), **RustCrypto `ml-kem` 0.3** for Rust, **stdlib `crypto/mlkem`** for Go (1.26+), **`kyber-py` ≥ 1.0** for Python, **SunJCE JEP 452** for Java (not BouncyCastle), **`@noble/post-quantum`** for TypeScript. The Python reference also pins **`pycryptodome` ≥ 3.20.0** (generator-only — supplies the deterministic AES-256-CTR DRBG that `kyber-py`'s `set_drbg_seed` uses when emitting conformance vectors; production callers can omit it). Hybrid suite `0x06` adds one pinned X25519 source per language: **`x25519-dalek` 2** for Rust, **stdlib `crypto/ecdh`** for Go, **`cryptography`** for Python; C/TS/Java X25519 source pins land alongside their v1.4 hybrid ports. New transitive dependencies on parsers, network clients, or randomness sources require explicit justification in the PR description.
@@ -113,10 +113,12 @@ A change that affects any of the above is a **security-relevant change**: tag th
 
 `.github/workflows/`:
 
-- `conformance.yml` — runs `tools/conformance/run.sh` across all 8 languages × all 3 projects (tessera-id, tessera-hash, tessera-seal). The **branch-protection gate** for TesseraSeal is the 4-language alpha run (Python + C + Go + Rust — the four ports with their own tessera_seal_runner binaries). Those four are the only languages that run TesseraSeal conformance; C++/TypeScript/Java/CPython ext have no tessera-seal runner and **skip** the TesseraSeal vector directory (they implement tessera-id/tessera-hash only for now) — there is no Python-runner fallback for TesseraSeal. The full-8-language step is informational (`continue-on-error`) until C++/TypeScript/Java/CPython ext gain tessera-seal support. Hybrid suite `0x06` vectors are filtered per language by [`tools/conformance/run.sh:hybrid_supported()`](tools/conformance/run.sh).
-- `tessera-seal.yml` — TesseraSeal-only matrix (Python + C + Go + Rust + TS + Java + CPython ext + LaTeX) on Ubuntu and macOS where applicable. Added in v1.2 (TSEAL-00023).
-- Per-language: `python.yml`, `c.yml`, `cpp.yml`, `go.yml`, `rust.yml`, `typescript.yml`, `java.yml`, `cpython.yml`.
-- `latex.yml` — builds `tessera-id/latex/main.tex`, `tessera-hash/latex/main.tex` (when ready), and `tessera-seal/latex/main.tex`.
+- `conformance.yml` — the **only workflow that runs automatically** (on `pull_request`, on push to `main`, and via manual dispatch; restored 2026-06-10, TESS-00006). It runs `tools/conformance/run.sh`. The blocking step is the 4-language alpha run (Python + C + Go + Rust — the four ports with their own tessera_seal_runner binaries); the full-8-language step is informational (`continue-on-error`) until C++/TypeScript/Java/CPython ext gain tessera-seal support. Those four alpha languages are the only ones that run TesseraSeal conformance; C++/TypeScript/Java/CPython ext have no tessera-seal runner and **skip** the TesseraSeal vector directory — there is no Python-runner fallback for TesseraSeal. Hybrid suite `0x06` vectors are filtered per language by [`tools/conformance/run.sh:hybrid_supported()`](tools/conformance/run.sh). The workflow builds OpenSSL 3.5+ from source (cached) because ubuntu-24.04's apt OpenSSL 3.0 has no ML-KEM, and asserts `openssl version` ≥ 3.5 before the C leg.
+- `tessera-seal.yml` — TesseraSeal-only matrix (Python + C + Go + Rust + TS + Java + CPython ext + LaTeX) on Ubuntu and macOS where applicable. Added in v1.2 (TSEAL-00023). **Manual dispatch only.**
+- Per-language: `python.yml`, `c.yml`, `cpp.yml`, `go.yml`, `rust.yml`, `typescript.yml`, `java.yml`, `cpython.yml`. **Manual dispatch only** (cost control, TESS-00004); run them before releases or when touching that language.
+- `latex.yml` — builds all four whitepapers (`latex/`, `tessera-id/latex`, `tessera-hash/latex`, `tessera-seal/latex`) as a matrix and uploads the four PDFs. **Manual dispatch only.**
+
+All workflow actions are pinned by full commit SHA, every workflow declares `permissions: contents: read`, and `tools/scripts/check-lockfile-registry.sh` guards against non-public npm registry URLs in lockfiles.
 
 Run the conformance harness locally before pushing wire/encoding/generator changes:
 
@@ -125,20 +127,23 @@ bash tools/conformance/run.sh                           # all languages × all p
 TESSERA_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh   # TesseraSeal v1.x alpha quick loop
 ```
 
-As of v1.3 (2026-06-08, TSEAL-00035) the alpha quick loop reports:
+As of 2026-06-10 (TESS-00007 harness enforcement: per-runner exit-code checks, PASS+FAIL+SKIP record-count
+reconciliation, and an explicit SKIP column for doc pseudo-records and unexecutable records) the alpha quick
+loop reports, **verified by local run**:
 
 ```
-language         PASS     FAIL
-python            267        0       (258 + 9 hybrid)
-c                 258        0       (no hybrid yet; TSEAL-00030 backlog)
-go                267        0       (258 + 9 hybrid; TSEAL-00029)
-rust              267        0       (258 + 9 hybrid; TSEAL-00028)
+language         PASS     FAIL     SKIP
+python            267        0        5
+c                 258        0        5       (no hybrid yet; TSEAL-00030 backlog)
+go                267        0        5
+rust              267        0        5
 ```
 
-The full 8-language run is also green: `cpp / typescript / java / cpython` each
-report `207 0` (tessera-id + tessera-hash; they skip the TesseraSeal vector directory until
-their v1.4 tessera-seal ports land). The two new TesseraSeal records (`suite_0x05_rejected`,
-`bad_key_suite_mismatch`) raised each alpha language by +2.
+The full 8-language run is also green locally: `cpp / typescript / java` each report `207 0 5`
+(tessera-id + tessera-hash; they skip the TesseraSeal vector directory until their v1.4 tessera-seal ports
+land) and `cpython` reports `204 0 8` (its 3 hlc_overflow records are now SKIPped explicitly instead of
+fake-passed, plus the 5 doc pseudo-records every language skips). CI numbers come from `conformance.yml`
+runs; treat local numbers as local until CI confirms them.
 
 ## Per-project quick reference
 

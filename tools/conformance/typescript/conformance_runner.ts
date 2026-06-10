@@ -281,7 +281,12 @@ function main(argv: string[]): number {
   const records: Record[] = JSON.parse(fs.readFileSync(argv[0], "utf8"));
   let failures = 0;
   for (const r of records) {
-    if (r.name === "doc") continue;
+    // 'doc' pseudo-records are documentation, not executable tests. Emit an
+    // explicit SKIP line so the harness can reconcile record counts (TP-021).
+    if (r.name === "doc") {
+      console.log(`SKIP ${r.name} (doc pseudo-record)`);
+      continue;
+    }
     const result = dispatch(r);
     if (result.ok) {
       console.log(`PASS ${r.name}`);

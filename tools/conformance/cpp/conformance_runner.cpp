@@ -416,7 +416,9 @@ int main(int argc, char** argv) {
         std::string rec = data.substr(range->first, range->second - range->first);
         auto name = get_str(rec, "name").value_or("?");
         auto op = get_str(rec, "op").value_or("?");
-        if (name == "doc") continue;
+        // 'doc' pseudo-records are documentation, not executable tests. Emit an
+        // explicit SKIP line so the harness can reconcile record counts (TP-021).
+        if (name == "doc") { std::printf("SKIP %s (doc pseudo-record)\n", name.c_str()); continue; }
 
         Result r{false, "unknown op " + op};
         if      (op == "decode")            r = op_decode(rec);

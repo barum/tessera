@@ -3,12 +3,12 @@ name: tessera-conformance
 description: This skill should be used when the user wants to "run the conformance harness", "regenerate KAT vectors", "add a new conformance test", "debug a cross-language mismatch", "fix a failing conformance runner", "skip a language in conformance", "update conformance for a new variant", "add a hybrid_*.json vector", "flip a language to hybrid-supported", or any task that touches tools/conformance/, the per-language runners, or the JSON KAT vectors under tessera-id/conformance/vectors/, tessera-hash/conformance/vectors/, and tessera-seal/conformance/vectors/.
 version: 1.3.0
 created: 2026-05-20T00:00:00Z
-updated: 2026-06-08T00:00:00Z
+updated: 2026-06-10T00:00:00Z
 ---
 
 # tessera-conformance — Cross-language KAT harness
 
-The conformance harness is the single quality signal that catches polyglot drift. It's gated in CI (`.github/workflows/conformance.yml` is branch-protection-required) and should be the first thing you run when changing wire/encoding/generator behavior. See umbrella discipline in [../../../CLAUDE.md](../../../CLAUDE.md).
+The conformance harness is the single quality signal that catches polyglot drift. It's the automatic CI gate (`.github/workflows/conformance.yml` runs on every pull_request and push to main — the only auto-triggered workflow; the blocking step is the 4-language alpha run, the full-8 step is informational) and should be the first thing you run when changing wire/encoding/generator behavior. See umbrella discipline in [../../../CLAUDE.md](../../../CLAUDE.md).
 
 ## Layout
 
@@ -144,7 +144,7 @@ TesseraHash op-name strings in the `op` field are `tessera_hash_*` (e.g. `tesser
 - Java toolchain not installed (`java`).
 - TypeScript deps not installed (`typescript`).
 
-**Never skip a language in CI.** The `.github/workflows/conformance.yml` workflow ignores `TESSERA_CONFORMANCE_SKIP`.
+**CI skip shape.** `.github/workflows/conformance.yml` uses `TESSERA_CONFORMANCE_SKIP="cpython java cpp typescript"` for its blocking alpha step (Python+C+Go+Rust) and runs the full 8 languages with no skips in the informational step. Never add skips to the blocking step beyond those four. Unknown skip tokens now produce a WARNING. The summary table has a SKIP column (doc pseudo-records + records a runner cannot execute).
 
 ## When you're done
 
