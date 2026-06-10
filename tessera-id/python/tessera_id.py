@@ -32,6 +32,11 @@ import time
 from dataclasses import dataclass
 from typing import Final, Optional
 
+# Implementation version (TID-00022). This is the *implementation* version of
+# the Python reference, kept in lockstep with pyproject.toml and the release
+# notes; the 41-byte wire format is unchanged.
+__version__ = "1.3.1"
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------

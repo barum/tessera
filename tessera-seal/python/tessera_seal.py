@@ -36,6 +36,11 @@ from kyber_py.ml_kem import ML_KEM_1024 as _MLKem1024_lib  # noqa: N811  (vendor
 # Re-export under the canonical name. Public callers see "ML-KEM-1024" only.
 MLKem1024 = _MLKem1024_lib
 
+# Implementation version (TSEAL-00046). This is the *implementation* version of
+# the Python reference, kept in lockstep with pyproject.toml and the release
+# notes; the wire format remains TesseraSeal v1 (variant 0x04) and is unchanged.
+__version__ = "1.3.1"
+
 # ---------------------------------------------------------------------------
 # Constants (normative — match whitepaper §3, §4)
 # ---------------------------------------------------------------------------
@@ -433,6 +438,29 @@ def peek_header(envelope: bytes) -> DecodedHeader:
     if h.ad_len > MAX_AD_LEN:
         raise InvalidLength(f"ad_len {h.ad_len} exceeds {MAX_AD_LEN}")
     return h
+
+
+def peek_ad(envelope: bytes) -> bytes:
+    """
+    Return a copy of the cleartext-on-wire associated-data bytes WITHOUT
+    decrypting — the routing-before-decrypt companion to peek_header()
+    (TSEAL-00047). The canonical use case is the TesseraID-as-AD pattern:
+    route an envelope by the 41-byte TesseraID it is bound to, then decrypt.
+
+    WARNING: the returned bytes are UNAUTHENTICATED until decrypt()
+    succeeds — every byte is attacker-controlled. Use them only for
+    routing/lookup; never act on them as trusted data.
+
+    Rejects exactly what peek_header() rejects (unknown variant/suite, bad
+    declared lengths) plus InvalidLength when the declared AD region
+    extends past the envelope (truncated input).
+    """
+    h = peek_header(envelope)
+    start = HEADER_BYTES + h.kem_ct_len
+    end = start + h.ad_len
+    if len(envelope) < end:
+        raise InvalidLength("ad region extends past envelope end")
+    return bytes(envelope[start:end])
 
 
 # ---------------------------------------------------------------------------

@@ -30,6 +30,9 @@ from tessera_id import (  # noqa: F401  (re-exported as public API)
     UnknownVariant,
 )
 
+# Implementation version (TID-00022) — kept identical to tessera_id.__version__.
+__version__ = "1.3.1"
+
 VARIANT_STANDARD = 0x01
 VARIANT_HLC = 0x02
 TESSERA_ID_SIZE = 41

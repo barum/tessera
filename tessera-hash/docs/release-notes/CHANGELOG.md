@@ -2,6 +2,7 @@
 
 Reverse-chronological. One entry per PR (or per logical change shipped together).
 
+- 2026-06-10 — [THASH-00008 — Python packaging: pyproject, tessera-hash CLI, py.typed (feat)](2026-06-10-thash-00008-python-packaging-cli.md)
 - 2026-06-10 — [THASH-00007 — Whitepaper truthfulness: counter-overflow semantics, TS sourcing, bounds, errata (docs)](2026-06-10-thash-00007-whitepaper-truthfulness.md)
 - 2026-06-10 — [THASH-00006 — Java Generator + test suite (feat)](2026-06-10-thash-00006-java-generator.md)
 - 2026-06-10 — [THASH-00005 — Decoder variant validation, hash_at range errors, spin alignment (sec)](2026-06-10-thash-00005-decoder-variant-and-range.md)

@@ -36,8 +36,8 @@ new size constants:
 
 ## Code changes
 
-- [pqcrypt/rust/Cargo.toml](pqcrypt/rust/Cargo.toml) — add `x25519-dalek = "2"`.
-- [pqcrypt/rust/src/lib.rs](pqcrypt/rust/src/lib.rs):
+- [pqcrypt/rust/Cargo.toml](../../rust/Cargo.toml) — add `x25519-dalek = "2"`.
+- [pqcrypt/rust/src/lib.rs](../../rust/src/lib.rs):
   - Constants + `is_hybrid()`/`kem_ct_size_for()`/`aead_is_aesgcm()` helpers.
   - `PublicKey`/`PrivateKey` carry optional X25519 material.
   - `generate_keypair`/`generate_keypair_from_seed` accept 64 or 96-byte seeds.
@@ -48,7 +48,7 @@ new size constants:
   - `decrypt` checks `priv_key.suite == h.suite` (mismatch is BadKey).
   - `aead_encrypt`/`aead_decrypt` route hybrid 0x06 through AES-256-GCM via
     `aead_is_aesgcm()`.
-- [pqcrypt/rust/tests/integration.rs](pqcrypt/rust/tests/integration.rs) —
+- [pqcrypt/rust/tests/integration.rs](../../rust/tests/integration.rs) —
   6 new tests:
   - `hybrid_roundtrip`
   - `hybrid_envelope_size_matches`
@@ -58,11 +58,11 @@ new size constants:
     ephemeral pubkey portion → DecryptFailed via combiner divergence)
   - `hybrid_kat_decrypt` (consumes `hybrid_decrypt.json` byte-identical)
   - `hybrid_kat_ad_binding` (consumes `hybrid_ad_binding.json`)
-- [pqcrypt/rust/benches/bench_bin.rs](pqcrypt/rust/benches/bench_bin.rs) —
+- [pqcrypt/rust/benches/bench_bin.rs](../../rust/benches/bench_bin.rs) —
   hybrid keygen/encrypt/decrypt measurements.
-- [tools/conformance/rust/src/bin/pqcrypt_runner.rs](tools/conformance/rust/src/bin/pqcrypt_runner.rs) —
+- [tools/conformance/rust/src/bin/pqcrypt_runner.rs](../../../tools/conformance/rust/src/bin/tessera_seal_runner.rs) —
   accept 96-byte seeds (was hard-coded to 64).
-- [tools/conformance/run.sh](tools/conformance/run.sh) — Rust added to
+- [tools/conformance/run.sh](../../../tools/conformance/run.sh) — Rust added to
   `hybrid_supported()` list; comment updated to reflect 2-language hybrid
   coverage.
 

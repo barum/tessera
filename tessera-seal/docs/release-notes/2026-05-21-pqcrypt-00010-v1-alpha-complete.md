@@ -154,7 +154,7 @@ All preceding PRs in the series:
 - [PQCK-00001 — scaffold + whitepaper](2026-05-20-pqcrypt-v1-scaffold.md)
 - [PQCK-00002 — common/c extractions](2026-05-21-pqcrypt-00002-common-extractions.md)
 - [PQCK-00003 — Python reference](2026-05-21-pqcrypt-00003-python-reference.md)
-- [PQCK-00004 — cross-rejection of 0x04](2026-05-21-pqcrypt-00004-cross-rejection.md) (+ sibling [PQID-00015](../../../pqid/docs/release-notes/2026-05-21-pqid-00015-cross-reject-pqcrypt.md) and [PQHash cross-reject](../../../pqhash/docs/release-notes/2026-05-21-pqhash-cross-reject-pqcrypt.md))
+- [PQCK-00004 — cross-rejection of 0x04](2026-05-21-pqcrypt-00004-cross-rejection.md) (+ sibling [PQID-00015](../../../tessera-id/docs/release-notes/2026-05-21-pqid-00015-cross-reject-pqcrypt.md) and [PQHash cross-reject](../../../tessera-hash/docs/release-notes/2026-05-21-pqhash-cross-reject-pqcrypt.md))
 - [PQCK-00005 — C reference](2026-05-21-pqcrypt-00005-c-reference.md)
 - [PQCK-00006 — Go port](2026-05-21-pqcrypt-00006-go-port.md)
 - [PQCK-00007 — Rust port](2026-05-21-pqcrypt-00007-rust-port.md)

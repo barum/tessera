@@ -5,13 +5,15 @@ Python reference implementation of TesseraSeal v1. **Readable canonical source**
 ## Status
 
 - Implementation: complete (PQCK-00003).
-- Tests: 56/56 pass.
+- Tests: all green — see `pytest` output for the current count.
 - Conformance vectors: deterministic, generated from this reference (see `../conformance/`).
 
 ## Install
 
 ```bash
 cd tessera-seal/python
+pip install -e .          # installs the tessera_seal module + the `tessera-seal` CLI (TSEAL-00046)
+# or, deps only (library used via PYTHONPATH):
 pip install -r requirements.txt
 ```
 
@@ -42,9 +44,12 @@ Reference numbers under `../benchmarks/python.txt`. Note: kyber-py is pure-Pytho
 | File | Purpose |
 |------|---------|
 | `tessera_seal.py` | Readable canonical reference |
-| `test_tessera_seal.py` | 56-test suite |
+| `test_tessera_seal.py` | pytest suite (run it for the current test count) |
 | `bench.py` | Micro-bench |
 | `requirements.txt` | Pinned dependency floor |
+| `pyproject.toml` | Packaging metadata + `tessera-seal` console entry point (TSEAL-00046) |
+| `tessera_seal_cli.py` | CLI implementation (installed module behind the `tessera-seal` command) |
+| `cli.py` | From-checkout CLI launcher (`python3 tessera-seal/python/cli.py ...`; not installed) |
 
 A `tessera_seal_fast.py` optimized variant is planned for v1.1 alongside the CPython extension; see the project CLAUDE.md.
 

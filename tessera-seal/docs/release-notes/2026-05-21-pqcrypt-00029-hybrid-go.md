@@ -30,7 +30,7 @@ None to the wire format. Go's public API gained:
 
 ## Code changes
 
-- [pqcrypt/go/pqcrypt.go](pqcrypt/go/pqcrypt.go):
+- [pqcrypt/go/pqcrypt.go](../../go/tessera_seal.go):
   - Imports `crypto/ecdh` + `crypto/rand`.
   - Hybrid constants + `isHybrid()`/`suiteAllowed()`/`aeadIsAESGCM()`/`kemCTSizeFor()` helpers.
   - `PublicKey.xPub` / `PrivateKey.xPriv` optional X25519 fields.
@@ -40,7 +40,7 @@ None to the wire format. Go's public API gained:
   - `Encrypt` checks `pub.Suite == suite` (mismatch is `ErrBadKey`).
   - `Decrypt` checks `priv.Suite == h.Suite` (mismatch is `ErrBadKey`).
   - `newAEAD` routes hybrid 0x06 through AES-256-GCM via `aeadIsAESGCM()`.
-- [pqcrypt/go/pqcrypt_test.go](pqcrypt/go/pqcrypt_test.go) — 6 new tests:
+- [pqcrypt/go/pqcrypt_test.go](../../go/tessera_seal_test.go) — 6 new tests:
   - `TestHybridRoundtrip`
   - `TestHybridEnvelopeSizeAndKEMCTLen` (asserts wire KEM_CT_LEN = 1600)
   - `TestHybridADBindingNegative`
@@ -48,12 +48,12 @@ None to the wire format. Go's public API gained:
     pubkey → ErrDecrypt via combiner divergence)
   - `TestHybridKATDecrypt` (consumes `hybrid_decrypt.json`)
   - `TestHybridKATADBinding` (consumes `hybrid_ad_binding.json`)
-- [pqcrypt/go/bench_test.go](pqcrypt/go/bench_test.go) — three hybrid
+- [pqcrypt/go/bench_test.go](../../go/bench_test.go) — three hybrid
   benchmarks: `BenchmarkKeygenHybrid`, `BenchmarkEncrypt1KB_Hybrid`,
   `BenchmarkDecrypt1KB_Hybrid`.
-- [tools/conformance/go/pqcrypt_runner/main.go](tools/conformance/go/pqcrypt_runner/main.go) —
+- [tools/conformance/go/pqcrypt_runner/main.go](../../../tools/conformance/go/tessera_seal_runner/main.go) —
   accept 96-byte seeds (was hard-coded to 64).
-- [tools/conformance/run.sh](tools/conformance/run.sh) — `go` added to
+- [tools/conformance/run.sh](../../../tools/conformance/run.sh) — `go` added to
   `hybrid_supported()` list.
 
 ## Combiner

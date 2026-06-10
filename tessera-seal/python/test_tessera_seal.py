@@ -11,6 +11,7 @@ Run:
 """
 from __future__ import annotations
 
+import json
 import os
 import struct
 
@@ -382,6 +383,78 @@ class TestPeekAndValidate:
             assert not tessera_seal.validate_min_timestamp(env, 1_900_000_000_000)
         finally:
             tessera_seal.set_now_ms_for_testing(None)
+
+
+# ---------------------------------------------------------------------------
+# Structural AD peek (TSEAL-00047 / TP-081) — unauthenticated until decrypt
+# ---------------------------------------------------------------------------
+
+
+class TestPeekAD:
+    def test_peek_ad_roundtrip(self, keypair, small_plaintext, tessera_id_like_ad):
+        priv, pub = keypair
+        env = tessera_seal.encrypt(
+            small_plaintext, pub, associated_data=tessera_id_like_ad
+        )
+        assert tessera_seal.peek_ad(env) == tessera_id_like_ad
+
+    def test_peek_ad_empty_ad(self, keypair, small_plaintext):
+        priv, pub = keypair
+        env = tessera_seal.encrypt(small_plaintext, pub)
+        assert tessera_seal.peek_ad(env) == b""
+
+    def test_peek_ad_truncated(self, keypair, small_plaintext, tessera_id_like_ad):
+        priv, pub = keypair
+        env = tessera_seal.encrypt(
+            small_plaintext, pub, associated_data=tessera_id_like_ad
+        )
+        h = tessera_seal.peek_header(env)
+        # Cut one byte into the declared AD region.
+        trunc = HEADER_BYTES + h.kem_ct_len + h.ad_len - 1
+        with pytest.raises(InvalidLength):
+            tessera_seal.peek_ad(env[:trunc])
+        # Shorter than a header.
+        with pytest.raises(InvalidLength):
+            tessera_seal.peek_ad(env[: HEADER_BYTES - 1])
+
+    def test_peek_ad_unknown_variant_and_suite(
+        self, keypair, small_plaintext, tessera_id_like_ad
+    ):
+        priv, pub = keypair
+        env = tessera_seal.encrypt(
+            small_plaintext, pub, associated_data=tessera_id_like_ad
+        )
+        bad = bytearray(env)
+        bad[6] = 0x03
+        with pytest.raises(UnknownVariant):
+            tessera_seal.peek_ad(bytes(bad))
+        bad = bytearray(env)
+        bad[7] = 0x07
+        with pytest.raises(UnknownSuite):
+            tessera_seal.peek_ad(bytes(bad))
+
+    def test_peek_ad_kat_ad_binding(self):
+        """peek_ad returns the on-wire TesseraID-as-AD bytes from the shared
+        KAT envelopes without any key material. Negative records carry a
+        deliberately wrong expected_ad, so AD equality is asserted only for
+        positive records; structural success is asserted for all."""
+        path = os.path.join(
+            os.path.dirname(__file__), "..", "conformance", "vectors",
+            "ad_binding.json",
+        )
+        with open(path) as f:
+            recs = json.load(f)
+        assert recs, "no ad_binding records"
+        for r in recs:
+            env = bytes.fromhex(r["envelope_hex"])
+            got = tessera_seal.peek_ad(env)
+            if r["op"] == "decrypt":
+                assert got == bytes.fromhex(r["expected_ad_hex"]), r["name"]
+            if got:
+                h = tessera_seal.peek_header(env)
+                trunc = HEADER_BYTES + h.kem_ct_len + h.ad_len - 1
+                with pytest.raises(InvalidLength):
+                    tessera_seal.peek_ad(env[:trunc])
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,55 @@
+# Packaging for the TesseraSeal Python reference (TSEAL-00046, TP-070/TP-086).
+#
+# Posture: publish-ready, NOT published. Publication to PyPI is gated on the
+# name-clearance decision (docs/decisions/2026-06-10-name-clearance.md).
+#
+# Modules stay FLAT (no package directory) by deliberate decision: the wire
+# reference is a single readable module. The console command is `tessera-seal`;
+# the from-checkout form `python3 tessera-seal/python/cli.py ...` also works.
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tessera-seal"
+version = "1.3.1"
+description = "TesseraSeal — post-quantum encryption envelope (ML-KEM-1024 + AES-256-GCM + UtC commit), Python reference implementation"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.9"
+authors = [{ name = "Bahram Samani", email = "bsamani@samani.com" }]
+keywords = ["post-quantum", "ml-kem", "fips-203", "encryption", "envelope", "aead", "key-committing"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security :: Cryptography",
+]
+# Pinned dependency floors mirror requirements.txt verbatim (security-reviewed
+# floors; raising them requires a security-review note in the PR).
+# pycryptodome is only exercised by the conformance-vector generator's
+# deterministic DRBG mode, but ships with requirements.txt and so is kept here.
+# argon2-cffi is required by the `tessera-seal keygen`/`decrypt` key-custody
+# path: the reference file plugin (../plugin/tessera_seal_plugin_file.py)
+# fails closed on key wrap without it (TSEAL-00040). The tessera_seal library
+# module itself does not import it.
+dependencies = [
+    "cryptography>=46.0.0",
+    "kyber-py>=1.0.0",
+    "pycryptodome>=3.20.0",
+    "argon2-cffi>=23.1.0",
+]
+
+[project.scripts]
+tessera-seal = "tessera_seal_cli:main"
+
+[project.urls]
+Repository = "https://github.com/barum/tessera"
+
+[tool.setuptools]
+# Flat modules, not a package (orchestrator-decided contract; no package-dir
+# restructure). cli.py is the from-checkout shim and is intentionally not
+# installed — the installed CLI module name must be unique across the three
+# sibling projects.
+py-modules = ["tessera_seal", "tessera_seal_cli"]

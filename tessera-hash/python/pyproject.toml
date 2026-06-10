@@ -1,0 +1,41 @@
+# Packaging for the TesseraHash Python reference (THASH-00008, TP-084/TP-086).
+#
+# Posture: publish-ready, NOT published. Publication to PyPI is gated on the
+# name-clearance decision (docs/decisions/2026-06-10-name-clearance.md).
+#
+# Modules stay FLAT (no package directory) by deliberate decision: the wire
+# reference is a single readable module. The console command is `tessera-hash`;
+# the from-checkout form `python3 tessera-hash/python/cli.py ...` also works.
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tessera-hash"
+version = "1.3.1"
+description = "TesseraHash — 73-byte SHAKE-256 content identifier with provenance header, Python reference implementation"
+license = "Apache-2.0"
+requires-python = ">=3.9"
+authors = [{ name = "Bahram Samani", email = "bsamani@samani.com" }]
+keywords = ["content-hash", "shake-256", "content-addressing", "post-quantum", "sortable"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
+# Stdlib-only by design (hashlib.shake_256): no dependencies.
+dependencies = []
+
+[project.scripts]
+tessera-hash = "tessera_hash_cli:main"
+
+[project.urls]
+Repository = "https://github.com/barum/tessera"
+
+[tool.setuptools]
+# Flat modules, not a package (orchestrator-decided contract; no package-dir
+# restructure). cli.py is the from-checkout shim and is intentionally not
+# installed — the installed CLI module name must be unique across the three
+# sibling projects.
+py-modules = ["tessera_hash", "tessera_hash_cli"]

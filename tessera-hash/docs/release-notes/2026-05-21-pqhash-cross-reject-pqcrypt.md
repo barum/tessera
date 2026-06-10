@@ -37,5 +37,5 @@ Revert this PR. The `binary_variant_0x04` record disappears from `pqhash_invalid
 
 ## Linked PRs / tickets
 
-- Sibling: [PQCK-00004 — Cross-rejection of `0x04` in PQID + PQHash](../../../pqcrypt/docs/release-notes/2026-05-21-pqcrypt-00004-cross-rejection.md).
+- Sibling: [PQCK-00004 — Cross-rejection of `0x04` in PQID + PQHash](../../../tessera-seal/docs/release-notes/2026-05-21-pqcrypt-00004-cross-rejection.md).
 - See umbrella `CLAUDE.md` security-invariants section for the shared variant-byte allocation table.
