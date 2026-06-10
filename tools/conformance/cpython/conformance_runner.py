@@ -81,26 +81,26 @@ def run_decode_crockford(rec):
 
 
 def run_validate_invalid(rec):
+    """TESS-00009 / TP-027: every branch calls the EXTENSION's own rejection
+    path — tessera_id_ext.validate() for binary buffers (raises
+    UnknownVariantError / InvalidEncodingError) and the ext string decoders
+    for text forms (which enforce the variant contract at decode, TID-00020).
+    The harness no longer reimplements any variant/length check itself, so a
+    permissive library can no longer be masked by harness-side logic."""
     kind = rec["input_kind"]
     try:
         if kind == "binary_hex":
-            h = rec["input_hex"]
-            if len(h) != 82:
-                return True, ""  # length error counts as reject
-            raw = bytes.fromhex(h)
-            v = tessera_id_ext.variant(raw)
-            if v not in (0x01, 0x02):
-                # Variant accessor doesn't raise; treat unknown variant as reject.
-                return True, ""
-            return False, "expected error, got success"
+            tessera_id_ext.validate(bytes.fromhex(rec["input_hex"]))
         elif kind == "b64":
             tessera_id_ext.decode_b64(rec["input_str"])
         elif kind == "crockford":
             tessera_id_ext.decode_b32(rec["input_str"])
         else:
             return False, f"unknown input_kind {kind!r}"
-    except Exception:
+    except tessera_id_ext.TesseraIdError:
         return True, ""
+    except Exception as e:
+        return False, f"non-TesseraIdError: {type(e).__name__}: {e}"
     return False, "expected error, got success"
 
 
@@ -200,10 +200,13 @@ def run_tessera_hash_verify(rec):
 
 
 def run_hlc_overflow(rec):
-    # The extension does not expose HLC state hooks, so these records cannot be
-    # executed here; the underlying C reference covers them via the C runner.
-    # Emit an explicit SKIP (TESS-00007 / TP-021) — never a fake PASS.
-    return "skip", "extension exposes no HLC state hooks; covered by C reference runner"
+    # The extension does not expose HLC state/clock hooks, so these records
+    # cannot be executed here; the underlying C reference covers them via the
+    # C runner. This applies equally to hlc_drift.json `expects_error`
+    # records (TESS-00009 / TP-043): without a clock override the drift
+    # condition cannot be staged, so the honest result is an explicit SKIP
+    # (TESS-00007 / TP-021) — never a fake PASS.
+    return "skip", "extension exposes no HLC state/clock hooks; covered by C reference runner"
 
 
 def run_validate_min_timestamp(rec):

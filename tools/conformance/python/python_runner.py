@@ -123,8 +123,15 @@ def run_validate_invalid(rec: dict) -> tuple[bool, str]:
 
 
 def run_hlc_overflow(rec: dict) -> tuple[bool, str]:
-    """Drive an HLC generator into the overflow case and check (l_new, c_new).
-    'doc' pseudo-records never reach this handler — main() emits SKIP for them."""
+    """Drive an HLC generator through a (state, observation) step.
+
+    Two record shapes share this op (hlc_overflow.json and hlc_drift.json):
+      - "expected": {l_new, c_new} — generation must succeed with that state.
+      - "expects_error": "HLC_DRIFT" — generation MUST raise HLCDriftError
+        and produce no output (TESS-00009 / TP-043); success is a FAIL.
+    'doc' pseudo-records never reach this handler — main() emits SKIP for them.
+    """
+    expects_error = rec.get("expects_error")
     g = tessera_id.HLCGenerator()
     g._state.l = rec["start"]["l_old"]
     g._state.c = rec["start"]["c_old"]
@@ -143,8 +150,15 @@ def run_hlc_overflow(rec: dict) -> tuple[bool, str]:
                 + b"\x00" * 32
             )
             raw = g.new(observe=peer)
+    except tessera_id.HLCDriftError:
+        if expects_error == "HLC_DRIFT":
+            return True, ""
+        return False, "raised HLCDriftError unexpectedly"
     finally:
         tessera_id._now_ms = orig
+
+    if expects_error is not None:
+        return False, f"expected {expects_error} error, got success"
 
     d = tessera_id.decode(raw)
     exp = rec["expected"]

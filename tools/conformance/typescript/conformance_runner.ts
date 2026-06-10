@@ -4,7 +4,7 @@ import {
   SIZE_BYTES, VARIANT_HLC,
   encodeBase64URL, decodeBase64URL,
   encodeCrockford, decodeCrockford,
-  decode, HLCGenerator,
+  decode, HLCGenerator, HLCDriftError,
   setNowMsForTesting,
   validateMinTimestamp,
 } from "tessera-id";
@@ -28,6 +28,7 @@ interface Record {
   start?: { l_old: number; c_old: number };
   physical_time_ms?: number;
   observe?: { l_msg: number; c_msg: number } | null;
+  expects_error?: string;
   expected_tail_hex?: string;
   content_hex?: string;
 }
@@ -117,6 +118,10 @@ function runValidateInvalid(r: Record): Result {
   }
 }
 
+// Two record shapes share this op (hlc_overflow.json and hlc_drift.json,
+// TESS-00009 / TP-043): records with "expected" assert the resulting
+// (l_new, c_new); records with "expects_error": "HLC_DRIFT" assert that
+// generation throws HLCDriftError and produces no output — success is a FAIL.
 function runHLCOverflow(r: Record): Result {
   const g = new HLCGenerator();
   g.setStateForTesting(r.start!.l_old, r.start!.c_old);
@@ -142,9 +147,19 @@ function runHLCOverflow(r: Record): Result {
     }
   } catch (e) {
     setNowMsForTesting(null);
+    if (e instanceof HLCDriftError) {
+      if (r.expects_error === "HLC_DRIFT") return { ok: true };
+      return { ok: false, detail: "threw HLCDriftError unexpectedly" };
+    }
     return { ok: false, detail: `error: ${(e as Error).message}` };
   }
   setNowMsForTesting(null);
+  if (r.expects_error != null) {
+    if (r.expects_error !== "HLC_DRIFT") {
+      return { ok: false, detail: `unsupported expects_error ${r.expects_error}` };
+    }
+    return { ok: false, detail: "expected HLC_DRIFT error, got success" };
+  }
   const d = decode(raw);
   if (d.timestampMs !== r.expected.l_new || d.counter !== r.expected.c_new) {
     return {

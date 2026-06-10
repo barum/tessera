@@ -34,6 +34,8 @@ struct Record {
     #[serde(default)]
     observe: Option<Value>,
     #[serde(default)]
+    expects_error: Option<String>,
+    #[serde(default)]
     expected_tail_hex: Option<String>,
     #[serde(default)]
     content_hex: Option<String>,
@@ -190,6 +192,22 @@ fn run_hlc_overflow(r: &Record) -> Result<(), String> {
     };
 
     set_now_ms_for_testing(-1);
+
+    // Two record shapes share this op (hlc_overflow.json and hlc_drift.json,
+    // TESS-00009 / TP-043): records with "expected" assert the resulting
+    // (l_new, c_new); records with "expects_error": "HLC_DRIFT" assert that
+    // generation fails with Error::HlcDrift and produces no output — success
+    // is a FAIL.
+    if let Some(kind) = &r.expects_error {
+        if kind != "HLC_DRIFT" {
+            return Err(format!("unsupported expects_error {:?}", kind));
+        }
+        return match result {
+            Ok(_) => Err("expected HLC_DRIFT error, got success".to_string()),
+            Err(tessera_id::Error::HlcDrift { .. }) => Ok(()),
+            Err(e) => Err(format!("expected HlcDrift, got: {:?}", e)),
+        };
+    }
 
     let p = result.map_err(|e| format!("new_id: {:?}", e))?;
     let exp = r.expected.as_ref().unwrap();

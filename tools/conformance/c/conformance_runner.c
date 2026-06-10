@@ -350,14 +350,26 @@ static int op_validate_min_timestamp(const char *rec, char *err) {
 }
 
 /* HLC overflow needs to set internal state; C exposes the generator struct
- * directly so we can mutate fields without a special hook. */
+ * directly so we can mutate fields without a special hook.
+ *
+ * Two record shapes share this op (hlc_overflow.json and hlc_drift.json,
+ * TESS-00009 / TP-043): records with "expected" assert the resulting
+ * (l_new, c_new); records with "expects_error": "HLC_DRIFT" assert that the
+ * generator returns TESSERA_ID_E_HLC_DRIFT and produces no output — success
+ * there is a FAIL. */
 static int op_hlc_overflow(const char *rec, char *err) {
-    int64_t l_old, c_old, pt, l_msg = 0, c_msg = 0, exp_l, exp_c;
+    int64_t l_old, c_old, pt, l_msg = 0, c_msg = 0, exp_l = 0, exp_c = 0;
+    char expects_error[32] = {0};
+    int has_expects_error = get_str(rec, "expects_error", expects_error, sizeof(expects_error));
     if (!get_nested_int(rec, "start", "l_old", &l_old)) { snprintf(err, 256, "no start.l_old"); return 0; }
     if (!get_nested_int(rec, "start", "c_old", &c_old)) { snprintf(err, 256, "no start.c_old"); return 0; }
     if (!get_int(rec, "physical_time_ms", &pt)) { snprintf(err, 256, "no physical_time_ms"); return 0; }
-    if (!get_nested_int(rec, "expected", "l_new", &exp_l)) { snprintf(err, 256, "no expected.l_new"); return 0; }
-    if (!get_nested_int(rec, "expected", "c_new", &exp_c)) { snprintf(err, 256, "no expected.c_new"); return 0; }
+    if (!has_expects_error) {
+        if (!get_nested_int(rec, "expected", "l_new", &exp_l)) { snprintf(err, 256, "no expected.l_new"); return 0; }
+        if (!get_nested_int(rec, "expected", "c_new", &exp_c)) { snprintf(err, 256, "no expected.c_new"); return 0; }
+    } else if (strcmp(expects_error, "HLC_DRIFT") != 0) {
+        snprintf(err, 256, "unsupported expects_error %s", expects_error); return 0;
+    }
 
     int has_observe = !is_null_field(rec, "observe") && find_key(rec, "observe") != NULL;
     if (has_observe) {
@@ -392,6 +404,12 @@ static int op_hlc_overflow(const char *rec, char *err) {
 
     tessera_id_set_now_ms_for_testing(UINT64_MAX);
 
+    if (has_expects_error) {
+        if (rc == TESSERA_ID_E_HLC_DRIFT) return 1;
+        if (rc == TESSERA_ID_OK) { snprintf(err, 256, "expected HLC_DRIFT error, got success"); return 0; }
+        snprintf(err, 256, "expected HLC_DRIFT (rc=%d), got rc=%d", TESSERA_ID_E_HLC_DRIFT, rc);
+        return 0;
+    }
     if (rc != TESSERA_ID_OK) { snprintf(err, 256, "rc=%d", rc); return 0; }
     int64_t got_l = (int64_t)tessera_id_timestamp_ms(out);
     int64_t got_c = (int64_t)tessera_id_counter(out);

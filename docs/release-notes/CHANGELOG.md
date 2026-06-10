@@ -8,6 +8,7 @@ whitepaper, repo-wide doc/git hygiene. Per-project changes live in
 reference the former PQToolkit / PQID / PQHash / PQCrypt names are a historical
 ledger — kept verbatim; see TESS-00001 for the rename.)
 
+- 2026-06-10 — [TESS-00009 — KAT coverage expansion: drift, truncation, reserved bytes, string-form invalid, 64KiB/max-AD (sec)](2026-06-10-tess-00009-kat-coverage-expansion.md)
 - 2026-06-10 — [TESS-00007 — Conformance harness enforcement: exit codes, record counts, SKIP column, vector freeze](2026-06-10-tess-00007-harness-enforcement.md)
 - 2026-06-10 — [TESS-00006 — CI restoration: OpenSSL 3.5 build, PR gate for conformance, SHA-pinned actions, portable macOS steps](2026-06-10-tess-00006-ci-restoration.md)
 - 2026-06-09 — [TESS-00004 — Disable CI auto-build on push/PR (manual dispatch only)](2026-06-09-tess-00004-ci-manual-dispatch-only.md)

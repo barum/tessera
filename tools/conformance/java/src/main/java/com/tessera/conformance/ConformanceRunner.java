@@ -388,16 +388,28 @@ public final class ConformanceRunner {
         return new Result(true, "");
     }
 
+    // Two record shapes share this op (hlc_overflow.json and hlc_drift.json,
+    // TESS-00009 / TP-043): records with "expected" assert the resulting
+    // (l_new, c_new); records with "expects_error": "HLC_DRIFT" assert that
+    // generation throws HLCGenerator.HLCDriftError and produces no output —
+    // success there is a FAIL.
     static Result opHlcOverflow(String rec) {
         String startBody = getObj(rec, "start");
         if (startBody == null) return new Result(false, "no start");
         long lOld = getInt(startBody, "l_old");
         long cOld = getInt(startBody, "c_old");
         long pt = getInt(rec, "physical_time_ms");
-        String e = getObj(rec, "expected");
-        if (e == null) return new Result(false, "no expected");
-        long expL = getInt(e, "l_new");
-        long expC = getInt(e, "c_new");
+        String expectsError = getStr(rec, "expects_error");
+        long expL = 0;
+        long expC = 0;
+        if (expectsError == null) {
+            String e = getObj(rec, "expected");
+            if (e == null) return new Result(false, "no expected");
+            expL = getInt(e, "l_new");
+            expC = getInt(e, "c_new");
+        } else if (!"HLC_DRIFT".equals(expectsError)) {
+            return new Result(false, "unsupported expects_error " + expectsError);
+        }
 
         HLCGenerator g = new HLCGenerator();
         g.setStateForTesting(lOld, (int) cOld);
@@ -413,13 +425,18 @@ public final class ConformanceRunner {
                 long cMsg = getInt(obsBody, "c_msg");
                 out = g.nextObserving(lMsg, (int) cMsg);
             }
+        } catch (HLCGenerator.HLCDriftError ex) {
+            if (expectsError != null) return new Result(true, "");
+            return new Result(false, "threw HLCDriftError unexpectedly");
         } catch (Exception ex) {
-            HLCGenerator.setNowMsForTesting(Long.MIN_VALUE);
             return new Result(false, "exception: " + ex.getMessage());
         } finally {
             HLCGenerator.setNowMsForTesting(Long.MIN_VALUE);
         }
 
+        if (expectsError != null) {
+            return new Result(false, "expected HLC_DRIFT error, got success");
+        }
         if (out.timestampMs() != expL || (out.counter() & 0xFFFF) != expC) {
             return new Result(false, String.format("got=(l=%d, c=%d) want=(l=%d, c=%d)",
                 out.timestampMs(), out.counter() & 0xFFFF, expL, expC));

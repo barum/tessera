@@ -127,22 +127,23 @@ bash tools/conformance/run.sh                           # all languages × all p
 TESSERA_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh   # TesseraSeal v1.x alpha quick loop
 ```
 
-As of 2026-06-10 (TESS-00007 harness enforcement: per-runner exit-code checks, PASS+FAIL+SKIP record-count
-reconciliation, and an explicit SKIP column for doc pseudo-records and unexecutable records) the alpha quick
-loop reports, **verified by local run**:
+As of 2026-06-10 (TESS-00007 harness enforcement — per-runner exit-code checks, PASS+FAIL+SKIP record-count
+reconciliation, explicit SKIP column — plus TESS-00009 KAT expansion: string-form unknown-variant records,
+HLC drift records, reserved-byte sweep 0x05/0x10/0x7f/0xfe, seal truncation/boundary/64KiB/max-AD records)
+the alpha quick loop reports, **verified by local run**:
 
 ```
 language         PASS     FAIL     SKIP
-python            267        0        5
-c                 258        0        5       (no hybrid yet; TSEAL-00030 backlog)
-go                267        0        5
-rust              267        0        5
+python            296        0        6
+c                 287        0        6       (no hybrid yet; TSEAL-00030 backlog)
+go                296        0        6
+rust              296        0        6
 ```
 
-The full 8-language run is also green locally: `cpp / typescript / java` each report `207 0 5`
+The full 8-language run is also green locally: `cpp / typescript / java` each report `229 0 6`
 (tessera-id + tessera-hash; they skip the TesseraSeal vector directory until their v1.4 tessera-seal ports
-land) and `cpython` reports `204 0 8` (its 3 hlc_overflow records are now SKIPped explicitly instead of
-fake-passed, plus the 5 doc pseudo-records every language skips). CI numbers come from `conformance.yml`
+land) and `cpython` reports `224 0 11` (its 3 hlc_overflow records are SKIPped explicitly instead of
+fake-passed, plus the doc pseudo-records every language skips). CI numbers come from `conformance.yml`
 runs; treat local numbers as local until CI confirms them.
 
 ## Per-project quick reference

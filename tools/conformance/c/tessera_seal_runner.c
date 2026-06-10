@@ -168,6 +168,37 @@ static int extract_hex(const char *obj_start, const char *obj_end, const char *k
     return hex_decode(hex_buf, strlen(hex_buf), out, out_cap, out_len);
 }
 
+/* Heap-allocating variant of extract_hex for fields that can be large —
+ * the TESS-00009 boundary KATs (64 KiB plaintext, MAX_AD_LEN = 65536 AD)
+ * produce hex strings far beyond any reasonable stack buffer. Decodes the
+ * value straight out of the JSON text (vector hex never contains escapes).
+ * Returns 0 and sets *out / *out_len on success (caller frees); -1 if the
+ * key is missing or the value is not valid hex. A present-but-empty string
+ * yields a 1-byte allocation with *out_len == 0. */
+static int extract_hex_alloc(const char *obj_start, const char *obj_end, const char *key,
+                             uint8_t **out, size_t *out_len) {
+    const char *v = find_key_after(obj_start, key, obj_end);
+    if (!v || *v != '"') return -1;
+    v++;
+    const char *end = v;
+    while (end < obj_end && *end != '"') end++;
+    if (end >= obj_end) return -1;
+    size_t hex_len = (size_t)(end - v);
+    if (hex_len % 2) return -1;
+    size_t n = hex_len / 2;
+    uint8_t *buf = malloc(n > 0 ? n : 1);
+    if (!buf) return -1;
+    for (size_t i = 0; i < n; i++) {
+        int hi = hex_nibble((unsigned char) v[2 * i]);
+        int lo = hex_nibble((unsigned char) v[2 * i + 1]);
+        if (hi < 0 || lo < 0) { free(buf); return -1; }
+        buf[i] = (uint8_t)((hi << 4) | lo);
+    }
+    *out = buf;
+    *out_len = n;
+    return 0;
+}
+
 static int extract_long(const char *obj_start, const char *obj_end, const char *key,
                         long long *out) {
     const char *v = find_key_after(obj_start, key, obj_end);
@@ -232,30 +263,45 @@ static int handle_decrypt(const char *obj_start, const char *obj_end, int should
     static uint8_t sk[TESSERA_SEAL_MLKEM1024_SK_BYTES];
     size_t sk_len = 0;
     int have_sk = (extract_hex(obj_start, obj_end, "private_key_hex", sk, sizeof(sk), &sk_len) == 0);
-    /* envelope_hex */
-    static uint8_t env[8192];
+    /* envelope_hex / expected_ad_hex / expected_plaintext_hex are heap-
+     * allocated: the TESS-00009 boundary KATs carry 64 KiB plaintexts and
+     * MAX_AD_LEN (65536 B) associated data. */
+    uint8_t *env = NULL;
     size_t env_len = 0;
-    if (extract_hex(obj_start, obj_end, "envelope_hex", env, sizeof(env), &env_len) != 0) {
+    if (extract_hex_alloc(obj_start, obj_end, "envelope_hex", &env, &env_len) != 0) {
         printf("FAIL %s: missing envelope_hex\n", name); g_fail++; return -1;
     }
-    /* expected_ad_hex (optional, empty means b"") */
-    static uint8_t ad[1024];
+    /* expected_ad_hex (optional, missing means b"") */
+    uint8_t *ad = NULL;
     size_t ad_len = 0;
-    (void)extract_hex(obj_start, obj_end, "expected_ad_hex", ad, sizeof(ad), &ad_len);
+    if (extract_hex_alloc(obj_start, obj_end, "expected_ad_hex", &ad, &ad_len) != 0) {
+        ad = NULL;
+        ad_len = 0;
+    }
 
     if (!should_fail) {
-        if (!have_sk) { printf("FAIL %s: no private key for decrypt\n", name); g_fail++; return -1; }
-        static uint8_t expected[2048];
+        if (!have_sk) {
+            printf("FAIL %s: no private key for decrypt\n", name); g_fail++;
+            free(env); free(ad); return -1;
+        }
+        uint8_t *expected = NULL;
         size_t expected_len = 0;
-        if (extract_hex(obj_start, obj_end, "expected_plaintext_hex", expected, sizeof(expected), &expected_len) != 0) {
-            printf("FAIL %s: no expected_plaintext_hex\n", name); g_fail++; return -1;
+        if (extract_hex_alloc(obj_start, obj_end, "expected_plaintext_hex", &expected, &expected_len) != 0) {
+            printf("FAIL %s: no expected_plaintext_hex\n", name); g_fail++;
+            free(env); free(ad); return -1;
         }
         tessera_seal_priv_t priv = {0};
         priv.suite = rec_suite;
         memcpy(priv.sk, sk, TESSERA_SEAL_MLKEM1024_SK_BYTES);
-        static uint8_t out[2048];
-        size_t out_len = sizeof(out);
-        int rc = tessera_seal_decrypt(env, env_len, &priv, ad_len ? ad : NULL, ad_len, out, sizeof(out), &out_len);
+        /* Plaintext is always strictly smaller than its envelope. */
+        size_t out_cap = env_len > 0 ? env_len : 1;
+        uint8_t *out = malloc(out_cap);
+        if (!out) {
+            printf("FAIL %s: oom\n", name); g_fail++;
+            free(env); free(ad); free(expected); return -1;
+        }
+        size_t out_len = out_cap;
+        int rc = tessera_seal_decrypt(env, env_len, &priv, ad_len ? ad : NULL, ad_len, out, out_cap, &out_len);
         if (rc != TESSERA_SEAL_OK) {
             printf("FAIL %s: decrypt rc=%d\n", name, rc); g_fail++;
         } else if (out_len != expected_len || memcmp(out, expected, expected_len) != 0) {
@@ -263,19 +309,27 @@ static int handle_decrypt(const char *obj_start, const char *obj_end, int should
         } else {
             printf("PASS %s\n", name); g_pass++;
         }
+        free(out);
+        free(expected);
     } else {
         if (have_sk) {
             tessera_seal_priv_t priv = {0};
             priv.suite = rec_suite;
             memcpy(priv.sk, sk, TESSERA_SEAL_MLKEM1024_SK_BYTES);
-            static uint8_t out[2048];
-            size_t out_len = sizeof(out);
-            int rc = tessera_seal_decrypt(env, env_len, &priv, ad_len ? ad : NULL, ad_len, out, sizeof(out), &out_len);
+            size_t out_cap = env_len > 0 ? env_len : 1;
+            uint8_t *out = malloc(out_cap);
+            if (!out) {
+                printf("FAIL %s: oom\n", name); g_fail++;
+                free(env); free(ad); return -1;
+            }
+            size_t out_len = out_cap;
+            int rc = tessera_seal_decrypt(env, env_len, &priv, ad_len ? ad : NULL, ad_len, out, out_cap, &out_len);
             if (rc == TESSERA_SEAL_OK) {
                 printf("FAIL %s: expected failure, got OK\n", name); g_fail++;
             } else {
                 finish_should_fail(obj_start, obj_end, name, rc);
             }
+            free(out);
         } else {
             /* No key: try peek_header. */
             tessera_seal_header_t h;
@@ -287,6 +341,8 @@ static int handle_decrypt(const char *obj_start, const char *obj_end, int should
             }
         }
     }
+    free(env);
+    free(ad);
     return 0;
 }
 

@@ -4,6 +4,7 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -24,6 +25,7 @@ type Record struct {
 	Start           map[string]int64 `json:"start,omitempty"`
 	PhysicalTimeMs  int64            `json:"physical_time_ms,omitempty"`
 	Observe         map[string]int64 `json:"observe,omitempty"`
+	ExpectsError    string           `json:"expects_error,omitempty"`
 	Doc             string           `json:"doc,omitempty"`
 	ExpectedTailHex string           `json:"expected_tail_hex,omitempty"`
 	ContentHex      string           `json:"content_hex,omitempty"`
@@ -323,6 +325,12 @@ func runTesseraHashVerify(r Record) (bool, string) {
 
 func runHLCOverflow(r Record) (bool, string) {
 	// 'doc' pseudo-records never reach this handler — main() emits SKIP for them.
+	//
+	// Two record shapes share this op (hlc_overflow.json and hlc_drift.json,
+	// TESS-00009 / TP-043): records with "expected" assert the resulting
+	// (l_new, c_new); records with "expects_error": "HLC_DRIFT" assert that
+	// generation fails with ErrHLCDrift and produces no output — success is
+	// a FAIL.
 	g := &tesseraid.HLCGenerator{}
 	g.SetHLCStateForTesting(r.Start["l_old"], uint16(r.Start["c_old"]))
 
@@ -347,6 +355,18 @@ func runHLCOverflow(r Record) (bool, string) {
 		peer[7] = byte(cMsg >> 8)
 		peer[8] = byte(cMsg)
 		out, err = g.New(&peer)
+	}
+	if r.ExpectsError != "" {
+		if r.ExpectsError != "HLC_DRIFT" {
+			return false, fmt.Sprintf("unsupported expects_error %q", r.ExpectsError)
+		}
+		if err == nil {
+			return false, "expected HLC_DRIFT error, got success"
+		}
+		if !errors.Is(err, tesseraid.ErrHLCDrift) {
+			return false, fmt.Sprintf("expected ErrHLCDrift, got: %v", err)
+		}
+		return true, ""
 	}
 	if err != nil {
 		return false, fmt.Sprintf("error: %v", err)

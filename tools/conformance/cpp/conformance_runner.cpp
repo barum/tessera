@@ -357,14 +357,25 @@ static Result op_tessera_hash_verify(const std::string& rec) {
     return {true, ""};
 }
 
+// Two record shapes share this op (hlc_overflow.json and hlc_drift.json,
+// TESS-00009 / TP-043): records with "expected" assert the resulting
+// (l_new, c_new); records with "expects_error": "HLC_DRIFT" assert that the
+// generator throws HLCDriftError and produces no output — success is a FAIL.
 static Result op_hlc_overflow(const std::string& rec) {
     auto l_old = get_nested_int(rec, "start", "l_old");
     auto c_old = get_nested_int(rec, "start", "c_old");
     auto pt = get_int(rec, "physical_time_ms");
+    auto expects_error = get_str(rec, "expects_error");
     auto exp_l = get_nested_int(rec, "expected", "l_new");
     auto exp_c = get_nested_int(rec, "expected", "c_new");
-    if (!l_old || !c_old || !pt || !exp_l || !exp_c)
+    if (!l_old || !c_old || !pt)
         return {false, "missing fields"};
+    if (expects_error) {
+        if (*expects_error != "HLC_DRIFT")
+            return {false, "unsupported expects_error " + *expects_error};
+    } else if (!exp_l || !exp_c) {
+        return {false, "missing fields"};
+    }
 
     HLCGenerator g;
     g.set_state_for_testing(*l_old, static_cast<uint16_t>(*c_old));
@@ -385,11 +396,17 @@ static Result op_hlc_overflow(const std::string& rec) {
                                static_cast<uint16_t>(*c_msg)};
             out = g.next(&obs);
         }
+    } catch (const HLCDriftError&) {
+        set_now_ms_for_testing(UINT64_MAX);
+        if (expects_error) return {true, ""};
+        return {false, "threw HLCDriftError unexpectedly"};
     } catch (const std::exception& e) {
         set_now_ms_for_testing(UINT64_MAX);
         return {false, std::string("exception: ") + e.what()};
     }
     set_now_ms_for_testing(UINT64_MAX);
+    if (expects_error)
+        return {false, "expected HLC_DRIFT error, got success"};
     int64_t got_l = (int64_t)detail::get_be48(out.bytes.data());
     int64_t got_c = ((int64_t)out.bytes[kCounterOffset] << 8) | out.bytes[kCounterOffset + 1];
     if (got_l != *exp_l || got_c != *exp_c) {
