@@ -31,7 +31,8 @@ specification, rationale, security analysis, and benchmark methodology, see
 ## Tree
 
 ```
-python/      Reference impl (tessera_id.py) + optimized impl (tessera_id_fast.py), pytest suite
+python/      Reference impl (tessera_id.py) + optimized impl (tessera_id_fast.py) + CLI, pytest suite
+examples/    Runnable use-as-a-library examples (Python + Go + interop pipe)
 c/           Canonical C ABI (tessera_id.h is the source of truth for offsets)
 cpp/         Header-only C++ port (tessera_id.hpp)
 go/          Idiomatic Go, `go test ./...`
@@ -54,6 +55,45 @@ When implementations disagree, resolve in this order:
 4. Other languages follow Python + C.
 
 Never resolve a cross-language disagreement by changing the spec to match the outlier.
+
+## Use as a library
+
+Runnable examples live under [examples/](examples/) and are exercised by
+`bash tools/scripts/run-examples.sh` (from the repo root) so they cannot rot:
+
+- [examples/python/example.py](examples/python/example.py) — generate, encode, decode, sort.
+- [examples/go/example.go](examples/go/example.go) — the same flow in Go.
+- [examples/python/interop_encode.py](examples/python/interop_encode.py) →
+  [examples/go/interop/main.go](examples/go/interop/main.go) — encode in Python, decode
+  byte-identically in Go.
+
+```python
+import tessera_id
+
+raw = tessera_id.new()                  # 41-byte Standard (variant 0x01) ID
+text = tessera_id.encode_b64(raw)       # 55 chars (or encode_b32 → 66 chars)
+assert tessera_id.decode_b64(text) == raw
+hlc = tessera_id.new_hlc()              # HLC variant (0x02) for distributed causality
+```
+
+## CLI
+
+Installed command (the package also installs library modules `tessera_id`,
+`tessera_id_fast`, and `tessera_id_cli`):
+
+```bash
+pip install -e tessera-id/python    # from the repo root
+tessera-id new                      # Standard ID, canonical Base64URL (55 chars)
+tessera-id new-hlc                  # HLC ID
+tessera-id decode STRING            # Base64URL (55) or Crockford (66), auto-detected
+tessera-id encode --b32 HEX         # 82 hex chars → chosen text encoding (--b32 | --b64)
+```
+
+From a checkout without installing:
+
+```bash
+python3 tessera-id/python/cli.py new
+```
 
 ## Quick start per language
 
@@ -131,7 +171,8 @@ no userspace PRNG fallback is permitted (see normative §3 in the whitepaper).
 - **41-byte** layout, big-endian, with the field offsets fixed by [`c/tessera_id.h`](c/tessera_id.h).
 - **Variant bytes**: `0x01` (Standard) and `0x02` (HLC). Any other byte → decode error.
 - **Encoding lengths**: Base64URL exactly 55 chars (no padding); Crockford Base32
-  exactly 66 chars (case-insensitive, confusable-folded, top-2-bits-zero on decode).
+  exactly 66 chars (case-insensitive, confusable-folded; the 2 stream-trailing pad
+  bits — the low 2 bits of the final character — must be zero on decode).
 - **Locking**: `StandardGenerator` is **not** internally locked (per-thread or
   caller-wrapped); `HLCGenerator` **is** internally locked.
 - **HLC drift bound**: 60 000 ms. Peer HLC more than 60 s ahead of local physical

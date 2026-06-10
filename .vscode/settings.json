@@ -1,0 +1,5 @@
+{
+  "// note": "Pin the editor to the project's TypeScript so in-editor diagnostics match the CLI/CI compiler. Without this, VS Code uses its bundled TypeScript, which can differ in version and flag config options (e.g. moduleResolution) that the project's tsc accepts.",
+  "typescript.tsdk": "tessera-id/typescript/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
+}

@@ -44,8 +44,10 @@ an explicit SKIP, never a fake PASS.
 
 ## Running the harness
 
-    bash tessera-id/conformance/run.sh
+    bash tools/conformance/run.sh
 
+(The harness lives at the repo level — [../../tools/conformance/](../../tools/conformance/) —
+and consumes this project's `vectors/` alongside tessera-hash's and tessera-seal's.)
 This iterates every language adapter over every vector file and aggregates
 results. Exit code 0 means all green; non-zero means at least one
 language disagreed with the spec.

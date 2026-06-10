@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# pkg-config template for the shared tessera C primitives (Keccak/SHAKE-256,
+# HKDF-SHA3-256, CSPRNG, shared header offsets).
+# @PREFIX@ and @VERSION@ are substituted by `make tessera-common.pc` (see Makefile).
+prefix=@PREFIX@
+includedir=${prefix}/include/tessera
+libdir=${prefix}/lib
+
+Name: tessera-common
+Description: Shared Tessera C primitives (Keccak/SHAKE-256, HKDF-SHA3-256, CSPRNG)
+URL: https://github.com/barum/tessera
+Version: @VERSION@
+Cflags: -I${includedir}
+Libs: -L${libdir} -ltessera_common

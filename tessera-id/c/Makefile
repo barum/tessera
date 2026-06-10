@@ -5,11 +5,21 @@
 # that as a separate object.
 
 CC      ?= gcc
+AR      ?= ar
 CFLAGS  ?= -O3 -Wall -Wextra -Wpedantic -Wshadow -std=c11 -fno-plt -DNDEBUG
 LDFLAGS ?=
 
 COMMON  := ../../common/c
 CFLAGS  += -I$(COMMON)
+
+# Install layout (TESS-00014). Override PREFIX and/or DESTDIR as needed:
+#   make install PREFIX=/opt/tessera
+#   make install DESTDIR=/tmp/stage
+VERSION    ?= 1.3.1
+PREFIX     ?= /usr/local
+INCLUDEDIR  = $(PREFIX)/include/tessera
+LIBDIR      = $(PREFIX)/lib
+PCDIR       = $(LIBDIR)/pkgconfig
 
 all: test_tessera_id bench_tessera_id
 
@@ -37,7 +47,19 @@ test: test_tessera_id
 bench: bench_tessera_id
 	./bench_tessera_id
 
-clean:
-	rm -f *.o test_tessera_id bench_tessera_id fuzz_decode
+libtessera_id.a: tessera_id.o random.o
+	$(AR) rcs libtessera_id.a tessera_id.o random.o
 
-.PHONY: all test bench clean fuzz
+tessera-id.pc: tessera-id.pc.in
+	sed -e 's|@PREFIX@|$(PREFIX)|g' -e 's|@VERSION@|$(VERSION)|g' tessera-id.pc.in > tessera-id.pc
+
+install: libtessera_id.a tessera-id.pc
+	install -d $(DESTDIR)$(INCLUDEDIR) $(DESTDIR)$(LIBDIR) $(DESTDIR)$(PCDIR)
+	install -m 644 tessera_id.h $(DESTDIR)$(INCLUDEDIR)/
+	install -m 644 libtessera_id.a $(DESTDIR)$(LIBDIR)/
+	install -m 644 tessera-id.pc $(DESTDIR)$(PCDIR)/
+
+clean:
+	rm -f *.o *.a tessera-id.pc test_tessera_id bench_tessera_id fuzz_decode
+
+.PHONY: all test bench clean fuzz install

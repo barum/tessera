@@ -4,6 +4,10 @@
 # crate; tools/conformance/rust/ is a binary that depends on all three. The
 # workspace unifies builds so a single `cargo build` from the root compiles
 # everything.
+#
+# [profile.*] is only honored at the workspace root (cargo warns and ignores
+# profiles declared in member crates), so the shared release profile lives
+# here (TESS-00014).
 
 [workspace]
 resolver = "3"
@@ -13,3 +17,8 @@ members = [
     "tessera-hash/rust",
     "tools/conformance/rust",
 ]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

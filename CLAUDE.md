@@ -41,7 +41,18 @@ Optimization PRs that only touch one language are fine and don't require porting
 
 - Branch from `main` using: `<type>/<short-description>` (e.g., `feat/tessera-hash-keccak-vendoring`).
 - One project per PR. Don't mix TesseraID and TesseraHash unless the change is genuinely cross-cutting (e.g., a `common/` extraction).
-- Commit / PR title: `<type>(<TICKET>) - <short description>`. Ticket prefix names the project: `TID-NNNNN`, `THASH-NNNNN`, `TESS-NNNNN` for umbrella/repo changes. Types: `feat|fix|docs|refactor|chore|sec`.
+- Commit / PR title: `<type>(<TICKET>) - <short description>`. Ticket prefix names the project. Types: `feat|fix|docs|refactor|chore|sec`.
+- Ticket prefixes (current vs historical — pre-rename prefixes are **closed**, never mint new ones):
+
+  | Prefix | Project | Historical prefix (PQToolkit era) | Numbering |
+  |--------|---------|-----------------------------------|-----------|
+  | `TID-NNNNN` | tessera-id | `PQID-NNNNN` | continued (PQID-00016 → TID-00017) |
+  | `THASH-NNNNN` | tessera-hash | `PQHASH-NNNNN` / "PQHash" | continued |
+  | `TSEAL-NNNNN` | tessera-seal | `PQCK-NNNNN` | continued (PQCK-00035 → TSEAL-00036) |
+  | `TESS-NNNNN` | umbrella / repo / CI / docs | `PQTK-NNNNN` | restarted at TESS-00001 with the rename |
+
+  Historical IDs in old release notes and whitepaper changelogs are left as-is; forward-looking references use the
+  current prefixes.
 - PRs are squash-merged; one logical change per PR.
 
 ### Documentation surfaces (keep in lockstep)

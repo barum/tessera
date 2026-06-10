@@ -3,7 +3,7 @@ name: tessera-id-impl
 description: This skill should be used when the user wants to "add a TesseraID feature", "port TesseraID across languages", "change the TesseraID wire format", "modify the HLC drift bound", "add a new variant byte", "update TesseraID encoders/decoders", "regenerate TesseraID benchmarks", "fix a TesseraID cross-language mismatch", "audit TesseraID invariants", or any request that touches generator semantics, encodings (Base64URL/Crockford), variant bytes, HLC behavior, or the 41-byte layout across the polyglot reference implementations under tessera-id/.
 version: 1.0.0
 created: 2026-05-19T13:18:49Z
-updated: 2026-06-08T00:00:00Z
+updated: 2026-06-10T00:00:00Z
 ---
 
 # tessera-id-impl — Working on the TesseraID reference implementations
@@ -49,7 +49,7 @@ For optimization or bug-fix work within one language that keeps observable behav
 2. **Update the Python reference** (`tessera-id/python/tessera_id.py`) so it matches the new spec. Make the new tests pass.
 3. **Update C** (`tessera-id/c/tessera_id.h` first if any constants/offsets change, then `tessera_id.c`).
 4. **Port to remaining languages** — Go, Rust, TypeScript, C++, Java, CPython ext. Each must produce byte-identical output for the same input as Python.
-5. **Mirror tests** to every language. The required coverage list lives in [tessera-id/python/test_tessera_id.py](../../tessera-id/python/test_tessera_id.py) — match it.
+5. **Mirror tests** to every language. The required coverage list lives in [tessera-id/python/test_tessera_id.py](../../../tessera-id/python/test_tessera_id.py) — match it.
 6. **Refresh benchmarks** if the change is performance-relevant.
 7. **Update root README and `tessera-id/README.md`** if any user-visible API or constant changed.
 

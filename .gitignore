@@ -113,3 +113,7 @@ tessera-id/conformance/.build/
 
 # Go tessera_seal_runner local build output (run.sh builds to target-go/)
 tools/conformance/go/tessera_seal_runner/tesseraseal_runner
+
+# generated pkg-config files (templates .pc.in are tracked)
+*/c/*.pc
+common/c/*.pc

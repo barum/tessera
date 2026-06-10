@@ -3,7 +3,7 @@ name: tessera-hash-impl
 description: This skill should be used when the user wants to "add a TesseraHash feature", "port TesseraHash across languages", "change the TesseraHash wire format", "add a new TesseraHash variant", "update TesseraHash encoders/decoders", "regenerate TesseraHash benchmarks", "fix a TesseraHash cross-language mismatch", "audit TesseraHash invariants", "modify SHAKE-256 handling in TesseraHash", or any request that touches the TesseraHash 73-byte layout, SHAKE-256 digest behavior, variant byte 0x03, Base64URL/Crockford encodings, or the polyglot reference implementations under tessera-hash/.
 version: 1.0.0
 created: 2026-05-20T00:00:00Z
-updated: 2026-06-08T00:00:00Z
+updated: 2026-06-10T00:00:00Z
 ---
 
 # tessera-hash-impl — Working on the TesseraHash reference implementations
@@ -15,7 +15,7 @@ TesseraHash is a **SHAKE-256 content-hash format** carried in the same wire-shap
 1. TesseraHash whitepaper LaTeX under [tessera-hash/latex/](../../../tessera-hash/latex/) (scaffold as of 2026-05-20 — content pending).
 2. [tessera-hash/python/tessera_hash.py](../../../tessera-hash/python/tessera_hash.py) — readable Python reference.
 3. [tessera-hash/c/tessera_hash.h](../../../tessera-hash/c/tessera_hash.h) — canonical C ABI, error codes, offsets.
-4. Go, Rust, TypeScript, C++, Java follow. CPython extension at [tessera-hash/cpython/tessera_hash_ext.c](../../../tessera-hash/cpython/tessera_hash_ext.c) is **planned, not implemented** — flag this if asked to ship a CPython binding.
+4. Go, Rust, TypeScript, C++, Java follow. CPython extension at `tessera-hash/cpython/tessera_hash_ext.c` is **planned, not implemented** (no file exists yet) — flag this if asked to ship a CPython binding.
 
 Never resolve a cross-language disagreement by changing the spec to match the outlier.
 

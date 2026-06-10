@@ -3,7 +3,7 @@ name: tessera-seal-impl
 description: This skill should be used when the user wants to "add a TesseraSeal feature", "port TesseraSeal across languages", "change the TesseraSeal wire format", "add a TesseraSeal suite", "modify ML-KEM-1024 binding", "port the hybrid suite 0x06 to a new language", "update TesseraSeal encoders/decoders", "regenerate TesseraSeal benchmarks", "fix a TesseraSeal cross-language mismatch", "audit TesseraSeal invariants", "add an AEAD construction to TesseraSeal", "implement the plugin protocol", "extend the tessera-seal CLI", "review the side-channel disclaimer", or any request that touches the TesseraSeal 16-byte header, variant byte 0x04, suite bytes (0x01 / 0x02 / 0x06), ML-KEM-1024 + AES-256-GCM + UtC commit construction, X25519 hybrid combiner, plugin protocol, .tseal-key-v1.1 keyfile format, or polyglot reference implementations under tessera-seal/.
 version: 1.3.0
 created: 2026-05-20T00:00:00Z
-updated: 2026-06-08T00:00:00Z
+updated: 2026-06-10T00:00:00Z
 ---
 
 # tessera-seal-impl — Working on the TesseraSeal reference implementations
@@ -97,7 +97,7 @@ Hybrid lands in Python (v1.2, TSEAL-00021), Rust (v1.3, TSEAL-00028), and Go (v1
 10. **Refresh the language's bench file** under [tessera-seal/benchmarks/](../../../tessera-seal/benchmarks/) with hybrid keygen / encrypt_1KB / decrypt_1KB lines.
 11. **Verify byte-identity**: `bash tools/conformance/run.sh` reports the language's PASS count rising by 9 (the three hybrid_*.json files).
 
-Reference release notes for the shape: [tseal-00028-hybrid-rust.md](../../../tessera-seal/docs/release-notes/2026-05-21-tseal-00028-hybrid-rust.md), [tseal-00029-hybrid-go.md](../../../tessera-seal/docs/release-notes/2026-05-21-tseal-00029-hybrid-go.md).
+Reference release notes for the shape: [tseal-00028-hybrid-rust.md](../../../tessera-seal/docs/release-notes/2026-05-21-pqcrypt-00028-hybrid-rust.md), [tseal-00029-hybrid-go.md](../../../tessera-seal/docs/release-notes/2026-05-21-pqcrypt-00029-hybrid-go.md).
 
 ## Commands
 

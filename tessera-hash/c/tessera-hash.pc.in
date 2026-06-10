@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# pkg-config template for the TesseraHash C reference implementation.
+# @PREFIX@ and @VERSION@ are substituted by `make tessera-hash.pc` (see Makefile).
+prefix=@PREFIX@
+includedir=${prefix}/include/tessera
+libdir=${prefix}/lib
+
+Name: tessera-hash
+Description: TesseraHash 73-byte SHAKE-256 content hash - C reference implementation
+URL: https://github.com/barum/tessera
+Version: @VERSION@
+Cflags: -I${includedir}
+Libs: -L${libdir} -ltessera_hash

@@ -36,7 +36,7 @@ When changing hash/encoding/validation:
 - [rust/src/lib.rs](rust/src/lib.rs)
 - [typescript/tessera_hash.ts](typescript/tessera_hash.ts)
 - [java/src/](java/src/) (uses [../common/java/com/tessera/common/Keccak.java](../common/java/com/tessera/common/Keccak.java))
-- [cpython/tessera_hash_ext.c](cpython/tessera_hash_ext.c) — to be written; track parity with the Python API.
+- `cpython/tessera_hash_ext.c` — to be written (no file exists yet); track parity with the Python API.
 
 ## Build, test, bench
 

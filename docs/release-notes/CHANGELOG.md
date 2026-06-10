@@ -8,6 +8,9 @@ whitepaper, repo-wide doc/git hygiene. Per-project changes live in
 reference the former PQToolkit / PQID / PQHash / PQCrypt names are a historical
 ledger — kept verbatim; see TESS-00001 for the rename.)
 
+- 2026-06-10 — [TESS-00014 — Packaging metadata: crates/npm/Maven/pkg-config at 1.3.1, release workflow draft](2026-06-10-tess-00014-packaging.md)
+- 2026-06-10 — [TESS-00013 — Go module paths renamed to github.com/barum/tessera/* (fetchable)](2026-06-10-tess-00013-go-module-paths.md)
+- 2026-06-10 — [TESS-00012 — Docs & DX: working CLIs documented, tessera-hash README, examples, link sweep](2026-06-10-tess-00012-docs-dx.md)
 - 2026-06-10 — [TESS-00011 — Benchmark provenance: re-run on documented physical hardware, no hand-edits rule](2026-06-10-tess-00011-benchmark-provenance.md)
 - 2026-06-10 — [TESS-00010 — Umbrella whitepaper truthfulness: fallback claim, pad guards, roadmap artifact, registry sync (docs)](2026-06-10-tess-00010-umbrella-paper-truthfulness.md)
 - 2026-06-10 — [TESS-00009 — KAT coverage expansion: drift, truncation, reserved bytes, string-form invalid, 64KiB/max-AD (sec)](2026-06-10-tess-00009-kat-coverage-expansion.md)

@@ -1,7 +1,15 @@
 [package]
 name = "tessera-id"
-version = "0.1.0"
+version = "1.3.1"
 edition = "2024"
+license = "Apache-2.0"
+description = "TesseraID: 41-byte sortable identifier (Standard + HLC variants) - Rust reference implementation"
+repository = "https://github.com/barum/tessera"
+readme = "README.md"
+keywords = ["identifier", "uuid", "sortable", "hlc", "post-quantum"]
+categories = ["data-structures", "encoding"]
+# Publish-ready, not yet published: registry publication is gated on the
+# name-clearance decision (docs/decisions/2026-06-10-name-clearance.md).
 
 [dependencies]
 getrandom = "0.3"
@@ -21,8 +29,3 @@ path = "benches/bench_bin.rs"
 [[bin]]
 name = "fuzz_decode"
 path = "src/bin/fuzz_decode.rs"
-
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1

@@ -1,0 +1,47 @@
+# Packaging metadata for the tessera_id_ext CPython extension (TESS-00014).
+#
+# Posture: BUILD-FROM-CHECKOUT ONLY. The extension compiles C sources that
+# live OUTSIDE this directory (../c/tessera_id.c, ../../tessera-hash/c/,
+# ../../common/c/ — see setup.py), so an sdist/wheel built from this directory
+# alone would be broken. Do NOT publish sdists or wheels from this layout; a
+# src-layout restructure + cibuildwheel pipeline is tracked as TP-092 backlog.
+#
+# Build from a full repo checkout:
+#   cd tessera-id/cpython
+#   python3 setup.py build_ext --inplace
+#   python3 test_tessera_id_ext.py
+#
+# This file coexists with setup.py: project metadata lives here (single source
+# of truth, version in lockstep with the 1.3.1 release surfaces); setup.py
+# keeps only the Extension definition that declarative metadata cannot express.
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tessera-id-ext"
+version = "1.3.1"
+description = "CPython extension binding for the TesseraID reference C implementation (build-from-checkout only; not published)"
+# Table form (not the PEP 639 SPDX string) on purpose: the documented build
+# path is a direct `python3 setup.py build_ext --inplace` with NO build
+# isolation, so this file must stay parseable by setuptools < 77.
+license = { text = "Apache-2.0" }
+requires-python = ">=3.9"
+authors = [{ name = "Bahram Samani", email = "bsamani@samani.com" }]
+keywords = ["identifier", "uuid", "sortable", "hlc", "cpython-extension"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: C",
+    "Programming Language :: Python :: 3",
+]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/barum/tessera"
+
+[tool.setuptools]
+# The distribution ships exactly one artifact: the compiled extension module
+# declared in setup.py. No pure-Python modules (the test/bench scripts in this
+# directory are repo tooling, not package contents).
+py-modules = []

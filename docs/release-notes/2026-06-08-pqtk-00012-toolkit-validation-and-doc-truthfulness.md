@@ -4,9 +4,9 @@
 **Scope:** umbrella (PQTK) — cross-cutting validation pass. Closes the
 documentation-vs-reality and harness gaps found in the 2026-06-08 grounded
 validation. Per-project code/spec fixes are split into their own notes
-([PQCK-00035](../../pqcrypt/docs/release-notes/2026-06-08-pqcrypt-00035-badkey-suite-consistency.md),
-[PQID-00016](../../pqid/docs/release-notes/2026-06-08-pqid-00016-cpython-csprng-link-and-appendix-vectors.md),
-[PQHash whitepaper](../../pqhash/docs/release-notes/2026-06-08-pqhash-whitepaper-and-encoding-prose.md)).
+([PQCK-00035](../../tessera-seal/docs/release-notes/2026-06-08-pqcrypt-00035-badkey-suite-consistency.md),
+[PQID-00016](../../tessera-id/docs/release-notes/2026-06-08-pqid-00016-cpython-csprng-link-and-appendix-vectors.md),
+[PQHash whitepaper](../../tessera-hash/docs/release-notes/2026-06-08-pqhash-whitepaper-and-encoding-prose.md)).
 This is also the first entry in the new umbrella (root) release-notes directory.
 **Status:** released
 
