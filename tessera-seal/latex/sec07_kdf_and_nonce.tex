@@ -33,4 +33,4 @@ Each ML-KEM-1024 encapsulation produces a fresh ephemeral shared secret, so $K_{
 
 \subsection{Multi-user / multi-key bounds}
 
-The single-key birthday bound on AES-256-GCM is $2^{64}$ blocks; \pqcrypt{}'s plaintext cap of $2^{32}$ bytes per envelope keeps each invocation well below the bound. The multi-user attack analysis of Bose, Hoang, and Tessaro \citep{bose2018muser,hoang2024gcmsst} concerns adversaries who attack many keys simultaneously; \pqcrypt{}'s per-envelope fresh $K_{\mathrm{aead}}$ removes the long-key-lifetime axis of that attack class.
+The single-key birthday bound on AES-256-GCM is $2^{64}$ blocks; \pqcrypt{}'s plaintext cap of $2^{32}$ bytes per envelope keeps each invocation well below the bound. The multi-user attack analysis of Bose, Hoang, and Tessaro \citep{bose2018muser} concerns adversaries who attack many keys simultaneously; \pqcrypt{}'s per-envelope fresh $K_{\mathrm{aead}}$ removes the long-key-lifetime axis of that attack class.

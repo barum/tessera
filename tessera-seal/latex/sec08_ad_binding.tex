@@ -23,4 +23,4 @@ plaintext = tessera_seal.decrypt(envelope, recipient_priv,
 \item A protocol-level domain separator (e.g., \texttt{"tessera-seal-app-v1-records"}) plus the \pqid{}.
 \end{itemize}
 
-\textbf{Conformance.} The KAT file \texttt{tessera-seal/conformance/vectors/ad\_binding.json} exercises positive cases (envelope decrypts with the matching AD) and negative cases (any single-bit AD change causes a generic \texttt{DECRYPT\_FAILED}, with timing equal to the positive case to within the constant-time tolerance defined in \cref{sec:side-channels}).
+\textbf{Conformance.} The KAT file \texttt{tessera-seal/conformance/vectors/ad\_binding.json} exercises positive cases (envelope decrypts with the matching AD) and negative cases (any single-bit AD change causes a generic \texttt{DECRYPT\_FAILED}). The KAT asserts the error class only; decrypt-path timing posture is described in \cref{sec:failure-modes} and \cref{sec:side-channels}.

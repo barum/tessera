@@ -18,27 +18,24 @@ The categories that map to distinct \emph{structural} errors and may be distingu
 \begin{itemize}
 \item Truncated envelope or impossible length field (\texttt{INVALID\_LEN}).
 \item Unknown variant byte at offset 6 (\texttt{UNKNOWN\_VARIANT}).
-\item Unknown suite byte at offset 7 (\texttt{UNKNOWN\_SUITE}). For non-hybrid-capable language ports (v1.x), suite \code{0x06} is rejected here.
-\item Suite/key mismatch (\texttt{BAD\_KEY}). \code{encrypt} rejects when the recipient public key's suite does not match the requested suite; \code{decrypt} rejects when the private key's suite does not match the envelope's header suite. This is structural --- it does not touch secret-correlated bytes --- and distinguishable safely.
+\item Unknown suite byte at offset 7 (\texttt{UNKNOWN\_SUITE}). For non-hybrid-capable language ports (v1.x), suite \code{0x06} is rejected here: at \code{peek\_header} \emph{and} at \code{decrypt}, and ordered \emph{before} the \texttt{BAD\_KEY} suite/key-consistency check below. The ordering is pinned by per-language unit tests in all five non-hybrid ports (TSEAL-00044).
+\item Suite/key mismatch (\texttt{BAD\_KEY}). \code{encrypt} rejects when the recipient public key's suite does not match the requested suite; \code{decrypt} rejects when the private key's suite does not match the envelope's header suite. This is structural --- it does not touch secret-correlated bytes --- and distinguishable safely. (Enforced in all eight reference implementations as of 2026-06-10.)
 \item Output buffer too small (C ABI only: \texttt{BUF\_TOO\_SMALL}).
 \end{itemize}
 
 \subsection{Constant-time discipline}
 
-Even on structural failure paths, the decrypt routine MUST execute the AEAD verify against a synthetic 32-byte key to keep timing flat. The reference implementation uses \texttt{HKDF\_Expand(prk\_zero, "pqcrypt v1 timing pad", 32)} where \texttt{prk\_zero} is a 32-byte all-zero buffer.
+On every \emph{authentication-class} failure path (bad AEAD tag, bad commit tag, KEM implicit-reject, AD mismatch), the decrypt routine MUST run the synthetic-key schedule --- the HKDF derivations of \cref{sec:kdf-nonce} performed against a synthetic key and then discarded --- as a timing pad, so the failure path performs the same key-derivation work as the success path. The synthetic schedule derives from \texttt{HKDF\_Expand(prk\_zero, "pqcrypt v1 timing pad", 32)} where \texttt{prk\_zero} is a 32-byte all-zero buffer.
 % frozen v1 wire tag — not a rebrandable name: "pqcrypt v1 timing pad"
 The literal label \texttt{"pqcrypt v1 timing pad"} is a frozen v1 wire tag (\cref{sec:kdf-nonce}) and is preserved verbatim across the rename to \pqcrypt{}.
 
-\subsection{Timing-histogram regression}
+The Python reference additionally executes a synthetic AEAD verify on the KEM-decaps-failure path. \emph{Structural} errors --- invalid length, unknown variant, unknown suite, \texttt{BAD\_KEY} suite mismatch --- MAY return early without running the synthetic schedule: they are caller errors that are distinguishable by design (see the structural-error list above), and their detection touches no per-key secret-correlated bytes, so an early return discloses nothing beyond the error class itself. The C reference's failure-path comment was aligned to this implemented behavior in TSEAL-00043. (An earlier revision of this section required a synthetic AEAD verify \emph{even on structural failure paths}; no port implemented that stronger wording, and this revision replaces it with the contract the eight implementations actually share.)
 
-\texttt{tessera-seal/conformance/vectors/} ships a 100\,000-pair timing dataset (50\,000 good envelopes, 50\,000 ``bad'' envelopes with single-bit flips in eight different positions). The conformance runner measures decrypt-path latency for each and asserts:
+\subsection{Timing measurement (manual; CI automation is backlog)}
 
-\begin{itemize}
-\item Median difference between good and bad timing $<$ 50\,ns (on the reference hardware: Apple M3 Max @ 4.05 GHz P-core).
-\item 99th-percentile difference $<$ 500\,ns.
-\end{itemize}
+Decrypt-path timing flatness is currently verified \emph{manually}, not by any shipped conformance artifact. The most recent measurement (Python reference, 2026-05-19, Apple M4 Max) compared 100\,000 decrypt pairs (50\,000 good envelopes, 50\,000 single-bit-flipped) and observed a median good-vs-bad latency difference below 50\,ns; the procedure and its open status are recorded in \texttt{tessera-seal/docs/security-audit-v1.2.md} (open item \#1). Per-language measurement environments are recorded under \texttt{tessera-seal/benchmarks/}.
 
-The runner uses \texttt{clock\_gettime(CLOCK\_MONOTONIC\_RAW)} where available; falls back to \texttt{time.perf\_counter\_ns()} (Python), \texttt{Instant::now()} (Rust), or \texttt{time.Now()} (Go).
+An \emph{automated} CI timing-histogram regression --- an N-pair good/bad decrypt comparison with a median-delta assertion --- is tracked backlog (security-audit-v1.2.md open item \#1) and has \textbf{not} shipped. No timing dataset and no timing assertion exist under \texttt{tessera-seal/conformance/vectors/} today. (An earlier revision of this section described that regression as shipped; this revision corrects the record.)
 
 \subsection{Implicit-reject semantics}
 

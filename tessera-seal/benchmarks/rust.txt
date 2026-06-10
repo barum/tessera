@@ -1,23 +1,13 @@
-TesseraSeal Rust benchmarks (release build, RustCrypto ml-kem 0.3 + aes-gcm 0.10 + x25519-dalek 2)
+TesseraSeal Rust benchmarks (release build, RustCrypto ml-kem 0.3 + aes-gcm 0.10)
 ----------------------------------------------------------------------
-Run on:    Apple M4 Max, rustc stable (cargo --release), v1.3 (hybrid)
-Date:      2026-05-21
-Harness:   tessera-seal/rust/benches/bench_bin.rs (custom Instant::now() timing,
-           3 iterations, best-of-3 reported; matches tessera-id/rust pattern).
-Note:      RustCrypto ml-kem 0.3 is pure-Rust constant-time. ~40x faster than
-           pure-Python kyber-py at keygen. AES-256-GCM uses aes-gcm 0.10
-           portable backend on Apple Silicon (ARMv8 AES intrinsics deferred
-           to v1.3 — see PQCK-00027). Hybrid suite 0x06 adds one X25519
-           keygen + one DH per envelope (~30 us amortized).
-
-keygen (ML-KEM-1024)                              11530 ops/sec   (     86728 ns/op)
-encrypt_1KB (AES-256-GCM)                          9372 ops/sec   (    106705 ns/op)
-decrypt_1KB (AES-256-GCM)                         17686 ops/sec   (     56541 ns/op)
-encrypt_1MB (AES-256-GCM)                           131 ops/sec   (   7608996 ns/op)
-decrypt_1MB (AES-256-GCM)                           135 ops/sec   (   7418829 ns/op)
-peek_header                                   561584792 ops/sec   (         2 ns/op)
-encrypt_1KB (ChaCha20-Poly1305)                   10373 ops/sec   (     96405 ns/op)
-decrypt_1KB (ChaCha20-Poly1305)                   19662 ops/sec   (     50860 ns/op)
-keygen (hybrid X25519+ML-KEM-1024)                 8073 ops/sec   (    123871 ns/op)
-encrypt_1KB (hybrid suite 0x06)                    4653 ops/sec   (    214921 ns/op)
-decrypt_1KB (hybrid suite 0x06)                   11485 ops/sec   (     87073 ns/op)
+keygen (ML-KEM-1024)                              30374 ops/sec   (     32923 ns/op)
+encrypt_1KB (AES-256-GCM)                         23385 ops/sec   (     42762 ns/op)
+decrypt_1KB (AES-256-GCM)                         21495 ops/sec   (     46523 ns/op)
+encrypt_1MB (AES-256-GCM)                           161 ops/sec   (   6202250 ns/op)
+decrypt_1MB (AES-256-GCM)                           160 ops/sec   (   6266648 ns/op)
+peek_header                                   532571146 ops/sec   (         2 ns/op)
+encrypt_1KB (ChaCha20-Poly1305)                   26187 ops/sec   (     38187 ns/op)
+decrypt_1KB (ChaCha20-Poly1305)                   24364 ops/sec   (     41044 ns/op)
+keygen (hybrid X25519+ML-KEM-1024)                18661 ops/sec   (     53587 ns/op)
+encrypt_1KB (hybrid suite 0x06)                   11384 ops/sec   (     87840 ns/op)
+decrypt_1KB (hybrid suite 0x06)                   14567 ops/sec   (     68649 ns/op)

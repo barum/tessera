@@ -2,6 +2,7 @@
 
 Reverse-chronological. One entry per PR (or per logical change shipped together).
 
+- 2026-06-10 — [TSEAL-00045 — Whitepaper + side-channel-disclaimer truthfulness errata (sec/docs)](2026-06-10-tseal-00045-whitepaper-truthfulness.md)
 - 2026-06-10 — [TSEAL-00044 — Suite-0x06 MUST-reject unit tests in C/C++/TS/Java/CPython (sec)](2026-06-10-tseal-00044-suite-0x06-reject-tests.md)
 - 2026-06-10 — [TSEAL-00043 — Comment/docstring truthfulness sweep (docs)](2026-06-10-tseal-00043-seal-comment-sweep.md)
 - 2026-06-10 — [TSEAL-00042 — Python decrypt AAD construction aligned to on-wire AD (refactor)](2026-06-10-tseal-00042-python-decrypt-aad-alignment.md)

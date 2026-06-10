@@ -3,42 +3,50 @@
 
 \subsection{KAT vector files}
 
-\texttt{tessera-seal/conformance/vectors/}:
+\texttt{tessera-seal/conformance/vectors/}. The listing below matches the shipped directory contents as of 2026-06-10 (post the 2026-06-10 KAT expansion, TESS-00009):
 
 \begin{itemize}
-\item \texttt{encrypt\_roundtrip.json} --- fixed-RNG-seed determinism. Each record gives a plaintext, a recipient public key, a sender RNG seed, and an expected envelope hex.
-\item \texttt{decrypt.json} --- known envelopes $\to$ known plaintexts, exercising the decrypt path for suites \code{0x01} and \code{0x02}.
-\item \texttt{peek\_header.json} --- header parsing without authentication.
-\item \texttt{invalid.json} --- bad variant byte (covering 0x00, 0x01, 0x02, 0x03, 0x05--0xFF), bad suite byte, truncated \code{KEM\_CT}, bad AEAD tag, bad commit tag, bad AD.
-\item \texttt{ad\_binding.json} --- \pqid{}-as-AD positive and negative cases.
-\item \texttt{commitment.json} --- UtC commit tag KATs independent of the AEAD path.
-\item A KyberSlash-class timing-regression vector (working name \texttt{kyberslash\_regression.json}) --- known-bad ML-KEM-1024 inputs that exercised KyberSlash 1/2 \citep{kyberslash}, asserting they reject without timing variance --- is \emph{planned} (backlog) and is \emph{not} yet part of the shipped vector set.
-\item \texttt{min\_timestamp.json} --- \code{MIN\_TIMESTAMP\_MS} helper parity (mirrors \pqid{}'s and \pqhash{}'s analogous files).
-\item \texttt{hybrid\_decrypt.json} --- KAT round-trip for hybrid suite \code{0x06} (4 records).
-\item \texttt{hybrid\_ad\_binding.json} --- hybrid AD-binding positive and negative cases (4 records).
-\item \texttt{hybrid\_peek\_header.json} --- hybrid header parse (1 record).
+\item \texttt{decrypt.json} (9 records) --- known envelopes $\to$ known plaintexts, exercising the decrypt path for suites \code{0x01} and \code{0x02}, including a 64\,KiB-plaintext record (\texttt{pt\_64kib\_aesgcm}) and a maximum-\code{AD\_LEN} (65\,536-byte) record (\texttt{ad\_max\_65536\_aesgcm}).
+\item \texttt{peek\_header.json} (5 records) --- header parsing without authentication, including counter-boundary records at \code{CTR} = \code{0xFFFE} and \code{0xFFFF}.
+\item \texttt{invalid.json} (31 records) --- bad variant bytes (\code{0x00}--\code{0x03}, \code{0x05}, \code{0x10}, \code{0x7F}, \code{0xFE}, \code{0xFF}); bad suite bytes (\code{0x00}, \code{0x03}--\code{0x05}, \code{0x10}, \code{0x7F}, \code{0xFE}, \code{0xFF}); single-bit flips in \code{KEM\_CT}, AD, nonce, \code{AEAD\_CT}, \code{AEAD\_TAG}, and \code{COMMIT}; the \texttt{bad\_key\_suite\_mismatch} record (BadKey class, \cref{sec:failure-modes}); truncation with a structurally valid header (mid-\code{KEM\_CT}, mid-\code{AEAD\_CT}, one byte short of \code{COMMIT}); and a wrong-\code{KEM\_CT\_LEN}-with-valid-header record.
+\item \texttt{ad\_binding.json} (6 records) --- \pqid{}-as-AD positive and negative cases.
+\item \texttt{commitment.json} (3 records) --- UtC commit tag KATs independent of the AEAD path.
+\item \texttt{min\_timestamp.json} (4 records) --- \code{MIN\_TIMESTAMP\_MS} helper parity (mirrors \pqid{}'s and \pqhash{}'s analogous files).
+\item \texttt{hybrid\_decrypt.json} (4 records) --- KAT round-trip for hybrid suite \code{0x06}.
+\item \texttt{hybrid\_ad\_binding.json} (4 records) --- hybrid AD-binding positive and negative cases.
+\item \texttt{hybrid\_peek\_header.json} (1 record) --- hybrid header parse.
+\end{itemize}
+
+Two vector files are \emph{planned} (backlog) and are \emph{not} part of the shipped vector set:
+
+\begin{itemize}
+\item \texttt{encrypt\_roundtrip.json} --- fixed-RNG-seed encrypt determinism. Each record would give a plaintext, a recipient public key, a sender RNG seed, and an expected envelope hex. The generator pathway exists (the seeded DRBG described under ``Vector generation'' below) but the file has not shipped.
+\item A KyberSlash-class timing-regression vector (working name \texttt{kyberslash\_regression.json}) --- known-bad ML-KEM-1024 inputs that exercised KyberSlash 1/2 \citep{kyberslash}, asserting they reject without timing variance.
 \end{itemize}
 
 \subsection{Cross-language runner}
 
-Vectors are consumed by the same harness used by \pqid{} and \pqhash{}: \texttt{tools/conformance/run.sh}. The script discovers per-language runners (\texttt{tools/conformance/python/}, \texttt{.../c/}, \texttt{.../go/}, \texttt{.../rust/}) and executes each against each vector file. Exit code 0 means every runner passed every vector. Language ports without their own \texttt{tessera\_seal\_runner} fall back to the Python runner for \pqcrypt{} vectors via the harness's \texttt{tessera\_seal\_runner\_cmd} empty case (PQCK-00015).
+Vectors are consumed by the same harness used by \pqid{} and \pqhash{}: \texttt{tools/conformance/run.sh}. Dedicated per-language \pqcrypt{} runners exist \emph{only} for Python, C, Go, and Rust (\texttt{tools/conformance/python/}, \texttt{.../c/}, \texttt{.../go/}, \texttt{.../rust/}); the harness executes each against each vector file, and exit code 0 means every runner passed every vector. C++, TypeScript, Java, and the CPython extension have no \texttt{tessera\_seal\_runner}: the harness \textbf{skips} the \pqcrypt{} vector directory for those four languages entirely (they consume \pqid{}/\pqhash{} vectors only) until their v1.4 runners land. There is \emph{no} Python-runner fallback --- an earlier revision of this document described one (PQCK-00015), but \texttt{run.sh} never implemented it and explicitly documents its absence.
 
 \subsection{Hybrid suite \code{0x06} skip discipline}
 
 \texttt{tools/conformance/run.sh} filters \texttt{hybrid\_*.json} vector files per language via \texttt{hybrid\_supported()}:
 
 \begin{lstlisting}[language=bash]
+# Hybrid (suite 0x06) shipped in Python (TSEAL-00021), Rust (TSEAL-00028), and
+# Go (TSEAL-00029). C/C++/TypeScript/Java/CPython ext remain on the v1.4 hybrid
+# backlog (TSEAL-00030) and reject 0x06 as UNKNOWN_SUITE for now.
 hybrid_supported() {
     case "$1" in
-        python) return 0 ;;   # PQCK-00021, v1.2
-        rust)   return 0 ;;   # PQCK-00028, v1.3
-        go)     return 0 ;;   # PQCK-00029, v1.3
-        *)      return 1 ;;   # C/C++/TS/Java/CPython ext: v1.4 backlog
+        python) return 0 ;;
+        rust)   return 0 ;;
+        go)     return 0 ;;
+        *)      return 1 ;;
     esac
 }
 \end{lstlisting}
 
-Languages without hybrid skip the \texttt{hybrid\_*.json} files entirely and MUST reject suite \code{0x06} as \texttt{UNKNOWN\_SUITE} for any non-hybrid envelope. When porting hybrid to a new language: (1) implement hybrid in the language, (2) update the language's conformance runner to accept 96-byte seeds (\cref{sec:hybrid}), (3) flip the language's \texttt{hybrid\_supported()} entry, (4) verify the language's PASS count rises by 9 (one per record across the three \texttt{hybrid\_*.json} files).
+Languages without hybrid skip the \texttt{hybrid\_*.json} files entirely and MUST reject suite \code{0x06} as \texttt{UNKNOWN\_SUITE} for any non-hybrid envelope (the rejection is pinned by per-language unit tests, TSEAL-00044; see \cref{sec:failure-modes}). When porting hybrid to a new language: (1) implement hybrid in the language, (2) update the language's conformance runner to accept 96-byte seeds (\cref{sec:hybrid}), (3) flip the language's \texttt{hybrid\_supported()} entry, (4) verify the language's PASS count rises by 9 (one per record across the three \texttt{hybrid\_*.json} files).
 
 \subsection{Local invocation}
 
@@ -47,7 +55,7 @@ bash tools/conformance/run.sh
 TESSERA_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh
 \end{lstlisting}
 
-Latest state (v1.3, 2026-05-21, Apple M4 Max):
+Latest state (2026-06-10, Apple M4 Max, alpha quick loop, counts across all three projects --- \pqid{} + \pqhash{} + \pqcrypt{}):
 
 \begin{center}
 \small
@@ -55,20 +63,22 @@ Latest state (v1.3, 2026-05-21, Apple M4 Max):
 \toprule
 \textbf{Language} & \textbf{PASS} & \textbf{FAIL} & \textbf{Notes} \\
 \midrule
-Python   & 265 & 0 & 256 standard + 9 hybrid \\
-C        & 256 & 0 & hybrid skipped (v1.4 backlog) \\
-Go       & 265 & 0 & 256 + 9 hybrid (PQCK-00029) \\
-Rust     & 265 & 0 & 256 + 9 hybrid (PQCK-00028) \\
+Python   & 296 & 0 & 287 standard + 9 hybrid \\
+C        & 287 & 0 & hybrid skipped (v1.4 backlog, TSEAL-00030) \\
+Go       & 296 & 0 & 287 + 9 hybrid (TSEAL-00029) \\
+Rust     & 296 & 0 & 287 + 9 hybrid (TSEAL-00028) \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-C++, TypeScript, Java, and the CPython extension consume \pqcrypt{} vectors via the Python runner fallback and skip \texttt{hybrid\_*.json}.
+C++, TypeScript, Java, and the CPython extension have no \pqcrypt{} runner and skip the \pqcrypt{} vector directory entirely (including \texttt{hybrid\_*.json}); in the full 8-language run of the same date they consume \pqid{} + \pqhash{} vectors only (229 PASS each for C++, TypeScript, and Java; 224 PASS + 11 SKIP for the CPython extension).
 
-\subsection{Branch-protection gate}
+\subsection{CI gate}
 
-The GitHub Actions workflow \texttt{.github/workflows/conformance.yml} runs the full harness across all three projects (\pqid, \pqhash, \pqcrypt). It is a required check for merging to \texttt{main}.
+The GitHub Actions workflow \texttt{.github/workflows/conformance.yml} runs on every pull request and push (it is the only automatically-triggered workflow in the repository; the per-language matrices are manual-dispatch), and branch protection on \texttt{main} requires its cross-language job. Within that workflow, the 4-language alpha step (Python + C + Go + Rust --- the four languages with their own \pqcrypt{} runners) is the blocking check; the full 8-language step is informational (\texttt{continue-on-error}) until the remaining four ports gain \pqcrypt{} runners.
 
-\subsection{Vector generation}
+\subsection{Vector generation and the append-only freeze}
 
-All vectors are generated against the Python reference (\texttt{tessera-seal/python/tessera\_seal.py}). The generator script lives at \texttt{tessera-seal/conformance/scripts/generate.py}. Vectors are committed verbatim: re-running the generator on the same code MUST produce identical JSON. If a code change produces different vectors, that is a spec change and requires a release-notes entry plus updates to every language implementation.
+All vectors are generated against the Python reference (\texttt{tessera-seal/python/tessera\_seal.py}); the generator script lives at \texttt{tessera-seal/conformance/scripts/generate.py}. Shipped vectors are \textbf{frozen append-only}: regeneration may append records or add files, but the bytes of an existing committed record never change. The freeze is enforced mechanically by \texttt{tools/scripts/check-vector-freeze.sh}.
+
+Full byte-reproducibility of a generator run holds only for the deterministic (seeded-DRBG) vector files. The \texttt{hybrid\_*.json} emitters draw fresh X25519 ephemerals from the OS CSPRNG at generation time, so re-running the generator does \emph{not} reproduce the committed hybrid files byte-identically. The committed records --- whose embedded seeds make \emph{consumption} fully deterministic in every language --- are the contract, not the generator run. If a code change makes an existing record fail, that is a spec change: it requires a release-notes entry, appended (never mutated) records, and alignment of every language implementation.

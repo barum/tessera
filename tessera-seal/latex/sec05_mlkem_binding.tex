@@ -22,14 +22,14 @@ Rust        & \texttt{ml-kem = "0.3"} (RustCrypto, \texttt{MlKem1024}) & const-t
 C++         & wraps the C library                                     & inherits OpenSSL \\
 TypeScript  & \texttt{@noble/post-quantum}                            & const-time documented; pure JS \\
 Java        & \textbf{SunJCE} JEP 452 (\emph{not} BouncyCastle)        & JDK stdlib constant-time \\
-CPython ext & mirrors \texttt{tessera\_seal\_fast.py} (v1.1)           & inherits Python sources \\
+CPython ext & wraps the C reference (OpenSSL 3.5+ \texttt{EVP\_KEM})    & inherits OpenSSL \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \textbf{Decisions worth flagging:}
 \begin{itemize}
-\item \emph{C uses OpenSSL 3.5+ \texttt{EVP\_KEM}, not \texttt{mlkem-native}.} The earlier draft of this whitepaper named \texttt{mlkem-native} \citep{cryspen2025mlkem}; the PQCK-00005 release note records the decision to switch. OpenSSL has a smaller audit surface for our deployment (we already link \texttt{libcrypto} for the AEADs), a FIPS 140-3 validation path, and ubiquitous packaging. \texttt{mlkem-native} remains the fallback for embedded targets that cannot link OpenSSL.
+\item \emph{C uses OpenSSL 3.5+ \texttt{EVP\_KEM}, not \texttt{mlkem-native}.} The earlier draft of this whitepaper named \texttt{mlkem-native} \citep{cryspen2025mlkem}; the PQCK-00005 release note records the decision to switch. OpenSSL has a smaller audit surface for our deployment (we already link \texttt{libcrypto} for the AEADs), a FIPS 140-3 validation path, and ubiquitous packaging. \texttt{mlkem-native} is \emph{not} vendored, linked, or retained by this project in any capacity; an embedded target that cannot link OpenSSL would have to bring its own ML-KEM source, which requires the security review mandated by the supply-chain rules in \texttt{tessera-seal/CLAUDE.md} and is outside v1.x scope.
 \item \emph{Java uses SunJCE (JEP 452), not BouncyCastle.} The JEP 452 \texttt{KEM} API landed in JDK 24 and provides ML-KEM-1024 as a first-class \texttt{KeyPairGenerator} algorithm. BouncyCastle 1.79+ remains a viable alternative but is not the v1.1 reference; this avoids the CVE-2025-1432 surface (\cref{sec:side-channels}) in the default vendoring story.
 \item \emph{Go uses stdlib \texttt{crypto/mlkem} (Go 1.26+), not \texttt{filippo.io/mlkem}.} The earlier external library was the v1 alpha intent; by the time v1.1 shipped, ML-KEM had landed in the Go stdlib and the dependency was eliminated.
 \end{itemize}

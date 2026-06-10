@@ -1,7 +1,7 @@
 \section{Comparison with Existing Formats}
 \label{sec:comparison}
 
-A grounded marketplace view as of November 2026. \pqcrypt{} is the only envelope format in the table that offers \emph{both} (a) a pure-PQ option (suites \code{0x01}/\code{0x02}) and (b) a key-committing AEAD --- with a hybrid alternative (suite \code{0x06}) layered on the same wire format for callers who want defense-in-depth.
+A grounded marketplace view as of mid-2026 (this revision: 2026-06-10). \pqcrypt{} is the only envelope format in the table that offers \emph{both} (a) a pure-PQ option (suites \code{0x01}/\code{0x02}) and (b) a key-committing AEAD --- with a hybrid alternative (suite \code{0x06}) layered on the same wire format for callers who want defense-in-depth.
 
 \subsection{Envelope formats}
 
@@ -63,7 +63,7 @@ Ascon-128a (FIPS 232 final, Aug 2025) & 0.55 & 0.52 & 0.61 & Lightweight, constr
 \end{tabular}
 \end{center}
 
-Sources: \citep{ebacs,intelisa,rfc9678}. AEGIS is 2--3$\times$ faster than AES-256-GCM. It was evaluated for v1.2 at suite \code{0x03} (PQCK-00020) and \emph{deferred}: as of November 2026 verified AEGIS implementations are not yet polyglot-ready across Python, Go, Java, and OpenSSL. Revisit when verified implementations land.
+Sources: \citep{ebacs,intelisa,rfc9678}. AEGIS is 2--3$\times$ faster than AES-256-GCM. It was evaluated for v1.2 at suite \code{0x03} (PQCK-00020) and \emph{deferred}: as of the v1.2 evaluation (2026-05-21) verified AEGIS implementations are not yet polyglot-ready across Python, Go, Java, and OpenSSL. Revisit when verified implementations land.
 
 \subsection{Reference benchmarks (Apple M4 Max, ops/sec, v1.3)}
 \label{sec:comparison:bench}
@@ -90,7 +90,7 @@ decrypt 1\,MiB (AES-256-GCM)     &   202 &    405 &    701 &    135 \\
 
 Read: Go's \pqcrypt{} port is the fastest because Go 1.26 stdlib \texttt{crypto/aes} routes through ARMv8 AES instructions on Apple Silicon automatically and the GC compiler inlines the ML-KEM hot path tightly. C trails Go on \texttt{decrypt 1\,KiB} because the OpenSSL \texttt{EVP\_KEM} \texttt{Decaps} path performs an additional dispatch step. Rust's 1\,MiB throughput is regressed because \texttt{aes-gcm 0.10} does not enable ARMv8 AES intrinsics on stable Rust without a nightly \texttt{target\_feature} cfg; this is tracked as PQCK-00027 (deferred to v1.4) and is expected to recover to C-class throughput once \texttt{aes-gcm 0.11} ships. Hybrid encrypt is roughly $2\times$ slower than the AES-only path because each envelope adds one X25519 ephemeral keygen and one DH; hybrid decrypt adds only one DH.
 
-\subsection{Deployment scale (Nov 2026)}
+\subsection{Deployment scale (mid-2026)}
 
 \begin{itemize}
 \item Cloudflare Radar (Apr 2026): $\sim$38\% of outbound TLS 1.3 to origins uses \texttt{X25519MLKEM768}; $\sim$32\% of inbound from browsers \citep{cloudflare-radar}.

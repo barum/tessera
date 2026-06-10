@@ -4,8 +4,8 @@
 \subsection{Known attacks 2024--2026}
 
 \begin{itemize}
-\item \textbf{KyberSlash 1 \& 2} \citep{kyberslash}, Dec 2023 / Jan 2024: division-by-secret timing leak in ML-KEM \texttt{Decaps} and \texttt{poly\_compress}. Patched in pq-crystals reference and liboqs 0.10 in January 2024. \pqcrypt{} vendors only post-patch implementations.
-\item \textbf{PQShield power-analysis disclosure} \citep{pqshield2024}, Mar 2024: SPA on Cortex-M4 ML-KEM \texttt{Decaps} recovering the secret in fewer than 1000 traces. Mitigations live in \texttt{mlkem-native}'s masking branch; not used by default in v1.
+\item \textbf{KyberSlash 1 \& 2} \citep{kyberslash}, Dec 2023 / Jan 2024: division-by-secret timing leak in ML-KEM \texttt{Decaps} and \texttt{poly\_compress}. Patched in pq-crystals reference and liboqs 0.10 in January 2024. \pqcrypt{} pins only post-patch implementations.
+\item \textbf{PQShield power-analysis disclosure} \citep{pqshield2024}, Mar 2024: SPA on Cortex-M4 ML-KEM \texttt{Decaps} recovering the secret in fewer than 1000 traces. Mitigations live in masked implementations (e.g.\ \texttt{mlkem-native}'s masking branch); no library pinned by v1 enables masking.
 \item \textbf{SPA-CCA on ML-KEM} \citep{guo2024spa}, ePrint 2024/2051: single-trace CCA on unmasked Cortex-M4. Masked implementations unaffected.
 \item \textbf{CVE-2024-39427} (liboqs $<$ 0.10.1, Jul 2024): ML-KEM \texttt{Decaps} timing on certain platforms. Fixed pre-v1.
 \item \textbf{CVE-2025-1432} (Bouncy Castle 1.78, Feb 2025): ML-KEM rejection-sampling bias on malformed public keys. Fixed in BouncyCastle 1.79+. The v1.1 Java port avoids the surface entirely by using SunJCE JEP 452 (JDK 24+) as the ML-KEM source rather than BouncyCastle (\cref{sec:mlkem}); a BouncyCastle-backed alternative remains usable but must pin $\geq$ 1.79.
@@ -16,10 +16,10 @@
 \pqcrypt{} v1.x mitigates software-timing side channels by:
 
 \begin{itemize}
-\item Vendoring constant-time ML-KEM-1024 implementations per language (\cref{sec:mlkem}). For hybrid suite \code{0x06} (\cref{sec:hybrid}), the X25519 source is similarly pinned per language to a constant-time implementation: \texttt{x25519-dalek} v2 in Rust (\texttt{\#![forbid(unsafe\_code)]}), Go stdlib \texttt{crypto/ecdh} (constant-time on aarch64 and x86\_64), Python \texttt{cryptography} (libsodium-backed). Small-subgroup / low-order point inputs are rejected structurally by the X25519 library and surface as \texttt{DecryptionError} via the constant-time decrypt wrapper.
+\item Pinning verified, constant-time third-party ML-KEM-1024 implementations per language (\cref{sec:mlkem}); none of them is vendored into this repository (only the Keccak/SHAKE-256 primitive is, under \code{common/}). For hybrid suite \code{0x06} (\cref{sec:hybrid}), the X25519 source is similarly pinned per language to a constant-time implementation: \texttt{x25519-dalek} v2 in Rust (\texttt{\#![forbid(unsafe\_code)]}), Go stdlib \texttt{crypto/ecdh} (constant-time on aarch64 and x86\_64), Python \texttt{cryptography} (libsodium-backed). Small-subgroup / low-order point inputs are rejected structurally by the X25519 library and surface as \texttt{DecryptionError} via the constant-time decrypt wrapper.
 \item Constant-time AEAD tag and commitment tag verification (\cref{sec:aead-commitment,sec:failure-modes}).
 \item A single \texttt{DecryptionError} class covering every authentication-related failure.
-\item Timing-histogram regression vectors in conformance (\cref{sec:failure-modes}).
+\item Manual timing-histogram measurement of the decrypt path (\cref{sec:failure-modes}). An automated CI timing regression is tracked backlog (\texttt{security-audit-v1.2.md} open item \#1); no timing vectors ship in conformance today.
 \end{itemize}
 
 \subsection{What v1 does \emph{not} mitigate}
