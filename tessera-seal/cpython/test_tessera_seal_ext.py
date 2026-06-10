@@ -138,6 +138,30 @@ def main():
     except Exception as e:
         print(f"FAIL peek_header: {type(e).__name__}: {e}"); fails += 1
 
+    # --- peek_ad (TSEAL-00047 / TP-081) ---------------------------------------
+    # Structural AD peek: unauthenticated until decrypt; every returned byte
+    # is attacker-controlled. Routing/lookup only.
+    try:
+        ad5 = bytes(range(41))
+        env5 = tseal.encrypt(b"peek me", pk, ad=ad5)
+        fails += assert_eq(tseal.peek_ad(env5), ad5, "peek_ad_roundtrip")
+        fails += assert_eq(tseal.peek_ad(env4), b"", "peek_ad_empty_ad")
+        # Truncated mid-AD: declared AD region extends past the envelope.
+        trunc = tseal.HEADER_BYTES + tseal.MLKEM1024_CT_BYTES + len(ad5) - 1
+        fails += assert_raises(lambda: tseal.peek_ad(env5[:trunc]),
+                               tseal.InvalidLength, "peek_ad_truncated")
+        fails += assert_raises(lambda: tseal.peek_ad(env5[:tseal.HEADER_BYTES - 1]),
+                               tseal.InvalidLength, "peek_ad_short_header")
+        # Unknown variant / suite: rejected exactly like peek_header.
+        badv = bytearray(env5); badv[6] = 0x03
+        fails += assert_raises(lambda: tseal.peek_ad(bytes(badv)),
+                               tseal.UnknownVariant, "peek_ad_unknown_variant")
+        bads = bytearray(env5); bads[7] = 0x06
+        fails += assert_raises(lambda: tseal.peek_ad(bytes(bads)),
+                               tseal.UnknownSuite, "peek_ad_unknown_suite_0x06")
+    except Exception as e:
+        print(f"FAIL peek_ad: {type(e).__name__}: {e}"); fails += 1
+
     # --- validate -------------------------------------------------------------
     try:
         fails += assert_eq(tseal.validate(env4), True, "validate_ok")
@@ -190,6 +214,31 @@ def main():
                 print(f"FAIL kat-ab:{r['name']}: expected failure"); fails += 1
             except tseal.TesseraSealError:
                 print(f"PASS kat-ab:{r['name']}")
+
+    # ad_binding.json through peek_ad (TSEAL-00047): positive records bind a
+    # 41-byte TesseraID-style AD; peek_ad must return exactly those bytes
+    # without decrypting (no key material needed) and must reject truncated
+    # input. Negative records carry a deliberately wrong expected_ad, so only
+    # structural success is asserted for them.
+    for r in ab_recs:
+        env_b = _h(r["envelope_hex"])
+        try:
+            got = tseal.peek_ad(env_b)
+            if r["op"] == "decrypt" and got != _h(r["expected_ad_hex"]):
+                print(f"FAIL kat-pad:{r['name']}: AD mismatch"); fails += 1
+                continue
+            if got:
+                h = tseal.peek_header(env_b)
+                trunc = tseal.HEADER_BYTES + h["kem_ct_len"] + h["ad_len"] - 1
+                try:
+                    tseal.peek_ad(env_b[:trunc])
+                    print(f"FAIL kat-pad:{r['name']}: truncated accepted"); fails += 1
+                    continue
+                except tseal.InvalidLength:
+                    pass
+            print(f"PASS kat-pad:{r['name']}")
+        except Exception as e:
+            print(f"FAIL kat-pad:{r['name']}: {type(e).__name__}: {e}"); fails += 1
 
     print()
     print(f"{'OK' if fails == 0 else 'FAILED'}: {fails} failure(s)")

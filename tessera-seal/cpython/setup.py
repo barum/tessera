@@ -2,6 +2,11 @@
 
 Run with:
     python3 setup.py build_ext --inplace
+
+Project metadata (name/version/license) lives in pyproject.toml (TESS-00014);
+this file keeps only the Extension definition + OpenSSL discovery. Build-from-
+checkout only — the sources below reach outside this directory, so sdists/
+wheels built from this directory alone would be broken (see pyproject.toml).
 """
 import os
 import sys
@@ -60,9 +65,5 @@ ext = Extension(
 )
 
 setup(
-    name="tessera_seal_ext",
-    version="1.0.0",
-    description="CPython extension binding for the TesseraSeal reference C implementation",
     ext_modules=[ext],
-    python_requires=">=3.8",
 )

@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# pkg-config template for the TesseraSeal C reference implementation.
+# @PREFIX@ and @VERSION@ are substituted by `make tessera-seal.pc` (see Makefile).
+# Requires OpenSSL 3.5+ at link time (ML-KEM-1024 EVP provider).
+prefix=@PREFIX@
+includedir=${prefix}/include/tessera
+libdir=${prefix}/lib
+
+Name: tessera-seal
+Description: TesseraSeal post-quantum encryption envelope (ML-KEM-1024 + AES-256-GCM + UtC commit) - C reference implementation
+URL: https://github.com/barum/tessera
+Version: @VERSION@
+Cflags: -I${includedir}
+Libs: -L${libdir} -ltessera_seal
+Libs.private: -lcrypto

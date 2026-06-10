@@ -10,11 +10,22 @@
 # search path. Override via OPENSSL_CFLAGS and OPENSSL_LDFLAGS if needed.
 
 CC      ?= cc
+AR      ?= ar
 CFLAGS  ?= -O3 -Wall -Wextra -Wpedantic -Wshadow -std=c11 -fno-plt -DNDEBUG
 LDFLAGS ?=
 
 COMMON  := ../../common/c
 CFLAGS  += -I$(COMMON) -I.
+
+# Install layout (TESS-00014). Override PREFIX and/or DESTDIR as needed:
+#   make install PREFIX=/opt/tessera
+#   make install DESTDIR=/tmp/stage
+# Consumers link OpenSSL 3.5+ themselves (see Libs.private in the .pc file).
+VERSION    ?= 1.3.1
+PREFIX     ?= /usr/local
+INCLUDEDIR  = $(PREFIX)/include/tessera
+LIBDIR      = $(PREFIX)/lib
+PCDIR       = $(LIBDIR)/pkgconfig
 
 # Detect OpenSSL via, in order:
 #   1. caller-provided OPENSSL_PREFIX (highest priority)
@@ -63,7 +74,19 @@ test: test_tessera_seal
 bench: bench_tessera_seal
 	./bench_tessera_seal
 
-clean:
-	rm -f *.o test_tessera_seal bench_tessera_seal
+libtessera_seal.a: tessera_seal.o hkdf_sha3.o
+	$(AR) rcs libtessera_seal.a tessera_seal.o hkdf_sha3.o
 
-.PHONY: all test bench clean
+tessera-seal.pc: tessera-seal.pc.in
+	sed -e 's|@PREFIX@|$(PREFIX)|g' -e 's|@VERSION@|$(VERSION)|g' tessera-seal.pc.in > tessera-seal.pc
+
+install: libtessera_seal.a tessera-seal.pc
+	install -d $(DESTDIR)$(INCLUDEDIR) $(DESTDIR)$(LIBDIR) $(DESTDIR)$(PCDIR)
+	install -m 644 tessera_seal.h $(DESTDIR)$(INCLUDEDIR)/
+	install -m 644 libtessera_seal.a $(DESTDIR)$(LIBDIR)/
+	install -m 644 tessera-seal.pc $(DESTDIR)$(PCDIR)/
+
+clean:
+	rm -f *.o *.a tessera-seal.pc test_tessera_seal bench_tessera_seal
+
+.PHONY: all test bench clean install

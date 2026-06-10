@@ -1,11 +1,30 @@
 {
   "name": "tessera-seal",
-  "version": "0.1.0",
+  "version": "1.3.1",
+  "description": "TesseraSeal: post-quantum encryption envelope (ML-KEM-1024 + AES-256-GCM + UtC commit) - TypeScript reference implementation",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/barum/tessera.git",
+    "directory": "tessera-seal/typescript"
+  },
+  "private": false,
   "type": "module",
   "main": "./dist/tessera_seal.js",
   "types": "./dist/tessera_seal.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/tessera_seal.d.ts",
+      "default": "./dist/tessera_seal.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepare": "npm run build",
     "test": "tsc && node --test dist/test_tessera_seal.js"
   },
   "dependencies": {

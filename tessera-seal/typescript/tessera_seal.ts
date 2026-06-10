@@ -242,6 +242,28 @@ export function peekHeader(env: Uint8Array): DecodedHeader {
     return h;
 }
 
+/**
+ * Returns a copy of the cleartext-on-wire associated-data bytes WITHOUT
+ * decrypting — the routing-before-decrypt companion to peekHeader()
+ * (TSEAL-00047). The canonical use case is the TesseraID-as-AD pattern:
+ * route an envelope by the 41-byte TesseraID it is bound to, then decrypt.
+ *
+ * WARNING: the returned bytes are UNAUTHENTICATED until decrypt()
+ * succeeds — every byte is attacker-controlled. Use them only for
+ * routing/lookup; never act on them as trusted data.
+ *
+ * Rejects exactly what peekHeader() rejects (unknown variant/suite, bad
+ * declared lengths) plus InvalidLength when the declared AD region extends
+ * past the envelope (truncated input).
+ */
+export function peekAd(env: Uint8Array): Uint8Array {
+    const h = peekHeader(env);
+    const start = HEADER_BYTES + h.kemCtLen;
+    const end = start + h.adLen;
+    if (env.length < end) throw new InvalidLength("ad region extends past envelope end");
+    return env.slice(start, end);
+}
+
 export function validate(env: Uint8Array): boolean {
     try {
         const h = peekHeader(env);

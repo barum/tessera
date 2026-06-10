@@ -2,6 +2,25 @@
 
 Rust reference implementation of TesseraSeal v1.
 
+## Install / consumption
+
+The crate is **publish-ready but not yet published** — crates.io publication is gated on the name-clearance
+decision ([docs/decisions/2026-06-10-name-clearance.md](../../docs/decisions/2026-06-10-name-clearance.md)).
+Until then, consume it as a path or git dependency:
+
+```toml
+# Path dependency (vendored checkout)
+[dependencies]
+tessera-seal = { path = "../tessera/tessera-seal/rust" }
+
+# Git dependency
+[dependencies]
+tessera-seal = { git = "https://github.com/barum/tessera", version = "1.3.1" }
+```
+
+The library target is `tessera_seal` (`use tessera_seal::...`). This crate is a member of the repo-root
+Cargo workspace; the shared `[profile.release]` lives in the root `Cargo.toml`.
+
 ## Status
 
 - Implementation: complete (PQCK-00007).

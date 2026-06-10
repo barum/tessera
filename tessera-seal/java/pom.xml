@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!--
+  TesseraSeal Java reference implementation - minimal Maven packaging (TESS-00014).
+
+  The Makefile in this directory remains the primary documented build path
+  (`make test`); this POM exists so `mvn package` produces a consumable jar.
+  Floor is JDK 24: the SunJCE ML-KEM-1024 provider behind the javax.crypto.KEM
+  API (JEP 452) ships in JDK 24+ (no BouncyCastle, per the supply-chain pins).
+  Publication to Maven Central is gated on the name-clearance decision
+  (docs/decisions/2026-06-10-name-clearance.md).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.tessera</groupId>
+  <artifactId>tessera-seal</artifactId>
+  <version>1.3.1</version>
+  <packaging>jar</packaging>
+
+  <name>TesseraSeal</name>
+  <description>TesseraSeal: post-quantum encryption envelope (ML-KEM-1024 + AES-256-GCM + UtC commit) - Java reference implementation</description>
+  <url>https://github.com/barum/tessera</url>
+
+  <licenses>
+    <license>
+      <name>Apache-2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <scm>
+    <url>https://github.com/barum/tessera</url>
+    <connection>scm:git:https://github.com/barum/tessera.git</connection>
+  </scm>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- Floor: JDK 24+ (SunJCE ML-KEM provider for javax.crypto.KEM / JEP 452). -->
+    <maven.compiler.release>24</maven.compiler.release>
+  </properties>
+</project>

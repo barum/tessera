@@ -18,8 +18,10 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <mutex>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 extern "C" {
@@ -68,6 +70,12 @@ class DecryptionError : public Error {
 public:
     DecryptionError() : Error(TESSERA_SEAL_E_DECRYPT_FAILED, "tessera_seal: envelope failed authentication") {}
 };
+// Sender-context counter exhausted: 0xFFFF envelopes already issued in the
+// current millisecond (TSEAL-00047). Sender-side, structural; retry on a
+// later millisecond.
+class CounterExhausted : public Error {
+public: using Error::Error;
+};
 
 namespace detail {
 
@@ -88,6 +96,8 @@ inline void throw_for_code(int rc, const char* where) {
             throw Error(rc, "tessera_seal: output buffer too small");
         case TESSERA_SEAL_E_BAD_KEY:
             throw Error(rc, "tessera_seal: bad key");
+        case TESSERA_SEAL_E_CTR_EXHAUSTED:
+            throw CounterExhausted(rc, std::string("tessera_seal: sender counter exhausted for this millisecond at ") + where);
         default:
             throw Error(rc, std::string("tessera_seal: internal error at ") + where);
     }
@@ -236,6 +246,25 @@ inline DecodedHeader peek_header(const std::vector<std::uint8_t>& env) {
     };
 }
 
+// Structural AD peek (TSEAL-00047): returns a copy of the cleartext-on-wire
+// associated-data bytes WITHOUT decrypting — the routing-before-decrypt
+// companion to peek_header(). Canonical use: TesseraID-as-AD routing.
+//
+// WARNING: the returned bytes are UNAUTHENTICATED until decrypt() succeeds —
+// every byte is attacker-controlled. Routing/lookup only; never act on them
+// as trusted data.
+//
+// Rejects exactly what peek_header rejects (unknown variant/suite, bad
+// declared lengths) plus InvalidLength when the declared AD region extends
+// past the envelope (truncated input).
+inline std::vector<std::uint8_t> peek_ad(const std::vector<std::uint8_t>& env) {
+    const std::uint8_t* ad = nullptr;
+    std::uint32_t ad_len = 0;
+    int rc = tessera_seal_peek_ad(env.data(), env.size(), &ad, &ad_len);
+    detail::throw_for_code(rc, "peek_ad");
+    return std::vector<std::uint8_t>(ad, ad + ad_len);
+}
+
 inline bool validate(const std::vector<std::uint8_t>& env) noexcept {
     return tessera_seal_validate(env.data(), env.size()) != 0;
 }
@@ -251,6 +280,60 @@ inline std::size_t envelope_size(std::size_t pt_len, std::size_t ad_len) noexcep
 inline void set_now_ms_for_testing(std::uint64_t value) noexcept {
     tessera_seal_set_now_ms_for_testing(value);
 }
+
+// ---------------------------------------------------------------------------
+// SenderContext (TSEAL-00047, parity with Go/Rust/Python/TS)
+// ---------------------------------------------------------------------------
+//
+// Stateful, internally-locked source of monotonic (timestamp_ms, counter)
+// pairs for issuing many envelopes from one logical sender. Wraps the
+// caller-synchronized C primitive `tessera_seal_sender_ctx_t` behind a
+// std::mutex, so one instance is safe to share across threads.
+//
+// Counter semantics: the per-envelope K_session is fresh (new KEM
+// encapsulation per envelope), so CTR is informational — uniqueness/security
+// never depend on it — but monotonic (ts, ctr) per sender is the documented
+// sender discipline. Before this class the C++ wrapper silently defaulted
+// counter=0 on every encrypt() call; use SenderContext when issuing more
+// than one envelope per sender.
+//
+// Inherits the C ABI's exhaust semantics: the 65537th envelope within one
+// millisecond throws CounterExhausted (retry on a later millisecond) rather
+// than silently borrowing a future timestamp.
+class SenderContext {
+public:
+    explicit SenderContext(std::uint8_t suite = kSuiteMLKEM1024AESGCM) {
+        int rc = tessera_seal_sender_ctx_init(&ctx_, suite);
+        detail::throw_for_code(rc, "sender_ctx_init");
+    }
+    SenderContext(const SenderContext&) = delete;
+    SenderContext& operator=(const SenderContext&) = delete;
+
+    [[nodiscard]] std::uint8_t suite() const noexcept { return ctx_.suite; }
+
+    // Next monotonic (timestamp_ms, counter) pair; pass straight to
+    // encrypt(). Throws CounterExhausted on within-ms exhaustion.
+    std::pair<std::uint64_t, std::uint16_t> next_counter() {
+        std::lock_guard<std::mutex> lock(mu_);
+        std::uint64_t ts = 0;
+        std::uint16_t ctr = 0;
+        int rc = tessera_seal_sender_ctx_next_counter(&ctx_, &ts, &ctr);
+        detail::throw_for_code(rc, "sender_ctx_next_counter");
+        return {ts, ctr};
+    }
+
+    // Convenience: encrypt with the next monotonic ts/counter pair.
+    std::vector<std::uint8_t> encrypt(const std::vector<std::uint8_t>& pt,
+                                      const PublicKey& pub,
+                                      const std::vector<std::uint8_t>& ad = {}) {
+        auto [ts, ctr] = next_counter();
+        return tessera_seal::encrypt(pt, pub, ctx_.suite, ad, ts, ctr);
+    }
+
+private:
+    tessera_seal_sender_ctx_t ctx_{};
+    std::mutex mu_;
+};
 
 } // namespace tessera_seal
 

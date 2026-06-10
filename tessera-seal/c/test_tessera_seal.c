@@ -386,6 +386,106 @@ done:
     tessera_seal_zeroize_priv(&priv);
 }
 
+static void test_peek_ad(void) {
+    /* TSEAL-00047 (TP-081): structural AD peek — unauthenticated until
+     * decrypt; every returned byte is attacker-controlled. */
+    const char *name = "peek_ad";
+    tessera_seal_priv_t priv;
+    tessera_seal_pub_t  pub;
+    ASSERT_OK(tessera_seal_generate_keypair(TESSERA_SEAL_SUITE_MLKEM1024_AESGCM, &priv, &pub), name);
+
+    uint8_t ad[41];
+    for (int i = 0; i < 41; i++) ad[i] = (uint8_t)i;
+    uint8_t env[2048]; size_t env_len = sizeof(env);
+    ASSERT_OK(tessera_seal_encrypt((const uint8_t *)"x", 1, &pub, TESSERA_SEAL_SUITE_MLKEM1024_AESGCM,
+                              ad, sizeof(ad), UINT64_MAX, 0,
+                              env, sizeof(env), &env_len), name);
+
+    const uint8_t *got_ad = NULL;
+    uint32_t got_ad_len = 0;
+    ASSERT_OK(tessera_seal_peek_ad(env, env_len, &got_ad, &got_ad_len), name);
+    ASSERT_EQ(got_ad_len, sizeof(ad), name);
+    ASSERT_BYTES_EQ(got_ad, ad, sizeof(ad), name);
+
+    /* Truncated mid-AD: declared AD region extends past env_len. */
+    size_t trunc = (size_t)TESSERA_SEAL_HEADER_BYTES
+                 + (size_t)TESSERA_SEAL_MLKEM1024_CT_BYTES + sizeof(ad) - 1;
+    ASSERT_RC(tessera_seal_peek_ad(env, trunc, &got_ad, &got_ad_len),
+              TESSERA_SEAL_E_INVALID_LEN, name);
+
+    /* Shorter than a header. */
+    ASSERT_RC(tessera_seal_peek_ad(env, TESSERA_SEAL_HEADER_BYTES - 1, &got_ad, &got_ad_len),
+              TESSERA_SEAL_E_INVALID_LEN, name);
+
+    /* Unknown variant / suite: rejected exactly like peek_header. */
+    uint8_t bad[2048];
+    memcpy(bad, env, env_len);
+    bad[TESSERA_SEAL_VARIANT_OFFSET] = 0x03;
+    ASSERT_RC(tessera_seal_peek_ad(bad, env_len, &got_ad, &got_ad_len),
+              TESSERA_SEAL_E_UNKNOWN_VARIANT, name);
+    memcpy(bad, env, env_len);
+    bad[TESSERA_SEAL_SUITE_OFFSET] = 0x06;  /* hybrid: no C support yet */
+    ASSERT_RC(tessera_seal_peek_ad(bad, env_len, &got_ad, &got_ad_len),
+              TESSERA_SEAL_E_UNKNOWN_SUITE, name);
+    PASS(name);
+done:
+    tessera_seal_zeroize_priv(&priv);
+}
+
+static void test_sender_ctx(void) {
+    /* TSEAL-00047 (TP-080): caller-synchronized monotonic (ts, ctr) source.
+     * CTR is informational (K_session is fresh per envelope) but
+     * monotonicity is the documented sender discipline. */
+    const char *name = "sender_ctx";
+    tessera_seal_sender_ctx_t ctx;
+    uint64_t ts = 0; uint16_t ctr = 0;
+
+    /* Unknown / unimplemented suites rejected at init. */
+    ASSERT_RC(tessera_seal_sender_ctx_init(&ctx, 0x07), TESSERA_SEAL_E_UNKNOWN_SUITE, name);
+    ASSERT_RC(tessera_seal_sender_ctx_init(&ctx, 0x06), TESSERA_SEAL_E_UNKNOWN_SUITE, name);
+    ASSERT_OK(tessera_seal_sender_ctx_init(&ctx, TESSERA_SEAL_SUITE_MLKEM1024_AESGCM), name);
+
+    /* Same pinned millisecond: counter increments monotonically. */
+    tessera_seal_set_now_ms_for_testing(1700000000000ULL);
+    for (int i = 0; i < 3; i++) {
+        ASSERT_OK(tessera_seal_sender_ctx_next_counter(&ctx, &ts, &ctr), name);
+        ASSERT_EQ(ts, 1700000000000ULL, name);
+        ASSERT_EQ(ctr, (uint16_t)i, name);
+    }
+
+    /* Counter exhaust within one ms: hard error, context unchanged. */
+    ctx.counter = 0xFFFF;
+    ASSERT_RC(tessera_seal_sender_ctx_next_counter(&ctx, &ts, &ctr),
+              TESSERA_SEAL_E_CTR_EXHAUSTED, name);
+    ASSERT_EQ(ctx.counter, 0xFFFF, name);
+
+    /* Next millisecond: counter resets and issuance resumes. */
+    tessera_seal_set_now_ms_for_testing(1700000000001ULL);
+    ASSERT_OK(tessera_seal_sender_ctx_next_counter(&ctx, &ts, &ctr), name);
+    ASSERT_EQ(ts, 1700000000001ULL, name);
+    ASSERT_EQ(ctr, 0, name);
+    tessera_seal_set_now_ms_for_testing(UINT64_MAX);
+
+    /* The pair feeds encrypt directly and round-trips. */
+    {
+        tessera_seal_priv_t priv;
+        tessera_seal_pub_t  pub;
+        ASSERT_OK(tessera_seal_generate_keypair(TESSERA_SEAL_SUITE_MLKEM1024_AESGCM, &priv, &pub), name);
+        ASSERT_OK(tessera_seal_sender_ctx_next_counter(&ctx, &ts, &ctr), name);
+        uint8_t env[2048]; size_t env_len = sizeof(env);
+        ASSERT_OK(tessera_seal_encrypt((const uint8_t *)"ctx", 3, &pub, ctx.suite,
+                                  NULL, 0, ts, ctr, env, sizeof(env), &env_len), name);
+        tessera_seal_header_t h;
+        ASSERT_OK(tessera_seal_peek_header(env, env_len, &h), name);
+        ASSERT_EQ(h.timestamp_ms, ts, name);
+        ASSERT_EQ(h.counter, ctr, name);
+        tessera_seal_zeroize_priv(&priv);
+    }
+    PASS(name);
+done:
+    tessera_seal_set_now_ms_for_testing(UINT64_MAX);
+}
+
 /* ---------------------------------------------------------------------------
  * KAT-vector consumption: read decrypt.json from the conformance dir and
  * verify each record decrypts byte-identical to the expected plaintext.
@@ -586,6 +686,92 @@ static void test_kat_ad_binding(void) {
 }
 
 /* ---------------------------------------------------------------------------
+ * KAT-vector consumption: ad_binding.json through peek_ad (TSEAL-00047).
+ * The positive records bind a 41-byte TesseraID-style AD; peek_ad must
+ * return exactly those bytes without decrypting, and must reject truncated
+ * input. (Negative records carry a deliberately wrong expected_ad, so only
+ * structural success is asserted for them.)
+ * ------------------------------------------------------------------------- */
+
+static void test_kat_peek_ad(void) {
+    const char *name = "kat_peek_ad_json";
+    const char *path = "../conformance/vectors/ad_binding.json";
+    size_t buf_len = 0;
+    char *buf = read_file(path, &buf_len);
+    if (!buf) {
+        fprintf(stderr, "FAIL %s: cannot read %s\n", name, path);
+        g_fail++;
+        return;
+    }
+    size_t pos = 0;
+    int records = 0;
+    while (pos < buf_len) {
+        const char *name_p, *op_p, *priv_p, *env_p, *ad_p;
+        size_t name_l, op_l, priv_l, env_l, ad_l;
+        if (find_str_field(buf, buf_len, "name", &pos, &name_p, &name_l) != 0) break;
+        if (find_str_field(buf, buf_len, "op", &pos, &op_p, &op_l) != 0) break;
+        if (find_str_field(buf, buf_len, "private_key_hex", &pos, &priv_p, &priv_l) != 0) break;
+        if (find_str_field(buf, buf_len, "envelope_hex", &pos, &env_p, &env_l) != 0) break;
+        if (find_str_field(buf, buf_len, "expected_ad_hex", &pos, &ad_p, &ad_l) != 0) break;
+
+        char rec_name[128];
+        size_t copy = name_l < sizeof(rec_name) - 1 ? name_l : sizeof(rec_name) - 1;
+        memcpy(rec_name, name_p, copy);
+        rec_name[copy] = '\0';
+
+        int positive = (op_l == strlen("decrypt")
+                        && memcmp(op_p, "decrypt", op_l) == 0);
+
+        uint8_t env[8192]; size_t env_len = sizeof(env);
+        if (hex_decode(env_p, env_l, env, &env_len) != 0) {
+            fprintf(stderr, "FAIL kat-pad:%s: bad env\n", rec_name);
+            g_fail++; continue;
+        }
+        uint8_t expected_ad[256]; size_t expected_ad_len = sizeof(expected_ad);
+        if (ad_l == 0) expected_ad_len = 0;
+        else if (hex_decode(ad_p, ad_l, expected_ad, &expected_ad_len) != 0) {
+            fprintf(stderr, "FAIL kat-pad:%s: bad ad\n", rec_name);
+            g_fail++; continue;
+        }
+
+        const uint8_t *got_ad = NULL;
+        uint32_t got_ad_len = 0;
+        int rc = tessera_seal_peek_ad(env, env_len, &got_ad, &got_ad_len);
+        if (rc != TESSERA_SEAL_OK) {
+            fprintf(stderr, "FAIL kat-pad:%s: peek_ad rc=%d\n", rec_name, rc);
+            g_fail++; continue;
+        }
+        if (positive &&
+            (got_ad_len != expected_ad_len ||
+             memcmp(got_ad, expected_ad, expected_ad_len) != 0)) {
+            fprintf(stderr, "FAIL kat-pad:%s: AD mismatch (got %u B, want %zu B)\n",
+                    rec_name, got_ad_len, expected_ad_len);
+            g_fail++; continue;
+        }
+
+        /* Truncation: cut the envelope one byte into the declared AD region. */
+        if (got_ad_len > 0) {
+            size_t ad_start = (size_t)(got_ad - env);
+            int trc = tessera_seal_peek_ad(env, ad_start + got_ad_len - 1,
+                                      &got_ad, &got_ad_len);
+            if (trc != TESSERA_SEAL_E_INVALID_LEN) {
+                fprintf(stderr, "FAIL kat-pad:%s: truncated rc=%d (want %d)\n",
+                        rec_name, trc, TESSERA_SEAL_E_INVALID_LEN);
+                g_fail++; continue;
+            }
+        }
+        printf("PASS kat-pad:%s\n", rec_name);
+        g_pass++;
+        records++;
+    }
+    free(buf);
+    if (records == 0) {
+        fprintf(stderr, "FAIL %s: no records consumed\n", name);
+        g_fail++;
+    }
+}
+
+/* ---------------------------------------------------------------------------
  * Main
  * ------------------------------------------------------------------------- */
 
@@ -599,8 +785,11 @@ int main(void) {
     test_bad_key_suite_mismatch();
     test_suite_0x06_hybrid_rejected();
     test_peek_header();
+    test_peek_ad();
+    test_sender_ctx();
     test_kat_decrypt();
     test_kat_ad_binding();
+    test_kat_peek_ad();
 
     printf("\nTotal: %d pass, %d fail\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

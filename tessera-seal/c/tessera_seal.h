@@ -111,7 +111,11 @@ typedef enum {
     TESSERA_SEAL_E_RNG                = -5,
     TESSERA_SEAL_E_BUF_TOO_SMALL      = -6,
     TESSERA_SEAL_E_BAD_KEY            = -7,
-    TESSERA_SEAL_E_INTERNAL           = -8
+    TESSERA_SEAL_E_INTERNAL           = -8,
+    /* Sender-context counter exhausted: 0xFFFF envelopes already issued in
+     * the current millisecond (TSEAL-00047). Structural, sender-side only —
+     * never produced by the decrypt path. Retry on a later millisecond. */
+    TESSERA_SEAL_E_CTR_EXHAUSTED      = -9
 } tessera_seal_status_t;
 
 /* ----- Opaque key handles -----
@@ -236,6 +240,68 @@ int tessera_seal_decrypt(const uint8_t *env, size_t env_len,
  */
 int tessera_seal_peek_header(const uint8_t *env, size_t env_len,
                         tessera_seal_header_t *h);
+
+/* ----- AD inspection (structural, NOT authenticated) -----
+ *
+ * Exposes the cleartext-on-wire associated-data bytes of a sealed envelope
+ * WITHOUT decrypting — the routing-before-decrypt companion to
+ * `tessera_seal_peek_header()` (TSEAL-00047). The canonical use case is the
+ * TesseraID-as-AD pattern: route an envelope by the 41-byte TesseraID it is
+ * bound to, then decrypt.
+ *
+ * WARNING: the returned bytes are UNAUTHENTICATED until tessera_seal_decrypt()
+ * succeeds — every byte is attacker-controlled. Never act on them as trusted
+ * data; use them only for routing/lookup, then let decrypt() bind them.
+ *
+ * On success sets `*ad` to a pointer INTO `env` (zero-copy; valid only while
+ * `env` is alive and unmodified) and `*ad_len` to the header's AD_LEN.
+ * Rejects exactly what peek_header rejects (unknown variant/suite, bad
+ * declared lengths) plus TESSERA_SEAL_E_INVALID_LEN when the declared AD
+ * region extends past `env_len` (truncated input).
+ */
+int tessera_seal_peek_ad(const uint8_t *env, size_t env_len,
+                    const uint8_t **ad, uint32_t *ad_len);
+
+/* ----- Sender context (TSEAL-00047, parity with Go/Rust/Python/TS) -----
+ *
+ * Stateful source of monotonic (timestamp_ms, counter) pairs for issuing
+ * many envelopes from one logical sender. Counter semantics: the per-envelope
+ * `K_session` is fresh (new KEM encapsulation per envelope), so CTR is
+ * informational — uniqueness/security never depend on it — but monotonic
+ * (ts, ctr) per sender is the documented sender discipline (whitepaper
+ * sec03) and what receivers may use for coarse ordering/dedup hints.
+ *
+ * CALLER-SYNCHRONIZED: unlike the internally-locked Go/Rust/Python/TS
+ * SenderContext, this struct carries no lock (the C library is
+ * dependency-free and pthread-free by design). Callers sharing one context
+ * across threads MUST serialize access themselves; the C++ wrapper
+ * (tessera_seal.hpp SenderContext) does this with an internal mutex.
+ *
+ * The counter is a monotonic uint16 within a millisecond. On the 65537th
+ * envelope in a single millisecond `tessera_seal_sender_ctx_next_counter()`
+ * returns TESSERA_SEAL_E_CTR_EXHAUSTED and leaves the context unchanged
+ * (deliberately stricter than the Go/Rust/Python/TS ports, which bump the
+ * timestamp on wrap; the C ABI surfaces the condition instead of silently
+ * borrowing a future millisecond). Retry on a later millisecond.
+ */
+typedef struct {
+    uint8_t  suite;        /* v1 suite this sender issues (0x01 or 0x02) */
+    uint64_t last_ts_ms;   /* internal: last issued timestamp */
+    uint16_t counter;      /* internal: last issued counter   */
+} tessera_seal_sender_ctx_t;
+
+/* Initializes `ctx` for the given suite. Returns TESSERA_SEAL_OK, or
+ * TESSERA_SEAL_E_UNKNOWN_SUITE for a suite this reference does not
+ * implement (including hybrid 0x06 until TSEAL-00030 lands). */
+int tessera_seal_sender_ctx_init(tessera_seal_sender_ctx_t *ctx, uint8_t suite);
+
+/* Produces the next monotonic (timestamp_ms, counter) pair: pass the
+ * outputs straight to tessera_seal_encrypt(). Uses the same clock source as
+ * encrypt (including the test override). Returns TESSERA_SEAL_OK, or
+ * TESSERA_SEAL_E_CTR_EXHAUSTED when 0xFFFF envelopes were already issued in
+ * the current millisecond (context unchanged; retry on a later ms). */
+int tessera_seal_sender_ctx_next_counter(tessera_seal_sender_ctx_t *ctx,
+                                    uint64_t *ts_ms, uint16_t *counter);
 
 /* ----- Validation helpers (structural, NOT authenticated) ----- */
 

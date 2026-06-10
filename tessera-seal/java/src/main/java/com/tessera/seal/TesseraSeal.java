@@ -407,6 +407,29 @@ public final class TesseraSeal {
         return h;
     }
 
+    /**
+     * Structural AD peek (TSEAL-00047): returns a copy of the
+     * cleartext-on-wire associated-data bytes WITHOUT decrypting — the
+     * routing-before-decrypt companion to {@link #peekHeader}. Canonical use
+     * case is the TesseraID-as-AD pattern: route an envelope by the 41-byte
+     * TesseraID it is bound to, then decrypt.
+     *
+     * <p><b>WARNING:</b> the returned bytes are UNAUTHENTICATED until
+     * {@link #decrypt} succeeds — every byte is attacker-controlled. Use
+     * them only for routing/lookup; never act on them as trusted data.
+     *
+     * <p>Rejects exactly what peekHeader rejects (unknown variant/suite, bad
+     * declared lengths) plus {@link InvalidLength} when the declared AD
+     * region extends past the envelope (truncated input).
+     */
+    public static byte[] peekAd(byte[] env) {
+        DecodedHeader h = peekHeader(env);
+        int start = HEADER_BYTES + h.kemCtLen;
+        long end = (long) start + h.adLen;
+        if (env.length < end) throw new InvalidLength("ad region extends past envelope end");
+        return Arrays.copyOfRange(env, start, (int) end);
+    }
+
     public static boolean validate(byte[] env) {
         try {
             DecodedHeader h = peekHeader(env);
@@ -701,5 +724,52 @@ public final class TesseraSeal {
             off += a.length;
         }
         return out;
+    }
+
+    // ---- Sender context (TSEAL-00047, parity with Go/Rust/Python/TS) -------
+
+    /**
+     * Stateful, internally-locked source of monotonic (timestamp_ms,
+     * counter) pairs. Use it when issuing many envelopes from the same
+     * logical sender. Mirrors Go's {@code SenderContext} shape: same-ms
+     * issues increment the 16-bit counter; a counter wrap within one
+     * millisecond bumps the timestamp by 1 ms to stay monotonic.
+     *
+     * <p>Counter semantics: the per-envelope {@code K_session} is fresh (new
+     * KEM encapsulation per envelope), so CTR is informational —
+     * uniqueness/security never depend on it — but monotonic (ts, ctr) per
+     * sender is the documented sender discipline (whitepaper sec03) and what
+     * receivers may use for coarse ordering/dedup hints.
+     */
+    public static final class SenderContext {
+        public final byte suite;
+        private long lastTs;
+        private int counter;
+
+        /** @throws UnknownSuite for a suite this port does not implement
+         *          (including hybrid 0x06 until TSEAL-00033 lands). */
+        public SenderContext(byte suite) {
+            checkSuite(suite);
+            this.suite = suite;
+        }
+
+        private synchronized long[] nextTsCtr() {
+            long now = nowMs();
+            if (now > lastTs) {
+                lastTs = now;
+                counter = 0;
+            } else {
+                counter = (counter + 1) & 0xFFFF;
+                if (counter == 0) lastTs++;  // wrapped within the same ms
+            }
+            return new long[] { lastTs, counter };
+        }
+
+        /** Convenience wrapper pulling a monotonic ts/counter pair from the
+         *  context — mirrors Go's {@code (*SenderContext).Encrypt}. */
+        public byte[] encrypt(byte[] pt, PublicKey pub, byte[] ad) {
+            long[] tc = nextTsCtr();
+            return TesseraSeal.encrypt(pt, pub, suite, ad, tc[0], (int) tc[1]);
+        }
     }
 }

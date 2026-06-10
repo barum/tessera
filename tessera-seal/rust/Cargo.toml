@@ -1,7 +1,15 @@
 [package]
 name = "tessera-seal"
-version = "0.1.0"
+version = "1.3.1"
 edition = "2024"
+license = "Apache-2.0"
+description = "TesseraSeal: post-quantum encryption envelope (ML-KEM-1024 + AES-256-GCM + UtC commit) - Rust reference implementation"
+repository = "https://github.com/barum/tessera"
+readme = "README.md"
+keywords = ["ml-kem", "post-quantum", "encryption", "aead", "envelope"]
+categories = ["cryptography"]
+# Publish-ready, not yet published: registry publication is gated on the
+# name-clearance decision (docs/decisions/2026-06-10-name-clearance.md).
 
 # TesseraSeal v1 — pure post-quantum encryption envelope (ML-KEM-1024 +
 # AES-256-GCM + UtC commitment). See ../latex/main.tex for the normative

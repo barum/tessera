@@ -7,7 +7,10 @@
 
 #include <cassert>
 #include <cstdio>
-#include <iostream>
+#include <cstring>
+#include <fstream>
+#include <sstream>
+#include <string>
 #include <vector>
 
 static int g_pass = 0, g_fail = 0;
@@ -16,6 +19,37 @@ static int g_pass = 0, g_fail = 0;
     if (cond) { std::printf("PASS %s\n", name); ++g_pass; }      \
     else      { std::printf("FAIL %s\n", name); ++g_fail; }      \
 } while (0)
+
+// Minimal KAT tooling: the vectors are machine-generated with a predictable
+// shape, so a first-occurrence string scan is sufficient (mirrors the C
+// test's find_str_field approach).
+static std::string slurp(const char* path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return {};
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+}
+
+static std::string first_str_field(const std::string& json, const std::string& key,
+                                   std::size_t from = 0) {
+    const std::string needle = "\"" + key + "\": \"";
+    std::size_t p = json.find(needle, from);
+    if (p == std::string::npos) return {};
+    p += needle.size();
+    std::size_t e = json.find('"', p);
+    if (e == std::string::npos) return {};
+    return json.substr(p, e - p);
+}
+
+static std::vector<std::uint8_t> unhex(const std::string& s) {
+    std::vector<std::uint8_t> out(s.size() / 2);
+    for (std::size_t i = 0; i < out.size(); ++i) {
+        out[i] = static_cast<std::uint8_t>(
+            std::stoi(s.substr(2 * i, 2), nullptr, 16));
+    }
+    return out;
+}
 
 int main() {
     using namespace tessera_seal;
@@ -180,6 +214,88 @@ int main() {
         auto h = peek_header(env);
         EXPECT(h.timestamp_ms == 1700000000000ULL && h.variant == 0x04 && h.suite == 0x01 && h.counter == 7
                && h.kem_ct_len == 1568 && h.ad_len == 0, "peek_header");
+    }
+
+    // peek_ad (TSEAL-00047 / TP-081) — structural AD peek. Unauthenticated
+    // until decrypt; every returned byte is attacker-controlled.
+    {
+        auto [priv, pub] = generate_keypair();
+        (void)priv;
+        std::vector<std::uint8_t> ad(41);
+        for (std::size_t i = 0; i < 41; ++i) ad[i] = static_cast<std::uint8_t>(i);
+        auto env = encrypt({'x'}, pub, kSuiteMLKEM1024AESGCM, ad);
+        EXPECT(peek_ad(env) == ad, "peek_ad_roundtrip");
+
+        // Truncated mid-AD: declared AD region extends past the envelope.
+        std::vector<std::uint8_t> trunc(
+            env.begin(), env.begin() + static_cast<long>(kHeaderBytes + kMLKem1024CTBytes + 41 - 1));
+        bool threw = false;
+        try { (void)peek_ad(trunc); }
+        catch (const InvalidLength&) { threw = true; }
+        catch (...) {}
+        EXPECT(threw, "peek_ad_truncated_invalid_length");
+
+        // Unknown variant / suite: rejected exactly like peek_header.
+        auto badv = env; badv[6] = 0x03;
+        bool threw_v = false;
+        try { (void)peek_ad(badv); } catch (const UnknownVariant&) { threw_v = true; } catch (...) {}
+        auto bads = env; bads[7] = 0x06;  // hybrid: no C/C++ support yet
+        bool threw_s = false;
+        try { (void)peek_ad(bads); } catch (const UnknownSuite&) { threw_s = true; } catch (...) {}
+        EXPECT(threw_v && threw_s, "peek_ad_unknown_variant_suite");
+    }
+
+    // peek_ad KAT: first positive record of ad_binding.json binds a 41-byte
+    // TesseraID-style AD; peek_ad must return exactly those bytes without
+    // decrypting.
+    {
+        std::string json = slurp("../conformance/vectors/ad_binding.json");
+        if (json.empty()) {
+            std::printf("FAIL kat_peek_ad: cannot read ../conformance/vectors/ad_binding.json\n");
+            ++g_fail;
+        } else {
+            auto env = unhex(first_str_field(json, "envelope_hex"));
+            auto expected_ad = unhex(first_str_field(json, "expected_ad_hex"));
+            EXPECT(!env.empty() && expected_ad.size() == 41 && peek_ad(env) == expected_ad,
+                   "kat_peek_ad_positive_pqid_a");
+
+            std::vector<std::uint8_t> trunc(env.begin(), env.begin() + static_cast<long>(
+                kHeaderBytes + kMLKem1024CTBytes + expected_ad.size() - 1));
+            bool threw = false;
+            try { (void)peek_ad(trunc); }
+            catch (const InvalidLength&) { threw = true; }
+            catch (...) {}
+            EXPECT(threw, "kat_peek_ad_truncated");
+        }
+    }
+
+    // SenderContext (TSEAL-00047 / TP-080) — monotonic (ts, ctr) issuance.
+    // CTR is informational (K_session is fresh per envelope) but
+    // monotonicity is the documented sender discipline; the C++ wrapper
+    // previously defaulted counter=0 silently on every encrypt.
+    {
+        auto [priv, pub] = generate_keypair();
+        (void)priv;
+        SenderContext ctx;  // defaults to suite 0x01
+        set_now_ms_for_testing(1700000000000ULL);
+        bool monotonic = true;
+        int prev = -1;
+        for (int i = 0; i < 5; ++i) {
+            auto env = ctx.encrypt({'x'}, pub, {'y'});
+            auto h = peek_header(env);
+            if (static_cast<int>(h.counter) <= prev || h.timestamp_ms != 1700000000000ULL) {
+                monotonic = false;
+            }
+            prev = static_cast<int>(h.counter);
+        }
+        set_now_ms_for_testing(UINT64_MAX);
+        EXPECT(monotonic, "sender_context_monotonic");
+
+        bool init_threw = false;
+        try { SenderContext bad(0x06); }  // hybrid: no C/C++ support yet
+        catch (const UnknownSuite&) { init_threw = true; }
+        catch (...) {}
+        EXPECT(init_threw, "sender_context_rejects_unknown_suite");
     }
 
     std::printf("\nTotal: %d pass, %d fail\n", g_pass, g_fail);

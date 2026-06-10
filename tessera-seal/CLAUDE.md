@@ -4,7 +4,11 @@ Project-specific guidance for the **TesseraSeal** post-quantum encryption envelo
 
 ## What this project is
 
-TesseraSeal is a **pure post-quantum encryption envelope**. The wire format is normative; per-language code is a reference implementation. Authoritative sources, in order:
+TesseraSeal is a **pure post-quantum encryption envelope**. The wire format is normative; per-language code is a reference implementation.
+
+**Ticket prefixes:** `PQCK-NNNNN` is the project's historical (pre-rename, closed) prefix; `TSEAL-NNNNN` is the same ticket series continued under the Tessera name (PQCK-00035 → TSEAL-00036). Historical PQCK IDs in this file and in old release notes refer to landed work and are left as-is; new tickets always mint `TSEAL-`.
+
+Authoritative sources, in order:
 
 1. The whitepaper LaTeX at [latex/](latex/), built to `latex/TesseraSeal_Whitepaper.pdf`.
 2. The Python reference at [python/tessera_seal.py](python/tessera_seal.py) (PQCK-00003) — landed and canonical.

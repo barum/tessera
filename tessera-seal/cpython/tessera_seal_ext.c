@@ -11,6 +11,7 @@
  *   encrypt(pt, pk_bytes, suite=0x01, ad=b"", ts_ms=None, counter=0) -> envelope
  *   decrypt(envelope, sk_bytes, expected_ad=b"") -> plaintext
  *   peek_header(envelope) -> dict
+ *   peek_ad(envelope) -> bytes   (UNAUTHENTICATED until decrypt; TSEAL-00047)
  *   validate(envelope) -> bool
  *   validate_min_timestamp(envelope, min_ms) -> bool
  *   set_now_ms_for_testing(value)   # value=-1 to clear
@@ -233,6 +234,38 @@ static PyObject *py_peek_header(PyObject *self, PyObject *arg) {
         "ad_len", (unsigned int) h.ad_len);
 }
 
+/* peek_ad(envelope) -> bytes
+ *
+ * Structural AD peek (TSEAL-00047): returns a copy of the cleartext-on-wire
+ * associated-data bytes WITHOUT decrypting — the routing-before-decrypt
+ * companion to peek_header(). Canonical use: TesseraID-as-AD routing.
+ *
+ * WARNING: the returned bytes are UNAUTHENTICATED until decrypt() succeeds —
+ * every byte is attacker-controlled. Routing/lookup only.
+ *
+ * Rejects exactly what tessera_seal_peek_ad() rejects: everything
+ * peek_header rejects (unknown variant/suite, bad declared lengths) plus
+ * InvalidLength when the declared AD region extends past the envelope
+ * (truncated input). */
+static PyObject *py_peek_ad(PyObject *self, PyObject *arg) {
+    (void)self;
+    Py_buffer env_buf;
+    if (PyObject_GetBuffer(arg, &env_buf, PyBUF_SIMPLE) != 0) return NULL;
+    const uint8_t *ad = NULL;
+    uint32_t ad_len = 0;
+    int rc = tessera_seal_peek_ad((const uint8_t *) env_buf.buf, (size_t) env_buf.len,
+                             &ad, &ad_len);
+    if (rc != TESSERA_SEAL_OK) {
+        PyBuffer_Release(&env_buf);
+        raise_status(rc, "peek_ad");
+        return NULL;
+    }
+    /* PyBytes copies, so the zero-copy C pointer never outlives env_buf. */
+    PyObject *out = PyBytes_FromStringAndSize((const char *) ad, (Py_ssize_t) ad_len);
+    PyBuffer_Release(&env_buf);
+    return out;
+}
+
 /* validate(envelope) -> bool */
 static PyObject *py_validate(PyObject *self, PyObject *arg) {
     (void)self;
@@ -278,6 +311,9 @@ static PyMethodDef Methods[] = {
      "decrypt(envelope, sk_bytes, expected_ad=b\"\") -> plaintext"},
     {"peek_header", py_peek_header, METH_O,
      "peek_header(envelope) -> dict (structural; does NOT authenticate)"},
+    {"peek_ad", py_peek_ad, METH_O,
+     "peek_ad(envelope) -> bytes (structural; UNAUTHENTICATED until decrypt() "
+     "succeeds — attacker-controlled; routing/lookup only)"},
     {"validate", py_validate, METH_O,
      "validate(envelope) -> bool (structural; does NOT authenticate)"},
     {"validate_min_timestamp", py_validate_min_timestamp, METH_VARARGS,

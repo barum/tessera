@@ -27,6 +27,7 @@ python3 test_tessera_seal_ext.py
 | `encrypt(pt, pk_bytes, suite=0x01, ad=b"", ts_ms=None, counter=0) -> envelope` | |
 | `decrypt(envelope, sk_bytes, expected_ad=b"") -> plaintext` | Adopts the envelope header's suite (TSEAL-00036) |
 | `peek_header(envelope) -> dict` | Structural; does NOT authenticate |
+| `peek_ad(envelope) -> bytes` | Structural AD peek (TSEAL-00047); UNAUTHENTICATED until `decrypt()` — routing/lookup only |
 | `validate(envelope) -> bool` | Structural; does NOT authenticate |
 | `validate_min_timestamp(envelope, min_ms) -> bool` | |
 | `set_now_ms_for_testing(value \| None)` | KAT reproducibility hook |

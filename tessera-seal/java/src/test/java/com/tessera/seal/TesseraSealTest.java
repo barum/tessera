@@ -32,8 +32,11 @@ public class TesseraSealTest {
         testSuiteKeyConsistency();
         testTamperDetection();
         testPeekHeader();
+        testPeekAd();
+        testSenderContext();
         testKATDecrypt();
         testKATADBinding();
+        testKATPeekAd();
         testKATInvalid();
         testKATMinTimestamp();
 
@@ -228,6 +231,61 @@ public class TesseraSealTest {
                && h.counter == 7 && h.kemCtLen == 1568 && h.adLen == 0, "peek_header");
     }
 
+    static void testPeekAd() {
+        // TSEAL-00047 (TP-081): structural AD peek — unauthenticated until
+        // decrypt; every returned byte is attacker-controlled.
+        KeyPair kp = TesseraSeal.generateKeypair(TesseraSeal.SUITE_MLKEM1024_AESGCM);
+        byte[] ad = new byte[41];
+        for (int i = 0; i < 41; i++) ad[i] = (byte) i;
+        byte[] env = TesseraSeal.encrypt("with AD".getBytes(), kp.pub,
+                TesseraSeal.SUITE_MLKEM1024_AESGCM, ad, null, 0);
+        expect(Arrays.equals(TesseraSeal.peekAd(env), ad), "peek_ad_roundtrip");
+
+        // Truncated mid-AD: declared AD region extends past the envelope.
+        byte[] trunc = Arrays.copyOf(env,
+                TesseraSeal.HEADER_BYTES + TesseraSeal.MLKEM1024_CT_BYTES + 41 - 1);
+        boolean threw = false;
+        try { TesseraSeal.peekAd(trunc); }
+        catch (InvalidLength e) { threw = true; }
+        catch (Exception e) {}
+        expect(threw, "peek_ad_truncated_invalid_length");
+
+        // Unknown variant / suite: rejected exactly like peekHeader.
+        byte[] badV = env.clone(); badV[6] = 0x03;
+        boolean threwV = false;
+        try { TesseraSeal.peekAd(badV); } catch (UnknownVariant e) { threwV = true; } catch (Exception e) {}
+        byte[] badS = env.clone(); badS[7] = 0x06;  // hybrid: no Java support yet
+        boolean threwS = false;
+        try { TesseraSeal.peekAd(badS); } catch (UnknownSuite e) { threwS = true; } catch (Exception e) {}
+        expect(threwV && threwS, "peek_ad_unknown_variant_suite");
+    }
+
+    static void testSenderContext() {
+        // TSEAL-00047 (TP-080): internally-locked monotonic (ts, ctr) source
+        // mirroring Go's SenderContext shape. CTR is informational
+        // (K_session is fresh per envelope) but monotonicity is the
+        // documented sender discipline.
+        KeyPair kp = TesseraSeal.generateKeypair(TesseraSeal.SUITE_MLKEM1024_AESGCM);
+        SenderContext ctx = new SenderContext(TesseraSeal.SUITE_MLKEM1024_AESGCM);
+        TesseraSeal.setNowMsForTesting(1_700_000_000_000L);
+        boolean monotonic = true;
+        int prev = -1;
+        for (int i = 0; i < 5; i++) {
+            byte[] env = ctx.encrypt("x".getBytes(), kp.pub, "y".getBytes());
+            DecodedHeader h = TesseraSeal.peekHeader(env);
+            if (h.counter <= prev || h.timestampMs != 1_700_000_000_000L) monotonic = false;
+            prev = h.counter;
+        }
+        TesseraSeal.setNowMsForTesting(null);
+        expect(monotonic, "sender_context_monotonic");
+
+        boolean threw = false;
+        try { new SenderContext((byte) 0x06); }  // hybrid: no Java support yet
+        catch (UnknownSuite e) { threw = true; }
+        catch (Exception e) {}
+        expect(threw, "sender_context_rejects_unknown_suite");
+    }
+
     // --- KAT consumption ----------------------------------------------------
 
     static String slurp(String path) throws IOException {
@@ -361,6 +419,41 @@ public class TesseraSealTest {
             if (ok) { System.out.println("PASS kat-ab:" + str(r, "name")); gPass++; }
             else    { System.out.println("FAIL kat-ab:" + str(r, "name")); gFail++; }
         }
+    }
+
+    static void testKATPeekAd() throws Exception {
+        // TSEAL-00047 (TP-081): peek_ad over the ad_binding KAT envelopes.
+        // Positive records bind a 41-byte TesseraID-style AD; peekAd must
+        // return exactly those bytes without decrypting, and reject input
+        // truncated mid-AD. (Negative records deliberately carry a wrong
+        // expected_ad, so only structural success is asserted for them.)
+        String json = slurp("../conformance/vectors/ad_binding.json");
+        List<Map<String, Object>> recs = parseRecords(json);
+        int n = 0;
+        for (Map<String, Object> r : recs) {
+            byte[] env = hex(str(r, "envelope_hex"));
+            byte[] expectedAd = hex(str(r, "expected_ad_hex"));
+            boolean positive = "decrypt".equals(str(r, "op"));
+            boolean ok;
+            try {
+                byte[] got = TesseraSeal.peekAd(env);
+                ok = !positive || Arrays.equals(got, expectedAd);
+                if (ok && got.length > 0) {
+                    // Truncation: cut one byte into the declared AD region.
+                    DecodedHeader h = TesseraSeal.peekHeader(env);
+                    byte[] trunc = Arrays.copyOf(env,
+                            TesseraSeal.HEADER_BYTES + h.kemCtLen + got.length - 1);
+                    ok = false;
+                    try { TesseraSeal.peekAd(trunc); }
+                    catch (InvalidLength e) { ok = true; }
+                    catch (Exception e) {}
+                }
+            } catch (Exception e) { ok = false; }
+            if (ok) { System.out.println("PASS kat-pad:" + str(r, "name")); gPass++; }
+            else    { System.out.println("FAIL kat-pad:" + str(r, "name")); gFail++; }
+            n++;
+        }
+        if (n == 0) { System.out.println("FAIL kat_peek_ad: no records"); gFail++; }
     }
 
     static void testKATInvalid() throws Exception {

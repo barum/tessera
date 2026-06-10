@@ -376,6 +376,28 @@ pub fn peek_header(env: &[u8]) -> Result<DecodedHeader, Error> {
     Ok(h)
 }
 
+/// Returns a copy of the cleartext-on-wire associated-data bytes WITHOUT
+/// decrypting — the routing-before-decrypt companion to [`peek_header`]
+/// (TSEAL-00047). The canonical use case is the TesseraID-as-AD pattern:
+/// route an envelope by the 41-byte TesseraID it is bound to, then decrypt.
+///
+/// WARNING: the returned bytes are UNAUTHENTICATED until [`decrypt`]
+/// succeeds — every byte is attacker-controlled. Use them only for
+/// routing/lookup; never act on them as trusted data.
+///
+/// Rejects exactly what [`peek_header`] rejects (unknown variant/suite, bad
+/// declared lengths) plus [`Error::InvalidLength`] when the declared AD
+/// region extends past the envelope (truncated input).
+pub fn peek_ad(env: &[u8]) -> Result<Vec<u8>, Error> {
+    let h = peek_header(env)?;
+    let start = HEADER_BYTES + h.kem_ct_len as usize;
+    let end = start + h.ad_len as usize;
+    if env.len() < end {
+        return Err(Error::InvalidLength("ad region extends past envelope end"));
+    }
+    Ok(env[start..end].to_vec())
+}
+
 pub fn validate(env: &[u8]) -> bool {
     let h = match peek_header(env) { Ok(h) => h, Err(_) => return false };
     let need = HEADER_BYTES + h.kem_ct_len as usize + h.ad_len as usize

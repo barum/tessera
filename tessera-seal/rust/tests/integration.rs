@@ -9,7 +9,7 @@
 use tessera_seal::{
     decrypt, encrypt, envelope_size, envelope_size_for_suite,
     generate_keypair, generate_keypair_from_seed,
-    peek_header, validate_min_timestamp, set_now_ms_for_testing,
+    peek_ad, peek_header, validate_min_timestamp, set_now_ms_for_testing,
     Error, SenderContext,
     HEADER_BYTES, MLKEM1024_CT_BYTES, HYBRID_CT_BYTES,
     SUITE_MLKEM1024_AESGCM, SUITE_MLKEM1024_CHACHA,
@@ -170,6 +170,34 @@ fn peek_header_works() {
     assert_eq!(h.ad_len, 0);
 }
 
+// Structural AD peek (TSEAL-00047 / TP-081): unauthenticated until decrypt;
+// every returned byte is attacker-controlled.
+#[test]
+fn peek_ad_works() {
+    let (_, pub_k) = generate_keypair(SUITE_MLKEM1024_AESGCM).unwrap();
+    let ad: Vec<u8> = (0u8..41).collect();
+    let env = encrypt(b"x", &pub_k, SUITE_MLKEM1024_AESGCM, &ad, None, 0).unwrap();
+    assert_eq!(peek_ad(&env).unwrap(), ad);
+
+    // Empty AD: returns an empty vec, no error.
+    let env_no_ad = encrypt(b"x", &pub_k, SUITE_MLKEM1024_AESGCM, &[], None, 0).unwrap();
+    assert_eq!(peek_ad(&env_no_ad).unwrap(), Vec::<u8>::new());
+
+    // Truncated mid-AD: declared AD region extends past the envelope.
+    let trunc = HEADER_BYTES + MLKEM1024_CT_BYTES + ad.len() - 1;
+    assert!(matches!(peek_ad(&env[..trunc]), Err(Error::InvalidLength(_))));
+    // Shorter than a header.
+    assert!(matches!(peek_ad(&env[..HEADER_BYTES - 1]), Err(Error::InvalidLength(_))));
+
+    // Unknown variant / suite: rejected exactly like peek_header.
+    let mut bad = env.clone();
+    bad[6] = 0x03;
+    assert!(matches!(peek_ad(&bad), Err(Error::UnknownVariant(0x03))));
+    let mut bad = env.clone();
+    bad[7] = 0x07;
+    assert!(matches!(peek_ad(&bad), Err(Error::UnknownSuite(0x07))));
+}
+
 #[test]
 fn sender_context_monotonic() {
     let _guard = CLOCK_TESTS.lock().unwrap();
@@ -234,6 +262,35 @@ fn kat_ad_binding() {
         }
     }
     println!("KAT ad_binding: {} records OK", recs.len());
+}
+
+// ad_binding.json through peek_ad (TSEAL-00047): positive records bind a
+// 41-byte TesseraID-style AD; peek_ad must return exactly those bytes
+// without decrypting (no key material needed) and must reject truncated
+// input. Negative records carry a deliberately wrong expected_ad, so only
+// structural success is asserted for them.
+#[test]
+fn kat_peek_ad() {
+    let recs = load("ad_binding.json");
+    assert!(!recs.is_empty(), "no records");
+    for r in &recs {
+        let env = unhex(&r.envelope_hex);
+        let got = peek_ad(&env)
+            .unwrap_or_else(|e| panic!("{}: peek_ad err {:?}", r.name, e));
+        if r.op == "decrypt" {
+            let want = unhex(&r.expected_ad_hex);
+            assert_eq!(got, want, "{}: AD mismatch", r.name);
+        }
+        if !got.is_empty() {
+            let h = peek_header(&env).unwrap();
+            let trunc = HEADER_BYTES + h.kem_ct_len as usize + h.ad_len as usize - 1;
+            assert!(
+                matches!(peek_ad(&env[..trunc]), Err(Error::InvalidLength(_))),
+                "{}: truncated input must be InvalidLength", r.name
+            );
+        }
+    }
+    println!("KAT peek_ad: {} records OK", recs.len());
 }
 
 #[test]

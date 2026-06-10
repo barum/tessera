@@ -2,9 +2,18 @@
 #
 # Builds against the C reference's object files (../c/tessera_seal.o + hkdf_sha3.o)
 # and libcrypto. The C reference is built first via `(cd ../c && make)`.
+#
+# Consumption: include tessera_seal.hpp (which includes tessera_seal.h) and
+# link libtessera_seal.a + libcrypto (OpenSSL 3.5+). `make install` in ../c
+# installs the C header + static lib + pkg-config file; this Makefile installs
+# the .hpp.
 
 CXX      ?= c++
 CXXFLAGS ?= -O3 -Wall -Wextra -Wpedantic -std=c++20
+
+# Install layout (TESS-00014). Override PREFIX and/or DESTDIR as needed.
+PREFIX     ?= /usr/local
+INCLUDEDIR  = $(PREFIX)/include/tessera
 
 C_DIR    := ../c
 COMMON   := ../../common/c
@@ -41,7 +50,11 @@ test_tessera_seal: test_tessera_seal.cpp tessera_seal.hpp $(C_OBJS)
 test: test_tessera_seal
 	./test_tessera_seal
 
+install:
+	install -d $(DESTDIR)$(INCLUDEDIR)
+	install -m 644 tessera_seal.hpp $(DESTDIR)$(INCLUDEDIR)/
+
 clean:
 	rm -f test_tessera_seal
 
-.PHONY: all test clean
+.PHONY: all test clean install

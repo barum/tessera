@@ -37,6 +37,29 @@ make test
 
 Run from `tessera_seal/c/`. The test binary reads `../conformance/vectors/decrypt.json` and `../conformance/vectors/ad_binding.json` at runtime, so the working directory matters.
 
+## Install / consumption
+
+The library is **publish-ready but not distributed as a system package** — see the posture record at
+[docs/decisions/2026-06-10-distribution-posture.md](../../docs/decisions/2026-06-10-distribution-posture.md).
+Install from a checkout (TESS-00014):
+
+```bash
+cd tessera-seal/c
+make install                          # PREFIX=/usr/local by default
+make install PREFIX=/opt/tessera      # custom prefix
+make install DESTDIR=/tmp/stage       # staged install (packaging)
+```
+
+This installs `tessera_seal.h` into `$(PREFIX)/include/tessera/`, `libtessera_seal.a`
+(tessera_seal.o + hkdf_sha3.o) into `$(PREFIX)/lib/`, and a pkg-config file (generated from
+[tessera-seal.pc.in](tessera-seal.pc.in)) into `$(PREFIX)/lib/pkgconfig/`. Consumers link OpenSSL 3.5+
+themselves (declared as `Libs.private: -lcrypto` in the .pc file). The `.pc` `Cflags` point inside
+`include/tessera/`, so include the header flat — `#include <tessera_seal.h>`:
+
+```bash
+cc app.c $(pkg-config --cflags --libs tessera-seal) -lcrypto
+```
+
 ## Files
 
 | File | Purpose |

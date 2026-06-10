@@ -12,7 +12,7 @@ import { join } from "node:path";
 
 import {
     encrypt, decrypt, generateKeypair, generateKeypairFromSeed,
-    peekHeader, validate, validateMinTimestamp, envelopeSize,
+    peekAd, peekHeader, validate, validateMinTimestamp, envelopeSize,
     setNowMsForTesting, SenderContext,
     UnknownVariant, UnknownSuite, InvalidLength, DecryptionError, BadKeyError,
     TesseraSealError,
@@ -165,6 +165,33 @@ test("peek_header", () => {
     assert.equal(h.adLen, 0);
 });
 
+// Structural AD peek (TSEAL-00047 / TP-081): unauthenticated until decrypt;
+// every returned byte is attacker-controlled.
+test("peek_ad roundtrip, truncation, unknown variant/suite", () => {
+    const { pub } = generateKeypair();
+    const ad = new Uint8Array(41).map((_, i) => i);
+    const env = encrypt(new TextEncoder().encode("x"), pub, SUITE_MLKEM1024_AESGCM, ad);
+    assert.deepEqual(peekAd(env), ad);
+
+    // Empty AD: returns an empty array, no error.
+    const envNoAd = encrypt(new TextEncoder().encode("x"), pub);
+    assert.deepEqual(peekAd(envNoAd), new Uint8Array(0));
+
+    // Truncated mid-AD: declared AD region extends past the envelope.
+    const trunc = HEADER_BYTES + MLKEM1024_CT_BYTES + ad.length - 1;
+    assert.throws(() => peekAd(env.subarray(0, trunc)), InvalidLength);
+    // Shorter than a header.
+    assert.throws(() => peekAd(env.subarray(0, HEADER_BYTES - 1)), InvalidLength);
+
+    // Unknown variant / suite: rejected exactly like peekHeader.
+    const badVariant = new Uint8Array(env);
+    badVariant[6] = 0x03;
+    assert.throws(() => peekAd(badVariant), UnknownVariant);
+    const badSuite = new Uint8Array(env);
+    badSuite[7] = 0x07;
+    assert.throws(() => peekAd(badSuite), UnknownSuite);
+});
+
 test("sender context monotonic", () => {
     const { pub } = generateKeypair();
     const ctx = new SenderContext();
@@ -242,6 +269,28 @@ test("KAT ad_binding.json", () => {
             assert.deepEqual(got, hex(r.expected_plaintext_hex), r.name);
         } else {
             assert.throws(() => decrypt(env, priv, ad), Error, r.name);
+        }
+    }
+});
+
+// ad_binding.json through peekAd (TSEAL-00047): positive records bind a
+// 41-byte TesseraID-style AD; peekAd must return exactly those bytes without
+// decrypting (no key material needed) and must reject truncated input.
+// Negative records carry a deliberately wrong expected_ad, so only
+// structural success is asserted for them.
+test("KAT ad_binding.json via peekAd", () => {
+    const recs = loadVectors("ad_binding.json");
+    assert.ok(recs.length > 0);
+    for (const r of recs) {
+        const env = hex(r.envelope_hex);
+        const got = peekAd(env);
+        if (r.op === "decrypt") {
+            assert.deepEqual(got, hex(r.expected_ad_hex), r.name);
+        }
+        if (got.length > 0) {
+            const h = peekHeader(env);
+            const trunc = HEADER_BYTES + h.kemCtLen + h.adLen - 1;
+            assert.throws(() => peekAd(env.subarray(0, trunc)), InvalidLength, r.name);
         }
     }
 });

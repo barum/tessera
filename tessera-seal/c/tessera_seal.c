@@ -147,6 +147,56 @@ int tessera_seal_peek_header(const uint8_t *env, size_t env_len,
     return TESSERA_SEAL_OK;
 }
 
+int tessera_seal_peek_ad(const uint8_t *env, size_t env_len,
+                    const uint8_t **ad, uint32_t *ad_len) {
+    /* TSEAL-00047: structural AD peek. The returned bytes are
+     * UNAUTHENTICATED until tessera_seal_decrypt() succeeds — every byte is
+     * attacker-controlled. Routing/lookup only. */
+    if (!ad || !ad_len) return TESSERA_SEAL_E_INTERNAL;
+    tessera_seal_header_t h;
+    int rc = tessera_seal_peek_header(env, env_len, &h);
+    if (rc != TESSERA_SEAL_OK) return rc;
+    size_t start = (size_t)TESSERA_SEAL_HEADER_BYTES + (size_t)h.kem_ct_len;
+    size_t end = start + (size_t)h.ad_len;
+    if (env_len < end) return TESSERA_SEAL_E_INVALID_LEN;  /* truncated */
+    *ad = env + start;
+    *ad_len = h.ad_len;
+    return TESSERA_SEAL_OK;
+}
+
+int tessera_seal_sender_ctx_init(tessera_seal_sender_ctx_t *ctx, uint8_t suite) {
+    if (!ctx) return TESSERA_SEAL_E_INTERNAL;
+    if (suite != TESSERA_SEAL_SUITE_MLKEM1024_AESGCM &&
+        suite != TESSERA_SEAL_SUITE_MLKEM1024_CHACHA) {
+        return TESSERA_SEAL_E_UNKNOWN_SUITE;
+    }
+    ctx->suite = suite;
+    ctx->last_ts_ms = 0;
+    ctx->counter = 0;
+    return TESSERA_SEAL_OK;
+}
+
+int tessera_seal_sender_ctx_next_counter(tessera_seal_sender_ctx_t *ctx,
+                                    uint64_t *ts_ms, uint16_t *counter) {
+    /* Caller-synchronized; see tessera_seal.h. Monotonic uint16 counter
+     * within a millisecond, hard TESSERA_SEAL_E_CTR_EXHAUSTED on the
+     * 65537th issue in one ms (state unchanged so a later-ms retry
+     * succeeds). CTR is informational — K_session is fresh per envelope —
+     * but monotonicity is the documented sender discipline. */
+    if (!ctx || !ts_ms || !counter) return TESSERA_SEAL_E_INTERNAL;
+    uint64_t now = now_ms();
+    if (now > ctx->last_ts_ms) {
+        ctx->last_ts_ms = now;
+        ctx->counter = 0;
+    } else {
+        if (ctx->counter == 0xFFFF) return TESSERA_SEAL_E_CTR_EXHAUSTED;
+        ctx->counter++;
+    }
+    *ts_ms = ctx->last_ts_ms;
+    *counter = ctx->counter;
+    return TESSERA_SEAL_OK;
+}
+
 int tessera_seal_validate(const uint8_t *env, size_t env_len) {
     tessera_seal_header_t h;
     if (tessera_seal_peek_header(env, env_len, &h) != TESSERA_SEAL_OK) return 0;
