@@ -37,6 +37,10 @@ const (
 	// TesseraHashMinTimestampMS is the project epoch for the optional helper.
 	TesseraHashMinTimestampMS int64 = 1_700_000_000_000
 
+	// TesseraHashMaxTimestampMS is the largest timestamp representable in
+	// the 48-bit wire field.
+	TesseraHashMaxTimestampMS uint64 = (1 << 48) - 1
+
 	tesserahashMaxCounter uint16 = 0xFFFF
 )
 
@@ -44,6 +48,7 @@ var (
 	ErrTesseraHashInvalidLength   = errors.New("tessera_hash: invalid length")
 	ErrTesseraHashUnknownVariant  = errors.New("tessera_hash: variant must be 0x03")
 	ErrTesseraHashInvalidEncoding = errors.New("tessera_hash: invalid encoding")
+	ErrTesseraHashRange           = errors.New("tessera_hash: timestamp_ms out of range")
 )
 
 // nowMS returns the current time as ms since the Unix epoch. Indirected
@@ -107,15 +112,17 @@ func tesserahashWriteHeader(out []byte, ts uint64, counter uint16) {
 }
 
 // TesseraHashAt constructs a TesseraHash with an explicit timestamp and counter.
-func TesseraHashAt(content []byte, timestampMs uint64, counter uint16) [TesseraHashSizeBytes]byte {
+// Out-of-range timestamps (> 2^48-1) return ErrTesseraHashRange — they are an
+// error, never silently masked to 48 bits (matches the Python reference).
+func TesseraHashAt(content []byte, timestampMs uint64, counter uint16) ([TesseraHashSizeBytes]byte, error) {
 	var out [TesseraHashSizeBytes]byte
-	if timestampMs > (1<<48)-1 {
-		timestampMs &= (1 << 48) - 1
+	if timestampMs > TesseraHashMaxTimestampMS {
+		return out, fmt.Errorf("%w: got %d", ErrTesseraHashRange, timestampMs)
 	}
 	tesserahashWriteHeader(out[:], timestampMs, counter)
 	tail := tesserahashShake256(content)
 	copy(out[TesseraHashTailOffset:], tail[:])
-	return out
+	return out, nil
 }
 
 // TesseraHashGenerator produces TesseraHash identifiers. Safe for concurrent use.
@@ -236,7 +243,9 @@ func TesseraHashEncodeBase64URL(raw [TesseraHashSizeBytes]byte) string {
 }
 
 // TesseraHashDecodeBase64URL parses a 98-character Base64URL TesseraHash string.
-// Enforces canonical pad bits (final char's low 4 bits must be 0).
+// Enforces canonical pad bits (final char's low 4 bits must be 0) and rejects
+// any variant byte other than 0x03 (spec sec03: every other byte is rejected
+// at decode).
 func TesseraHashDecodeBase64URL(s string) ([TesseraHashSizeBytes]byte, error) {
 	var out [TesseraHashSizeBytes]byte
 	if len(s) != TesseraHashEncodedLengthB64 {
@@ -254,6 +263,9 @@ func TesseraHashDecodeBase64URL(s string) ([TesseraHashSizeBytes]byte, error) {
 	// Bijection check: re-encode and compare.
 	if base64.RawURLEncoding.EncodeToString(out[:]) != s {
 		return out, fmt.Errorf("%w: non-canonical Base64URL (pad bits non-zero)", ErrTesseraHashInvalidEncoding)
+	}
+	if out[6] != VariantTesseraHash {
+		return out, fmt.Errorf("%w: got 0x%02x", ErrTesseraHashUnknownVariant, out[6])
 	}
 	return out, nil
 }

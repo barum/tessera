@@ -32,6 +32,7 @@ extern "C" {
 #define TESSERA_HASH_ENCODED_LEN_B32  117
 
 #define TESSERA_HASH_MIN_TIMESTAMP_MS  1700000000000ULL
+#define TESSERA_HASH_MAX_TIMESTAMP_MS  ((1ULL << 48) - 1)
 
 typedef enum {
     TESSERA_HASH_OK              =  0,
@@ -39,6 +40,7 @@ typedef enum {
     TESSERA_HASH_E_INVALID_CHAR  = -2,
     TESSERA_HASH_E_PADDING_BITS  = -3,
     TESSERA_HASH_E_UNKNOWN_VAR   = -4,
+    TESSERA_HASH_E_RANGE         = -5,  /* timestamp_ms exceeds the 48-bit wire range */
 } tessera_hash_status_t;
 
 /* Generator. Internally locked by the caller — declare one per thread or
@@ -46,6 +48,9 @@ typedef enum {
 typedef struct {
     uint64_t last_ts;
     uint16_t counter;
+    /* Reserved — unused as of THASH-00005 (was same-ms tail-disambiguation
+     * state, which never influenced output). Retained for ABI stability;
+     * zeroed by tessera_hash_init and never read or written afterwards. */
     uint8_t  last_tail[TESSERA_HASH_TAIL_BYTES];
 } tessera_hash_generator_t;
 
@@ -60,8 +65,11 @@ tessera_hash_status_t tessera_hash_new(tessera_hash_generator_t *g,
 void tessera_hash_hash_only(const uint8_t *content, size_t content_len,
                       uint8_t tail[TESSERA_HASH_TAIL_BYTES]);
 
-/* Stateless: construct a TesseraHash with an explicit (ts, counter). */
-void tessera_hash_hash_at(const uint8_t *content, size_t content_len,
+/* Stateless: construct a TesseraHash with an explicit (ts, counter).
+ * Returns TESSERA_HASH_E_RANGE (and leaves `out` unmodified) when
+ * timestamp_ms > TESSERA_HASH_MAX_TIMESTAMP_MS — out-of-range timestamps
+ * are an error, never silently masked to 48 bits. */
+tessera_hash_status_t tessera_hash_hash_at(const uint8_t *content, size_t content_len,
                     uint64_t timestamp_ms, uint16_t counter,
                     uint8_t out[TESSERA_HASH_SIZE_BYTES]);
 
@@ -81,7 +89,10 @@ uint16_t tessera_hash_counter(const uint8_t in[TESSERA_HASH_SIZE_BYTES]);
 /* Optional defensive (non-normative) check; returns 1 iff ts >= TESSERA_HASH_MIN_TIMESTAMP_MS. */
 int tessera_hash_validate_min_timestamp(const uint8_t in[TESSERA_HASH_SIZE_BYTES]);
 
-/* Encodings (no NUL appended). */
+/* Encodings (no NUL appended). Text decoders validate the variant byte:
+ * any decoded buffer whose variant is not 0x03 yields
+ * TESSERA_HASH_E_UNKNOWN_VAR (spec sec03: every other byte is rejected at
+ * decode). */
 void            tessera_hash_encode_b64url(const uint8_t in[TESSERA_HASH_SIZE_BYTES],
                                      char out[TESSERA_HASH_ENCODED_LEN_B64]);
 tessera_hash_status_t tessera_hash_decode_b64url(const char in[TESSERA_HASH_ENCODED_LEN_B64],
@@ -92,8 +103,15 @@ tessera_hash_status_t tessera_hash_decode_crockford(const char in[TESSERA_HASH_E
                                         uint8_t out[TESSERA_HASH_SIZE_BYTES]);
 
 /* Test-only: override the clock source used by tessera_hash_new.
- * Pass UINT64_MAX to restore the real clock. */
+ * Pass UINT64_MAX to restore the real clock. Also resets the test-clock
+ * step (below) to 0. */
 void tessera_hash_set_now_ms_for_testing(uint64_t value_ms);
+
+/* Test-only: advance the overridden clock by step_ms after every read
+ * (0 = frozen clock, the default). Lets tests exercise the counter-exhaust
+ * spin loop, which needs a clock that moves between reads. No effect while
+ * the real clock is active. */
+void tessera_hash_set_now_ms_step_for_testing(uint64_t step_ms);
 
 #ifdef __cplusplus
 }

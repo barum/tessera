@@ -96,5 +96,75 @@
     "input_kind": "crockford",
     "input_str": "065WZSB8001G008JYPWT11VCSFJ65601V12GNRRKN3YR65V1YFQFDSEGRYR730TCW7ZCRKZPJ6N92TJSAXFTMN23GY898G6D41525P89VPJ5PFKX50T3V",
     "expected_error": "InvalidEncoding"
+  },
+  {
+    "name": "binary_variant_0x05",
+    "op": "tessera_hash_validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe5680005000112f5b9a0876ccbe4629801d8450ae313a8fd831761f3eef6e5d0c7b071834ce1fecc4ff691aa916a59575faa544387909440cd204a22d909dda45b3e7d28343d",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "binary_variant_0x10",
+    "op": "tessera_hash_validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe5680010000112f5b9a0876ccbe4629801d8450ae313a8fd831761f3eef6e5d0c7b071834ce1fecc4ff691aa916a59575faa544387909440cd204a22d909dda45b3e7d28343d",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "binary_variant_0x7f",
+    "op": "tessera_hash_validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe568007f000112f5b9a0876ccbe4629801d8450ae313a8fd831761f3eef6e5d0c7b071834ce1fecc4ff691aa916a59575faa544387909440cd204a22d909dda45b3e7d28343d",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "binary_variant_0xfe",
+    "op": "tessera_hash_validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe56800fe000112f5b9a0876ccbe4629801d8450ae313a8fd831761f3eef6e5d0c7b071834ce1fecc4ff691aa916a59575faa544387909440cd204a22d909dda45b3e7d28343d",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "b64_variant_0x00",
+    "op": "tessera_hash_validate_invalid",
+    "input_kind": "b64",
+    "input_str": "AYvP5WgAAAABEvW5oIdsy-RimAHYRQrjE6j9gxdh8-725dDHsHGDTOH-zE_2kaqRallXX6pUQ4eQlEDNIEoi2QndpFs-fSg0PQ",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "crockford_variant_0x00",
+    "op": "tessera_hash_validate_invalid",
+    "input_kind": "crockford",
+    "input_str": "065WZSB80000008JYPWT11VCSFJ65601V12GNRRKN3YR65V1YFQFDSEGRYR730TCW7ZCRKZPJ6N92TJSAXFTMN23GY898G6D41525P89VPJ5PFKX50T3T",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "b64_variant_0x05",
+    "op": "tessera_hash_validate_invalid",
+    "input_kind": "b64",
+    "input_str": "AYvP5WgABQABEvW5oIdsy-RimAHYRQrjE6j9gxdh8-725dDHsHGDTOH-zE_2kaqRallXX6pUQ4eQlEDNIEoi2QndpFs-fSg0PQ",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "crockford_variant_0x05",
+    "op": "tessera_hash_validate_invalid",
+    "input_kind": "crockford",
+    "input_str": "065WZSB8002G008JYPWT11VCSFJ65601V12GNRRKN3YR65V1YFQFDSEGRYR730TCW7ZCRKZPJ6N92TJSAXFTMN23GY898G6D41525P89VPJ5PFKX50T3T",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "b64_variant_0xff",
+    "op": "tessera_hash_validate_invalid",
+    "input_kind": "b64",
+    "input_str": "AYvP5WgA_wABEvW5oIdsy-RimAHYRQrjE6j9gxdh8-725dDHsHGDTOH-zE_2kaqRallXX6pUQ4eQlEDNIEoi2QndpFs-fSg0PQ",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "crockford_variant_0xff",
+    "op": "tessera_hash_validate_invalid",
+    "input_kind": "crockford",
+    "input_str": "065WZSB803ZG008JYPWT11VCSFJ65601V12GNRRKN3YR65V1YFQFDSEGRYR730TCW7ZCRKZPJ6N92TJSAXFTMN23GY898G6D41525P89VPJ5PFKX50T3T",
+    "expected_error": "UnknownVariant"
   }
 ]

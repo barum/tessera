@@ -2,6 +2,7 @@ package tesserahash
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"tesseraid"
@@ -87,6 +88,93 @@ func TestTesseraHashRoundtrip(t *testing.T) {
 	got2, err := TesseraHashDecodeCrockford(s32)
 	if err != nil || got2 != h {
 		t.Fatalf("crockford roundtrip: %v", err)
+	}
+}
+
+func TestTesseraHashAtRange(t *testing.T) {
+	// In-range: max representable timestamp is accepted.
+	h, err := TesseraHashAt([]byte("boundary"), TesseraHashMaxTimestampMS, 0)
+	if err != nil {
+		t.Fatalf("TesseraHashAt(max ts) errored: %v", err)
+	}
+	d, err := TesseraHashDecode(h[:])
+	if err != nil || uint64(d.TimestampMS) != TesseraHashMaxTimestampMS {
+		t.Fatalf("max-ts roundtrip: ts=%d err=%v", d.TimestampMS, err)
+	}
+	// Out-of-range: error, never silently masked to 48 bits.
+	if _, err := TesseraHashAt([]byte("boundary"), TesseraHashMaxTimestampMS+1, 0); !errors.Is(err, ErrTesseraHashRange) {
+		t.Fatalf("TesseraHashAt(2^48) must return ErrTesseraHashRange, got %v", err)
+	}
+}
+
+func TestTesseraHashTextDecodeUnknownVariant(t *testing.T) {
+	h, err := TesseraHashAt([]byte("variant probe"), 1_700_000_000_000, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []byte{0x00, 0x01, 0x02, 0x04, 0x05, 0xFF} {
+		tampered := h
+		tampered[6] = bad
+		s64 := TesseraHashEncodeBase64URL(tampered)
+		if _, err := TesseraHashDecodeBase64URL(s64); !errors.Is(err, ErrTesseraHashUnknownVariant) {
+			t.Fatalf("DecodeBase64URL(variant 0x%02x) = %v, want ErrTesseraHashUnknownVariant", bad, err)
+		}
+		s32 := TesseraHashEncodeCrockford(tampered)
+		if _, err := TesseraHashDecodeCrockford(s32); !errors.Is(err, ErrTesseraHashUnknownVariant) {
+			t.Fatalf("DecodeCrockford(variant 0x%02x) = %v, want ErrTesseraHashUnknownVariant", bad, err)
+		}
+	}
+}
+
+func TestTesseraHashGeneratorClockRegressionClamps(t *testing.T) {
+	const T = uint64(1_750_000_000_000)
+	prev := SetTesseraHashNowMSForTesting(func() int64 { return int64(T - 10) })
+	defer SetTesseraHashNowMSForTesting(prev)
+
+	g := &TesseraHashGenerator{}
+	g.SetStateForTesting(T, 7)
+	h := g.New([]byte("regressed clock"))
+	d, err := TesseraHashDecode(h[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uint64(d.TimestampMS) != T {
+		t.Fatalf("ts must clamp to last_ts %d, got %d", T, d.TimestampMS)
+	}
+	if d.Counter != 8 {
+		t.Fatalf("counter must advance to 8, got %d", d.Counter)
+	}
+}
+
+func TestTesseraHashGeneratorClockRegressionCounterExhaustSpins(t *testing.T) {
+	// Counter exhaustion during a backward clock jump must spin until the
+	// clock passes last_ts (strictly greater) — the emitted ID must never
+	// sort before its predecessor.
+	const T = uint64(1_750_000_000_000)
+	seq := []int64{int64(T - 5), int64(T - 5), int64(T - 4), int64(T - 1), int64(T), int64(T + 1)}
+	i := 0
+	prev := SetTesseraHashNowMSForTesting(func() int64 {
+		if i < len(seq) {
+			v := seq[i]
+			i++
+			return v
+		}
+		return int64(T + 1)
+	})
+	defer SetTesseraHashNowMSForTesting(prev)
+
+	g := &TesseraHashGenerator{}
+	g.SetStateForTesting(T, 0xFFFF)
+	h := g.New([]byte("exhausted during regression"))
+	d, err := TesseraHashDecode(h[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if uint64(d.TimestampMS) != T+1 {
+		t.Fatalf("spin must wait for clock > last_ts; emitted ts %d, last_ts %d", d.TimestampMS, T)
+	}
+	if d.Counter != 0 {
+		t.Fatalf("counter must reset after exhaust spin, got %d", d.Counter)
 	}
 }
 

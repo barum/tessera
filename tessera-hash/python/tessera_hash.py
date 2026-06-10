@@ -110,22 +110,21 @@ class Generator:
     """
     Generator for TesseraHash identifiers.
 
-    Maintains a small (ts, counter, last_tail) state to disambiguate same-ms
-    calls that hash the same content twice (e.g., a dedupe stream where the
-    same blob arrives twice in the same ms). The counter increments
-    deterministically; no randomness is involved.
+    Maintains a small (ts, counter) state so that consecutive identifiers
+    from one generator are strictly sortable: same-millisecond calls advance
+    the 16-bit counter deterministically; no randomness is involved. The
+    SHAKE-256 tail is a pure function of the content and plays no role in
+    the header state.
 
     Thread safety: this class IS internally locked. TesseraHash's counter
-    semantics require atomic state updates (the "did I see this exact
-    content last ms?" check).
+    semantics require atomic (ts, counter) state updates.
     """
 
-    __slots__ = ("_last_ts", "_counter", "_last_tail", "_lock")
+    __slots__ = ("_last_ts", "_counter", "_lock")
 
     def __init__(self) -> None:
         self._last_ts: int = 0
         self._counter: int = 0
-        self._last_tail: bytes = b""
         self._lock = threading.Lock()
 
     def new(self, content: Union[bytes, bytearray, memoryview]) -> bytes:
@@ -140,30 +139,26 @@ class Generator:
                 # Clock regression: clamp, matching TesseraID Standard semantics.
                 ts = self._last_ts
 
-            if ts == self._last_ts and tail == self._last_tail:
-                # Same ms, same content: counter advances.
+            if ts == self._last_ts:
+                # Same ms: counter advances; consecutive IDs from one
+                # generator must be strictly sortable.
                 self._counter += 1
                 if self._counter > MAX_COUNTER:
-                    # Counter exhausted — spin to next ms.
-                    while _now_ms() == ts:
-                        pass
+                    # Counter exhausted — spin until the clock passes last_ts
+                    # (strictly greater). Spinning on `<= last_ts` (not `== ts`)
+                    # matters after a backward clock jump: the loop must not
+                    # exit while the wall clock still reads at or before the
+                    # last emitted timestamp, or the next ID would sort before
+                    # its predecessor. Matches spec / c/tessera_hash.c.
                     ts = _now_ms()
-                    self._counter = 0
-            elif ts == self._last_ts:
-                # Same ms, different content: counter advances; we want
-                # consecutive IDs from one generator to be strictly sortable.
-                self._counter += 1
-                if self._counter > MAX_COUNTER:
-                    while _now_ms() == ts:
-                        pass
-                    ts = _now_ms()
+                    while ts <= self._last_ts:
+                        ts = _now_ms()
                     self._counter = 0
             else:
                 # New ms: counter resets.
                 self._counter = 0
 
             self._last_ts = ts
-            self._last_tail = tail
             counter = self._counter
 
         return (
@@ -292,6 +287,10 @@ def decode_b64(s: str) -> bytes:
     Enforces canonical form: the final character carries 2 bits of value
     plus 4 bits of zero padding (different from TesseraID's 4+2 because 73 bytes
     is a different length). Inputs with non-zero pad bits are rejected.
+
+    Rejects any variant byte other than 0x03 with UnknownVariant — text
+    decoders validate the variant (spec sec03: every other byte is rejected
+    at decode).
     """
     if len(s) != ENCODED_LEN_B64:
         raise InvalidEncoding(
@@ -306,6 +305,8 @@ def decode_b64(s: str) -> bytes:
         raise InvalidEncoding(f"decoded length {len(raw)} != {TESSERA_HASH_SIZE_BYTES}")
     if encode_b64(raw) != s:
         raise InvalidEncoding("non-canonical Base64URL (pad bits non-zero)")
+    if raw[6] != VARIANT_HASH:
+        raise UnknownVariant(f"TesseraHash variant must be 0x03, got 0x{raw[6]:02x}")
     return raw
 
 
@@ -346,7 +347,12 @@ def encode_b32(raw: bytes) -> str:
 
 
 def decode_b32(s: str) -> bytes:
-    """Decode a 117-character Crockford Base32 TesseraHash string."""
+    """Decode a 117-character Crockford Base32 TesseraHash string.
+
+    Rejects any variant byte other than 0x03 with UnknownVariant — text
+    decoders validate the variant (spec sec03: every other byte is rejected
+    at decode).
+    """
     if len(s) != ENCODED_LEN_B32:
         raise InvalidEncoding(
             f"Crockford Base32 TesseraHash must be {ENCODED_LEN_B32} chars, got {len(s)}"
@@ -369,4 +375,6 @@ def decode_b32(s: str) -> bytes:
         raise InvalidEncoding("Crockford Base32 string has non-zero padding bits")
     if idx != TESSERA_HASH_SIZE_BYTES:
         raise InvalidEncoding(f"decoded length {idx} != {TESSERA_HASH_SIZE_BYTES}")
+    if out[6] != VARIANT_HASH:
+        raise UnknownVariant(f"TesseraHash variant must be 0x03, got 0x{out[6]:02x}")
     return bytes(out)

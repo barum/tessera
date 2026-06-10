@@ -85,7 +85,10 @@ public final class TesseraHashCodec {
     }
 
     public static String encodeCrockford(TesseraHash p) {
-        byte[] in = p.bytesNoCopy();
+        return encodeCrockford(p.bytesNoCopy());
+    }
+
+    static String encodeCrockford(byte[] in) {
         char[] out = new char[TesseraHash.ENCODED_LENGTH_B32];
         long buf = 0;
         int bits = 0;

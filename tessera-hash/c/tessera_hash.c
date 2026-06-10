@@ -16,14 +16,22 @@
 
 /* ---------- Clock (with test override) ---------- */
 static uint64_t tessera_hash_test_now_ms_override = UINT64_MAX;
+static uint64_t tessera_hash_test_now_ms_step = 0;
 
 void tessera_hash_set_now_ms_for_testing(uint64_t value_ms) {
     tessera_hash_test_now_ms_override = value_ms;
+    tessera_hash_test_now_ms_step = 0;
+}
+
+void tessera_hash_set_now_ms_step_for_testing(uint64_t step_ms) {
+    tessera_hash_test_now_ms_step = step_ms;
 }
 
 static uint64_t tessera_hash_now_ms(void) {
     if (tessera_hash_test_now_ms_override != UINT64_MAX) {
-        return tessera_hash_test_now_ms_override;
+        uint64_t v = tessera_hash_test_now_ms_override;
+        tessera_hash_test_now_ms_override += tessera_hash_test_now_ms_step;
+        return v;
     }
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
@@ -63,6 +71,8 @@ static int ct_memcmp(const uint8_t *a, const uint8_t *b, size_t n) {
 void tessera_hash_init(tessera_hash_generator_t *g) {
     g->last_ts = 0;
     g->counter = 0;
+    /* last_tail is reserved/unused (THASH-00005); zero it once for hygiene
+     * and never touch it again. */
     memset(g->last_tail, 0, sizeof(g->last_tail));
 }
 
@@ -71,13 +81,19 @@ void tessera_hash_hash_only(const uint8_t *content, size_t content_len,
     tessera_id_shake256(content, content_len, tail, TESSERA_HASH_TAIL_BYTES);
 }
 
-void tessera_hash_hash_at(const uint8_t *content, size_t content_len,
+tessera_hash_status_t tessera_hash_hash_at(const uint8_t *content, size_t content_len,
                     uint64_t timestamp_ms, uint16_t counter,
                     uint8_t out[TESSERA_HASH_SIZE_BYTES]) {
-    put_be48(out, timestamp_ms & ((1ULL << 48) - 1));
+    if (timestamp_ms > TESSERA_HASH_MAX_TIMESTAMP_MS) {
+        /* Out-of-range timestamps are an error, never silently masked
+         * (matches the Python reference; TP-036 / THASH-00005). */
+        return TESSERA_HASH_E_RANGE;
+    }
+    put_be48(out, timestamp_ms);
     out[TESSERA_HASH_VARIANT_OFFSET] = TESSERA_HASH_VARIANT;
     put_be16(out + TESSERA_HASH_COUNTER_OFFSET, counter);
     tessera_id_shake256(content, content_len, out + TESSERA_HASH_TAIL_OFFSET, TESSERA_HASH_TAIL_BYTES);
+    return TESSERA_HASH_OK;
 }
 
 tessera_hash_status_t tessera_hash_new(tessera_hash_generator_t *g,
@@ -103,7 +119,6 @@ tessera_hash_status_t tessera_hash_new(tessera_hash_generator_t *g,
         g->counter = 0;
     }
     g->last_ts = ts;
-    memcpy(g->last_tail, tail, TESSERA_HASH_TAIL_BYTES);
 
     put_be48(out, ts);
     out[TESSERA_HASH_VARIANT_OFFSET] = TESSERA_HASH_VARIANT;
@@ -204,6 +219,10 @@ tessera_hash_status_t tessera_hash_decode_b64url(const char in[TESSERA_HASH_ENCO
      * b's low 4 bits MUST be zero (pad). */
     if ((b & 0x0F) != 0) return TESSERA_HASH_E_PADDING_BITS;
     out[j+0] = (uint8_t)((a << 2) | (b >> 4));
+    /* Text decoders validate the variant byte (spec sec03). */
+    if (out[TESSERA_HASH_VARIANT_OFFSET] != TESSERA_HASH_VARIANT) {
+        return TESSERA_HASH_E_UNKNOWN_VAR;
+    }
     return TESSERA_HASH_OK;
 }
 
@@ -271,6 +290,10 @@ tessera_hash_status_t tessera_hash_decode_crockford(const char in[TESSERA_HASH_E
     /* 584 % 5 = 4 → 1 trailing pad bit in the low 1 bit of the final char. */
     if (bits > 0 && (buf & ((1ULL << bits) - 1)) != 0) {
         return TESSERA_HASH_E_PADDING_BITS;
+    }
+    /* Text decoders validate the variant byte (spec sec03). */
+    if (out[TESSERA_HASH_VARIANT_OFFSET] != TESSERA_HASH_VARIANT) {
+        return TESSERA_HASH_E_UNKNOWN_VAR;
     }
     return TESSERA_HASH_OK;
 }

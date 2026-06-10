@@ -8,6 +8,7 @@ produces byte-identical JSON.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -290,6 +291,44 @@ def build_invalid_vectors() -> list:
             "expected_error": "InvalidEncoding",
         },
     ]
+
+    # --- TESS-00009 (TP-044): mid-range / boundary-adjacent reserved variant
+    # bytes, binary form. Mirrors tessera-seal's invalid.json coverage so the
+    # reserved-range rejection contract is KAT-pinned symmetrically across
+    # all three projects.
+    for variant in (0x05, 0x10, 0x7F, 0xFE):
+        out.append({
+            "name": f"binary_variant_0x{variant:02x}",
+            "op": "tessera_hash_validate_invalid",
+            "input_kind": "binary_hex",
+            "input_hex": hex_of(valid[:6] + bytes([variant]) + valid[7:]),
+            "expected_error": "UnknownVariant",
+        })
+
+    # --- TESS-00009 (TP-029): string-form wrong-variant records. BOTH text
+    # decoders (98-char Base64URL and 117-char Crockford) MUST validate the
+    # variant byte at decode time and reject non-0x03 values with the
+    # UnknownVariant error class (uniform across languages as of
+    # THASH-00005). These records exercise the library decoders directly, so
+    # a runner can no longer mask a permissive text decoder with a
+    # harness-side variant check. The encoders are length-checked only, so
+    # they can emit wire-valid strings carrying wrong variant bytes.
+    for variant in (0x00, 0x05, 0xFF):
+        bad_raw = valid[:6] + bytes([variant]) + valid[7:]
+        out.append({
+            "name": f"b64_variant_0x{variant:02x}",
+            "op": "tessera_hash_validate_invalid",
+            "input_kind": "b64",
+            "input_str": tessera_hash.encode_b64(bad_raw),
+            "expected_error": "UnknownVariant",
+        })
+        out.append({
+            "name": f"crockford_variant_0x{variant:02x}",
+            "op": "tessera_hash_validate_invalid",
+            "input_kind": "crockford",
+            "input_str": tessera_hash.encode_b32(bad_raw),
+            "expected_error": "UnknownVariant",
+        })
     return out
 
 
@@ -331,22 +370,58 @@ def build_verify_vectors() -> list:
     return out
 
 
-def write_json(path: Path, data: list) -> None:
-    with path.open("w") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
-    print(f"wrote {path.relative_to(PROJECT_ROOT.parent)} ({len(data)} records)")
+def render_json(data: list) -> str:
+    return json.dumps(data, indent=2) + "\n"
 
 
-def main() -> None:
-    write_json(VECTORS_DIR / "tessera_hash_hash_only.json",       build_hash_only_vectors())
-    write_json(VECTORS_DIR / "tessera_hash_decode.json",          build_decode_vectors())
-    write_json(VECTORS_DIR / "tessera_hash_encode_b64.json",      build_encode_b64_vectors())
-    write_json(VECTORS_DIR / "tessera_hash_decode_b64.json",      build_decode_b64_vectors())
-    write_json(VECTORS_DIR / "tessera_hash_encode_crockford.json",build_encode_crockford_vectors())
-    write_json(VECTORS_DIR / "tessera_hash_decode_crockford.json",build_decode_crockford_vectors())
-    write_json(VECTORS_DIR / "tessera_hash_invalid.json",         build_invalid_vectors())
-    write_json(VECTORS_DIR / "tessera_hash_verify.json",          build_verify_vectors())
+def emit_json(path: Path, data: list, write: bool) -> None:
+    """Write (or, by default, dry-run-report) one vector file.
+
+    TESS-00009 / TP-113: the default is a DRY RUN — nothing on disk changes
+    unless --write is passed, so an accidental invocation (or `--help`) can
+    never silently rewrite frozen vectors.
+    """
+    content = render_json(data)
+    if path.exists():
+        status = "unchanged" if path.read_text() == content else "WOULD CHANGE"
+    else:
+        status = "NEW FILE"
+    rel = path.relative_to(PROJECT_ROOT.parent)
+    if write:
+        with path.open("w") as f:
+            f.write(content)
+        print(f"wrote {rel} ({len(data)} records, was {status})")
+    else:
+        print(f"dry-run {rel} ({len(data)} records, {status})")
+
+
+def main(argv: list | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Regenerate the TesseraHash conformance vectors from the Python "
+            "reference. Default is a dry run that only reports what would "
+            "change; pass --write to actually rewrite vectors/*.json. "
+            "Committed vector records are FROZEN append-only — verify with "
+            "tools/scripts/check-vector-freeze.sh after any --write."
+        )
+    )
+    parser.add_argument(
+        "--write",
+        action="store_true",
+        help="actually write the vector files (default: dry run, no writes)",
+    )
+    args = parser.parse_args(argv)
+
+    emit_json(VECTORS_DIR / "tessera_hash_hash_only.json",       build_hash_only_vectors(), args.write)
+    emit_json(VECTORS_DIR / "tessera_hash_decode.json",          build_decode_vectors(), args.write)
+    emit_json(VECTORS_DIR / "tessera_hash_encode_b64.json",      build_encode_b64_vectors(), args.write)
+    emit_json(VECTORS_DIR / "tessera_hash_decode_b64.json",      build_decode_b64_vectors(), args.write)
+    emit_json(VECTORS_DIR / "tessera_hash_encode_crockford.json",build_encode_crockford_vectors(), args.write)
+    emit_json(VECTORS_DIR / "tessera_hash_decode_crockford.json",build_decode_crockford_vectors(), args.write)
+    emit_json(VECTORS_DIR / "tessera_hash_invalid.json",         build_invalid_vectors(), args.write)
+    emit_json(VECTORS_DIR / "tessera_hash_verify.json",          build_verify_vectors(), args.write)
+    if not args.write:
+        print("dry run complete — re-run with --write to apply")
 
 
 if __name__ == "__main__":
