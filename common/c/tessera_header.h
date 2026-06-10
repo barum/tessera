@@ -24,10 +24,12 @@
  *   0x05..0xFE    reserved-future (decoders MUST reject)
  *   0xFF          permanently reserved (defensive)
  *
- * This header is consumed by tessera_id/c, tessera_hash/c, and tessera_seal/c via explicit
- * include of "../common/c/tessera_header.h" from each project's Makefile. The
- * pre-existing project macros (e.g. TesseraID_VARIANT_OFFSET) are kept for
- * backward compatibility and are defined in terms of these umbrella macros.
+ * This header is consumed by tessera-seal/c (explicit include from its Makefile).
+ * tessera-id/c and tessera-hash/c define their offsets locally — deliberate
+ * duplication, per the common/ policy in CLAUDE.md (code is lifted here only
+ * when more than one consumer shares it). The per-project offset macros are
+ * therefore NOT defined in terms of these umbrella macros; the cross-language
+ * conformance harness keeps the layouts identical instead.
  */
 #ifndef TESSERA_COMMON_HEADER_H
 #define TESSERA_COMMON_HEADER_H

@@ -60,9 +60,9 @@ TESSERA_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/ru
 
 \subsection{Branch protection}
 
-\texttt{.github/workflows/conformance.yml} runs the harness on every PR against \texttt{main}. Red harness $\Rightarrow$ no merge. Per-language workflows (\texttt{python.yml}, \texttt{c.yml}, \ldots) cover per-OS and per-toolchain variants independently; the cross-language harness is the only gate that catches polyglot drift.
+\texttt{.github/workflows/conformance.yml} runs the harness on every PR and every push to \texttt{main}; branch protection on \texttt{main} requires its \texttt{cross-language} job, so a red harness blocks merge. It is the only automatically triggered workflow in the repository. The per-language workflows (\texttt{python.yml}, \texttt{c.yml}, \ldots) cover per-OS and per-toolchain variants and are manual-dispatch only; the cross-language harness is the only automatic gate, and the only one that catches polyglot drift.
 
-TesseraSeal has an additional per-project workflow (\texttt{tessera\_seal.yml}, added in TSEAL-00023) that runs the TesseraSeal-only matrix across Ubuntu and macOS for the alpha languages plus the LaTeX whitepaper build.
+TesseraSeal has an additional per-project workflow (\texttt{tessera-seal.yml}, added in TSEAL-00023; manual dispatch) that runs the TesseraSeal-only matrix across Ubuntu and macOS for the alpha languages plus the LaTeX whitepaper build.
 
 \subsection{What a spec change looks like}
 

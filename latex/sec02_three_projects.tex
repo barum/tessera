@@ -12,7 +12,7 @@ Each project under \tessera{} is independent on the wire: a consumer can adopt o
 \tesseraid{} v1 ships two variants:
 \begin{itemize}
 \item \code{0x01} (Standard): wall-clock-driven. Not internally locked; one generator per thread, or caller-locks.
-\item \code{0x02} (HLC): Hybrid Logical Clock \citep{kulkarni2014hlc}. Internally locked. 60-second drift bound: a peer HLC more than 60 s ahead of local physical time is a hard error.
+\item \code{0x02} (HLC): Hybrid Logical Clock \citep{kulkarni2014hlc}. Internally locked. 60-second drift bound: a peer HLC \emph{strictly} more than 60\,000 ms ahead of local physical time is a hard error, never clamped. The bound is normative; an implementation MAY expose a stricter-only local override (smaller than 60\,000 ms) and MUST reject any attempt to configure a larger one.
 \end{itemize}
 
 Canonical text encodings: 55-character Base64URL \citep{rfc4648} (no padding) and 66-character Crockford Base32 \citep{crockford} (case-insensitive on decode, \code{I/L $\to$ 1} and \code{O $\to$ 0} confusables accepted). Both round-trip byte-identical with the binary. Crockford ASCII sort preserves generation-time order.
@@ -45,8 +45,8 @@ The suites \code{0x01}/\code{0x02} carry an unambiguous pure-PQ confidentiality 
 \textbf{Project root:} \texttt{common/}. Not a normative wire format; a shared library directory whose contents are used by more than one project.
 
 \begin{itemize}
-\item \texttt{common/c/keccak.\{h,c\}} (and \texttt{common/java/com/tessera/common/Keccak.java}): SHAKE-256/Keccak. Used by \tesserahash{} (tail computation) and \tesseraseal{} (HKDF salt derivation; hybrid suite combiner). Python and Go use stdlib (\texttt{hashlib.shake\_256}, \texttt{golang.org/x/crypto/sha3}); Rust and TypeScript use audited crates. The \texttt{common/} copy is the source of truth for C, C++, and Java.
-\item \texttt{common/c/tessera\_header.h}: shared offset constants for the 9-byte header layout (\code{TS}, \code{VARIANT}, \code{COUNTER}). All three projects parse the same first nine bytes the same way.
+\item \texttt{common/c/keccak.\{h,c\}} (and \texttt{common/java/com/tessera/common/Keccak.java}): SHAKE-256/Keccak. Used by \tesserahash{} (tail computation) and \tesseraseal{} (HKDF salt derivation; hybrid suite combiner). Python and Go use stdlib (\texttt{hashlib.shake\_256}, \texttt{golang.org/x/crypto/sha3}); Rust and TypeScript follow each project's pinned per-language sources (audited crates, or runtime-provided OpenSSL-backed primitives --- see the per-project pin tables). The \texttt{common/} copy is the source of truth for C, C++, and Java.
+\item \texttt{common/c/tessera\_header.h}: shared offset constants for the 9-byte header layout (\code{TS}, \code{VARIANT}, \code{COUNTER}). Included by \tesseraseal{}'s C port today; the \tesseraid{} and \tesserahash{} C ports define the same offsets locally (deliberate duplication, per the \texttt{common/} policy below). The first-nine-byte layout itself is identical across all three projects, and the conformance harness keeps it that way.
 \item \texttt{common/c/random.\{h,c\}}: OS CSPRNG wrapper. Used by \tesseraid{} (random tail) and \tesseraseal{} (ML-KEM \texttt{Encaps} randomness, X25519 ephemeral keygen).
 \item \texttt{common/c/hkdf\_sha3.\{h,c\}}: HMAC-SHA3-256 and HKDF-SHA3-256. \tesseraseal{}-only as of v1.3, vendored alongside the Keccak source.
 \end{itemize}

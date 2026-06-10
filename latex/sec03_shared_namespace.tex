@@ -34,6 +34,8 @@ Every project's decoder MUST reject every variant byte it does not own:
 \item \tesseraseal{} decoders accept \code{0x04} only. Bytes \code{0x01}, \code{0x02}, \code{0x03}, and reserved-future bytes produce \texttt{UnknownVariant} / \texttt{TESSERA\_SEAL\_E\_UNKNOWN\_VARIANT}.
 \end{itemize}
 
+The contract applies at every decode surface, not just the binary one: the Base64URL and Crockford text decoders MUST validate the variant byte at decode time, exactly as the binary decoders do. As of 2026-06-10 all eight language ports of both text-encoded projects (\tesseraid{}, \tesserahash{}) enforce this, and string-form unknown-variant records in the \texttt{invalid.json} KAT files pin it.
+
 The contract is gated by \texttt{invalid.json} KAT files in every project's \texttt{conformance/vectors/} directory. A decoder that accepts a foreign variant byte fails the cross-language harness; the bug is in the decoder, not in the harness.
 
 \subsection{Why one namespace and not three}
@@ -56,7 +58,7 @@ The first 9 bytes of every project's wire format are layout-compatible: \code{TS
 \item \code{COUNTER(2)}: 16-bit big-endian monotonic counter within a millisecond.
 \end{itemize}
 
-A single C header at \texttt{common/c/tessera\_header.h} pins those offsets. Code that just wants to read the timestamp from any \tessera{} wire form parses the first 6 bytes without knowing or caring which project produced it. Code that wants to dispatch on project reads byte 6.
+The C header at \texttt{common/c/tessera\_header.h} records those offsets; today it is included by \tesseraseal{}'s C port, while the \tesseraid{} and \tesserahash{} C ports define the same offsets locally (deliberate duplication, per the \texttt{common/} policy of lifting code only once sharing is real --- the cross-language harness keeps the layouts identical). Code that just wants to read the timestamp from any \tessera{} wire form parses the first 6 bytes without knowing or caring which project produced it. Code that wants to dispatch on project reads byte 6.
 
 The 9-byte boundary is where the projects diverge: \tesseraid{} writes a 32-byte random tail, \tesserahash{} writes a 64-byte SHAKE-256 tail, and \tesseraseal{} writes a 7-byte body-header continuation (suite + KEM\_CT\_LEN + AD\_LEN) followed by a variable body.
 
@@ -64,4 +66,4 @@ The 9-byte boundary is where the projects diverge: \tesseraid{} writes a 32-byte
 
 \tesseraid{} and \tesserahash{} both encode to Base64URL (RFC 4648 §5) and Crockford Base32. The encoder code paths are identical across the two projects in every language (with different alphabet sizes per project). \tesseraseal{} ships binary-only on the wire: envelope sizes vary, the variable-length text-encoder is more involved than the fixed-length ones, and most callers wrap envelopes with standard Base64URL at the transport layer if they need text.
 
-TesseraID and TesseraHash both apply the same padding-bit guards on decode (Base64URL: final character low-4-bits zero; Crockford: final character low-bit zero). These guards prevent multiple distinct text strings from decoding to the same binary, which would violate canonical round-trip.
+TesseraID and TesseraHash both guard the trailing padding bits on decode, but the pad widths differ per project because the wire sizes differ. \tesseraid{} (41 bytes = 328 bits): the 55-character Base64URL form ends with a character carrying 4 bits of value plus 2 zero pad bits, and the 66-character Crockford form ends with 3 bits of value plus 2 zero pad bits --- in both encodings the final character's low 2 bits MUST be zero. \tesserahash{} (73 bytes = 584 bits): the 98-character Base64URL form ends with 2 bits of value plus 4 zero pad bits (the final character's low 4 bits MUST be zero, so it is always one of \code{A}/\code{Q}/\code{g}/\code{w}), and the 117-character Crockford form ends with 4 bits of value plus 1 zero pad bit (the final character's low bit MUST be zero). These guards prevent multiple distinct text strings from decoding to the same binary, which would violate canonical round-trip.

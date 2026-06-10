@@ -13,6 +13,11 @@ reference implementations, and (where applicable) its own whitepaper.
 
 ## Projects
 
+- Umbrella overview whitepaper: [latex/Tessera_Whitepaper.pdf](latex/Tessera_Whitepaper.pdf)
+  (sources: [latex/](latex/)) — covers the cross-project relationships, shared variant-byte
+  namespace, and polyglot discipline. **Non-normative** relative to the three project
+  whitepapers below; when they disagree, the project whitepaper wins.
+
 ### [tessera-id/](tessera-id/) — Post-Quantum Identifier
 
 A 41-byte, time-sortable identifier with a 256-bit random tail, designed to retain ~128-bit

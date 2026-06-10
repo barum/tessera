@@ -16,7 +16,7 @@ Primitive         & OS CSPRNG                           & SHAKE-256 (FIPS 202)  
 Security claim    & 128-bit Grover second-preimage     & $2^{256}$ classical / $\sim 2^{170}$ BHT collision & ML-KEM-1024 IND-CCA2 + AEAD + UtC commitment \\
 Public artifact?  & Yes (no secrets)                    & Yes (no secrets)                  & No (carries confidential plaintext) \\
 Text encodings    & 55-char Base64URL, 66-char Crockford & 98-char Base64URL, 117-char Crockford & Binary only (v1) \\
-Round-trip determinism & N/A (random)                  & Yes (content-deterministic)       & Yes given fixed RNG seed (KAT vectors) \\
+Round-trip determinism & N/A (random)                  & Yes (content-deterministic)       & Suites \code{0x01}/\code{0x02}: yes, given a fixed RNG seed (how KAT decrypt vectors are generated). Hybrid \code{0x06}: encryption draws fresh X25519 ephemerals from the OS CSPRNG; its KAT files pin captured envelopes, frozen append-only \\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -100,18 +100,18 @@ tessera/
 
 \textbf{Author:} Bahram Samani, \tessera{} monorepo maintainer.
 
-This umbrella whitepaper is built from LaTeX sources under \texttt{latex/} (\texttt{main.tex} + \texttt{secNN\_*.tex}); the build chain is \texttt{pdflatex $\rightarrow$ bibtex $\rightarrow$ pdflatex $\times$ 2} per the Makefile. The artifact at the repo root \texttt{Tessera\_Whitepaper.pdf} is regenerated and committed alongside any normative change to the umbrella.
+This umbrella whitepaper is built from LaTeX sources under \texttt{latex/} (\texttt{main.tex} + \texttt{secNN\_*.tex}); the build chain is \texttt{pdflatex $\rightarrow$ bibtex $\rightarrow$ pdflatex $\times$ 2} per the Makefile. The artifact at \texttt{latex/Tessera\_Whitepaper.pdf} is regenerated and committed alongside any normative change to the umbrella.
 
 \textbf{Per-project documents.} This umbrella does not restate normative content from the per-project whitepapers. Refer to:
 
 \begin{itemize}
 \item \tesseraid{}: \texttt{tessera-id/latex/TesseraID\_Whitepaper.pdf} (repo root: \texttt{TesseraID\_Whitepaper.pdf}). 46-page document covering wire format, security analysis, distributed-systems model, comparisons with UUIDv4/v7/ULID/KSUID/Snowflake, eight-language reference implementations.
-\item \tesserahash{}: \texttt{tessera-hash/latex/TesseraHash\_Whitepaper.pdf} (repo root: \texttt{TesseraHash\_Whitepaper.pdf}). 21-page document covering wire format, SHAKE-256 binding, encodings, security argument, conformance, comparison with adjacent hash formats.
+\item \tesserahash{}: \texttt{tessera-hash/latex/TesseraHash\_Whitepaper.pdf}. 21-page document covering wire format, SHAKE-256 binding, encodings, security argument, conformance, comparison with adjacent hash formats.
 \item \tesseraseal{}: \texttt{tessera-seal/latex/TesseraSeal\_Whitepaper.pdf} (repo root: \texttt{TesseraSeal\_Whitepaper.pdf}). 26-page document covering wire format, ML-KEM-1024 binding, hybrid suite \code{0x06}, AEAD + UtC commitment, KDF, AD-binding patterns, failure modes, side channels, plugin protocol, conformance, comparisons.
 \end{itemize}
 
 \textbf{Authority order} (when sources disagree): the per-project whitepaper for project-specific content; this umbrella whitepaper for cross-project content; then the per-project Python reference; then the per-project canonical C ABI; then every other language port. A cross-language disagreement is never resolved by changing the spec to match an outlier.
 
-\textbf{Conformance gate}: \texttt{tools/conformance/run.sh} is the branch-protection check on \texttt{main}. Latest cross-language run (2026-05-21, alpha quick loop): 1051 PASS, 0 FAIL across all three projects on the four alpha languages.
+\textbf{Conformance gate}: \texttt{tools/conformance/run.sh}, run automatically by \texttt{.github/workflows/conformance.yml} on every PR and push to \texttt{main}; branch protection on \texttt{main} requires that workflow's \texttt{cross-language} job. Latest cross-language run (2026-06-10): the four alpha languages report Python 296 / C 287 / Go 296 / Rust 296 PASS, 0 FAIL (1175 PASS total) across all three projects; the full eight-language run is also green, with C++/TypeScript/Java at 229 PASS each and the CPython extension at 224 PASS + 11 SKIP (those four have no TesseraSeal runner yet and skip the TesseraSeal vector directory; all skips are explicit).
 
-\textbf{Acknowledgments.} Bellare and Hoang for the UtC commitment construction. The OpenSSL, RustCrypto, Go core team, \texttt{kyber-py}, SunJCE, and \texttt{@noble} maintainers for the cryptographic primitive sources \tesseraseal{} vendors. The Cryspen team for \texttt{mlkem-native} (retained as embedded-target fallback). The X-Wing draft authors \citep{xwing-draft} for the combiner design idiom \tesseraseal{}'s hybrid suite borrows. The KyberSlash, PQShield, and GoFetch disclosure teams, whose findings shape \tesseraseal{}'s side-channel disclaimer. The SHAKE-256 / SHA-3 standardization team (Bertoni, Daemen, Peeters, Van Assche) whose primitive is the load-bearing element of every \tessera{} project.
+\textbf{Acknowledgments.} Bellare and Hoang for the UtC commitment construction. The OpenSSL, RustCrypto, Go core team, \texttt{kyber-py}, SunJCE, and \texttt{@noble} maintainers for the cryptographic primitive sources \tesseraseal{} pins per language. The Cryspen team for \texttt{mlkem-native}, evaluated during C-backend selection. The X-Wing draft authors \citep{xwing-draft} for the combiner design idiom \tesseraseal{}'s hybrid suite borrows. The KyberSlash, PQShield, and GoFetch disclosure teams, whose findings shape \tesseraseal{}'s side-channel disclaimer. The SHAKE-256 / SHA-3 standardization team (Bertoni, Daemen, Peeters, Van Assche) whose primitive is the load-bearing element of every \tessera{} project.

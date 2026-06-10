@@ -39,7 +39,7 @@ These apply to all three projects:
 
 \begin{itemize}
 \item \tesseraid{} and \tesserahash{} are \emph{public artifacts} with no secret-dependent control flow. Side-channel attacks on the generator recover, at most, content the attacker may already have submitted (\tesserahash{}) or the rate of identifier generation (\tesseraid{}).
-\item \tesseraseal{} mitigates \emph{software-timing} side channels by vendoring constant-time ML-KEM-1024 and X25519 implementations per language and by maintaining a constant-time decrypt path (single \texttt{DecryptionError} class, synthetic-key AEAD verify on structural failures). \tesseraseal{} explicitly does \emph{not} mitigate power, electromagnetic, frequency-scaling (Hertzbleed), or prefetcher (GoFetch) side channels; the normative side-channel disclaimer is at \texttt{tessera-seal/docs/side-channel-disclaimer.md}.
+\item \tesseraseal{} mitigates \emph{software-timing} side channels by pinning verified constant-time ML-KEM-1024 and X25519 implementations per language and by collapsing every authentication-class decrypt failure into a single \texttt{DecryptionError}. (The \tesseraseal{} whitepaper's \S 9.2 synthetic-key timing-pad mandate is an open spec-vs-implementation alignment item tracked in the v1.2 security-audit notes.) \tesseraseal{} explicitly does \emph{not} mitigate power, electromagnetic, frequency-scaling (Hertzbleed), or prefetcher (GoFetch) side channels; the normative side-channel disclaimer is at \texttt{tessera-seal/docs/side-channel-disclaimer.md}.
 \end{itemize}
 
 \subsection{What \tessera{} as a whole does not provide}

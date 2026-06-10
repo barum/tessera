@@ -7,19 +7,19 @@ The cross-language conformance harness is the single quality signal that catches
 
 \begin{center}
 \small
-\begin{tabular}{@{}ll@{}}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
 \toprule
 \textbf{Path} & \textbf{Contents} \\
 \midrule
 \texttt{tessera-id/conformance/vectors/}     & TesseraID KAT files (decode, encode/decode round-trip, invalid, HLC overflow, min timestamp) \\
 \texttt{tessera-hash/conformance/vectors/}   & TesseraHash KAT files (decode, hash\_only, encode/decode B64URL, encode/decode Crockford, verify, invalid) \\
-\texttt{tessera-seal/conformance/vectors/}  & TesseraSeal KAT files (decrypt, ad\_binding, commitment, kyberslash\_regression, invalid, peek\_header, hybrid\_*) \\
+\texttt{tessera-seal/conformance/vectors/}  & TesseraSeal KAT files (decrypt, ad\_binding, commitment, invalid, peek\_header, min\_timestamp, hybrid\_*); a \texttt{kyberslash\_regression} file is \emph{planned} (backlog), not yet shipped \\
 \texttt{tools/conformance/run.sh}      & Single cross-language entry point \\
 \texttt{tools/conformance/<lang>/}     & Per-language runner sources and binaries \\
-\texttt{.github/workflows/conformance.yml} & Branch-protection gate on \texttt{main} \\
-\texttt{.github/workflows/tessera\_seal.yml}     & TesseraSeal-only matrix CI (TSEAL-00023) \\
+\texttt{.github/workflows/conformance.yml} & Automatic gate: runs on every PR and push to \texttt{main}; its \texttt{cross-language} job is the required branch-protection check \\
+\texttt{.github/workflows/tessera-seal.yml}     & TesseraSeal-only matrix CI (TSEAL-00023); manual dispatch \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{center}
 
 \subsection{The hybrid suite \texorpdfstring{\code{0x06}}{0x06} skip discipline}
@@ -39,31 +39,35 @@ hybrid_supported() {
 
 Languages without hybrid skip the \texttt{hybrid\_*.json} files entirely and MUST reject suite \code{0x06} as \code{UNKNOWN\_SUITE} for any non-hybrid envelope they encounter. When porting hybrid to a new language: (i) implement hybrid in that language, (ii) update the language's conformance runner to accept 96-byte hybrid seeds (the standard runners hard-coded \texttt{len(seed) != 64}), (iii) flip the language's \texttt{hybrid\_supported()} entry, (iv) verify the language's PASS count rises by 9 (one per record across the three hybrid KAT files).
 
-\subsection{Latest cross-language state (2026-05-21, Apple M4 Max)}
+\subsection{Latest cross-language state (2026-06-10)}
 
 \begin{center}
 \small
-\begin{tabular}{@{}lrrl@{}}
+\begin{tabularx}{\textwidth}{@{}lrrrX@{}}
 \toprule
-\textbf{Language} & \textbf{PASS} & \textbf{FAIL} & \textbf{Notes} \\
+\textbf{Language} & \textbf{PASS} & \textbf{FAIL} & \textbf{SKIP} & \textbf{Notes} \\
 \midrule
-Python   & 265 & 0 & TesseraID + TesseraHash + TesseraSeal v1.x including hybrid \code{0x06}. \\
-C        & 256 & 0 & TesseraSeal hybrid skipped; TSEAL-00030 backlog. \\
-Go       & 265 & 0 & TesseraSeal hybrid via stdlib \texttt{crypto/ecdh} (TSEAL-00029). \\
-Rust     & 265 & 0 & TesseraSeal hybrid via \texttt{x25519-dalek} 2 (TSEAL-00028). \\
+Python      & 296 & 0 & 6  & TesseraID + TesseraHash + TesseraSeal v1.x including hybrid \code{0x06}. \\
+C           & 287 & 0 & 6  & TesseraSeal hybrid skipped; TSEAL-00030 backlog. \\
+C++         & 229 & 0 & 6  & TesseraID + TesseraHash only (no TesseraSeal runner yet). \\
+Go          & 296 & 0 & 6  & TesseraSeal hybrid via stdlib \texttt{crypto/ecdh} (TSEAL-00029). \\
+Rust        & 296 & 0 & 6  & TesseraSeal hybrid via \texttt{x25519-dalek} 2 (TSEAL-00028). \\
+TypeScript  & 229 & 0 & 6  & TesseraID + TesseraHash only (no TesseraSeal runner yet). \\
+Java        & 229 & 0 & 6  & TesseraID + TesseraHash only (no TesseraSeal runner yet). \\
+CPython ext & 224 & 0 & 11 & TesseraID + TesseraHash; HLC clock-override records SKIP explicitly. \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{center}
 
-C++, TypeScript, Java, and CPython ext consume TesseraSeal vectors via the Python runner fallback (\texttt{tessera\_seal\_runner\_cmd} empty case in \texttt{tools/conformance/run.sh}) and skip \texttt{hybrid\_*.json}. Their per-language test suites still cover TesseraID and TesseraHash directly.
+C++, TypeScript, Java, and the CPython extension have no \texttt{tessera\_seal\_runner} binary and \emph{skip} the TesseraSeal vector directory entirely --- there is \emph{no} Python-runner fallback for TesseraSeal (\texttt{tessera\_seal\_runner\_cmd} in \texttt{tools/conformance/run.sh} simply has no entry for those four languages). Their TesseraSeal conformance coverage begins when their v1.4 TesseraSeal ports land; their per-language suites cover TesseraID and TesseraHash directly today. SKIP counts are explicit, never silent: \texttt{doc} pseudo-records and records a language cannot execute emit \texttt{SKIP} lines that the harness reconciles against each file's record count.
 
 \subsection{How CI gates the work}
 
-Every PR to \texttt{main} runs the harness across all available language toolchains in the GitHub Actions matrix. The harness is non-flaky by design: KAT vectors are deterministic, the per-language runners do not call out to the network, and the toolchains are pinned. A red harness means one of two things:
+\texttt{conformance.yml} is the only automatically triggered workflow in the repository: it runs on every pull request and every push to \texttt{main} (plus manual dispatch), and branch protection on \texttt{main} requires its \texttt{cross-language} job. Within that job the blocking step is the four-language alpha run (Python + C + Go + Rust --- the four ports with their own TesseraSeal runners); the full eight-language step is informational (\texttt{continue-on-error}) until the remaining TesseraSeal ports land. The ten other workflows (per-language matrices, \texttt{tessera-seal.yml}, \texttt{latex.yml}) are manual-dispatch only, for cost control. The harness is non-flaky by design: KAT vectors are deterministic, the per-language runners do not call out to the network, and the toolchains are pinned. A red harness means one of two things:
 
 \begin{itemize}
 \item A language port produced a different byte sequence for the same input. The port is wrong; fix the port.
-\item The KAT vector itself changed. Re-running \texttt{<project>/conformance/scripts/generate.py} produces non-identical JSON. The Python reference's behavior changed; this is a spec change, requires a release-notes entry, and all other language ports must be updated to match before the PR merges.
+\item The KAT vector itself changed. Shipped vectors are frozen append-only: regeneration MAY add records or files but MUST NOT mutate existing record bytes, and a mutated record fails the freeze check. A Python-reference behavior change is a spec change, requires a release-notes entry, and all other language ports must be updated to match before the PR merges.
 \end{itemize}
 
 The harness is what makes the spec-first methodology load-bearing. Without it, ``Python is right'' is just a slogan; with it, a language port that disagrees with Python is detectable in seconds.

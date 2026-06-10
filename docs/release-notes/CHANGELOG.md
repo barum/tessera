@@ -8,6 +8,8 @@ whitepaper, repo-wide doc/git hygiene. Per-project changes live in
 reference the former PQToolkit / PQID / PQHash / PQCrypt names are a historical
 ledger — kept verbatim; see TESS-00001 for the rename.)
 
+- 2026-06-10 — [TESS-00011 — Benchmark provenance: re-run on documented physical hardware, no hand-edits rule](2026-06-10-tess-00011-benchmark-provenance.md)
+- 2026-06-10 — [TESS-00010 — Umbrella whitepaper truthfulness: fallback claim, pad guards, roadmap artifact, registry sync (docs)](2026-06-10-tess-00010-umbrella-paper-truthfulness.md)
 - 2026-06-10 — [TESS-00009 — KAT coverage expansion: drift, truncation, reserved bytes, string-form invalid, 64KiB/max-AD (sec)](2026-06-10-tess-00009-kat-coverage-expansion.md)
 - 2026-06-10 — [TESS-00007 — Conformance harness enforcement: exit codes, record counts, SKIP column, vector freeze](2026-06-10-tess-00007-harness-enforcement.md)
 - 2026-06-10 — [TESS-00006 — CI restoration: OpenSSL 3.5 build, PR gate for conformance, SHA-pinned actions, portable macOS steps](2026-06-10-tess-00006-ci-restoration.md)
