@@ -99,14 +99,21 @@ export class UnknownVariantError extends TesseraIDError {
 // ---------------------------------------------------------------------------
 
 // Test-only clock override. Set via setNowMsForTesting; pass null to restore.
-let nowMsOverride: number | null = null;
-export function setNowMsForTesting(value: number | null): void {
+// Accepts either a fixed value or a function so tests can drive multi-read
+// paths (e.g. the counter-exhaust spin) deterministically.
+let nowMsOverride: number | (() => number) | null = null;
+export function setNowMsForTesting(value: number | (() => number) | null): void {
   nowMsOverride = value;
 }
 
 // 48-bit ms timestamp uses two halves to avoid JS BigInt cost on hot path.
 // JS Number is safe for integers up to 2^53; 2^48 - 1 fits comfortably.
-const nowMs = (): number => nowMsOverride !== null ? nowMsOverride : Date.now();
+const nowMs = (): number =>
+  nowMsOverride === null
+    ? Date.now()
+    : typeof nowMsOverride === "function"
+      ? nowMsOverride()
+      : nowMsOverride;
 
 function writeHeader(
   out: Uint8Array,
@@ -148,6 +155,12 @@ export class StandardGenerator {
   private lastTs = 0;
   private counter = 0;
 
+  // Test-only: force internal (lastTs, counter) state.
+  setStateForTesting(lastTs: number, counter: number): void {
+    this.lastTs = lastTs;
+    this.counter = counter;
+  }
+
   newId(): Uint8Array {
     const out = new Uint8Array(SIZE_BYTES);
     // Single random fill: 1 byte counter step + 32-byte tail.
@@ -161,9 +174,13 @@ export class StandardGenerator {
       const step = 1 + (rnd[0] & 0x0f);
       const next = this.counter + step;
       if (next > MAX_COUNTER) {
-        // Spin until the next millisecond ticks over.
-        while (nowMs() === ts) { /* spin */ }
-        ts = nowMs();
+        // Counter exhausted in this ms — spin until the clock passes
+        // lastTs (spec sec03: `while now <= last_ts`; matches the C
+        // reference). The <= bound also covers a clock regression
+        // observed mid-exhaust: with `===` the loop would exit
+        // immediately on a regressed clock and lastTs would move
+        // backward, breaking strict monotonicity.
+        do { ts = nowMs(); } while (ts <= this.lastTs);
         this.counter = rnd[0];
       } else {
         this.counter = next;
@@ -356,6 +373,11 @@ export function decodeBase64URL(s: string): Uint8Array {
   // rejected (matching the C reference and spec sec03).
   if (base64url.encode(bytes) !== s) {
     throw new InvalidEncodingError("non-canonical Base64URL (pad bits non-zero)");
+  }
+  // Validate variant byte: text decoders reject unknown variants at
+  // decode, matching decodeCrockford and decode().
+  if (bytes[6] !== VARIANT_STANDARD && bytes[6] !== VARIANT_HLC) {
+    throw new UnknownVariantError(bytes[6]);
   }
   return bytes;
 }

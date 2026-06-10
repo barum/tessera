@@ -132,6 +132,13 @@ tessera_id_status_t tessera_id_std_new(tessera_id_std_generator_t *g, uint8_t ou
 tessera_id_status_t tessera_id_hlc_new(tessera_id_hlc_generator_t *g,
                            const uint8_t *observe9,
                            uint8_t out[TESSERA_ID_SIZE_BYTES]) {
+    /* Drift-bound clamp (TID-00020): the per-generator bound may only be
+     * tightened. 0 selects the normative default; anything above the
+     * normative maximum is a configuration error and produces no output. */
+    uint64_t max_drift = g->max_drift_ms == 0 ? TESSERA_ID_HLC_MAX_DRIFT_MS
+                                              : g->max_drift_ms;
+    if (max_drift > TESSERA_ID_HLC_MAX_DRIFT_MS) return TESSERA_ID_E_HLC_DRIFT;
+
     uint8_t rnd[TESSERA_ID_RANDOM_BYTES];
     if (tessera_id_getrandom(rnd, sizeof(rnd)) != 0) return TESSERA_ID_E_RNG;
 
@@ -144,8 +151,8 @@ tessera_id_status_t tessera_id_hlc_new(tessera_id_hlc_generator_t *g,
     if (observe9 != NULL) {
         uint64_t l_msg = get_be48(observe9);
         uint16_t c_msg = get_be16(observe9 + 7);
-        /* Drift: reject if peer is ahead by more than max_drift_ms. */
-        if (l_msg > pt && (l_msg - pt) > g->max_drift_ms) {
+        /* Drift: reject if peer is ahead by more than the effective bound. */
+        if (l_msg > pt && (l_msg - pt) > max_drift) {
             return TESSERA_ID_E_HLC_DRIFT;
         }
         l_new = l_old > pt ? l_old : pt;
@@ -180,7 +187,10 @@ tessera_id_status_t tessera_id_hlc_new(tessera_id_hlc_generator_t *g,
 }
 
 /* ---------- Base64URL ---------- */
-static const char B64URL_ALPHA[64] =
+/* Sized 65 to include the string literal's NUL terminator (TID-00020);
+ * keeps -Wunterminated-string-initialization quiet. Only indices 0..63 are
+ * ever referenced. */
+static const char B64URL_ALPHA[65] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /* Decode lookup table — compile-time constant (eliminates the lazy-init
@@ -253,11 +263,16 @@ tessera_id_status_t tessera_id_decode_b64url(const char in[TESSERA_ID_ENCODED_LE
     if (((uint32_t)c & 0x03) != 0) return TESSERA_ID_E_PADDING_BITS;
     out[j+0] = (uint8_t)(v >> 8);
     out[j+1] = (uint8_t)(v     );
-    return TESSERA_ID_OK;
+    /* String-decode variant contract (TID-00020): text decoders MUST reject
+     * unknown variant bytes; do not hand back undecodable payloads. */
+    return tessera_id_validate(out);
 }
 
 /* ---------- Crockford Base32 ---------- */
-static const char CROCKFORD_ALPHA[32] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+/* Sized 33 to include the string literal's NUL terminator (TID-00020);
+ * keeps -Wunterminated-string-initialization quiet. Only indices 0..31 are
+ * ever referenced. */
+static const char CROCKFORD_ALPHA[33] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 /* Compile-time decode lookup. Canonical: 0..9 = 0..9; A..H,J,K,M,N,P,Q,R,S,T,V,W,X,Y,Z
  * = 10..31 (skipping I, L, O, U from the canonical alphabet). Confusables:
@@ -329,7 +344,9 @@ tessera_id_status_t tessera_id_decode_crockford(const char in[TESSERA_ID_ENCODED
     uint16_t acc = ((uint16_t)a << 5) | (uint16_t)b;
     if ((acc & 0x03) != 0) return TESSERA_ID_E_PADDING_BITS;
     out[j] = (uint8_t)(acc >> 2);
-    return TESSERA_ID_OK;
+    /* String-decode variant contract (TID-00020): text decoders MUST reject
+     * unknown variant bytes; do not hand back undecodable payloads. */
+    return tessera_id_validate(out);
 }
 
 /* ---------- Field accessors ---------- */

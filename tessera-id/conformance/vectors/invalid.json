@@ -89,5 +89,75 @@
     "input_kind": "crockford",
     "input_str": "U65WZSB8000G008000000000000000000000000000000000000000000000000000",
     "expected_error": "InvalidEncoding"
+  },
+  {
+    "name": "binary_variant_0x05",
+    "op": "validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe568000500010000000000000000000000000000000000000000000000000000000000000000",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "binary_variant_0x10",
+    "op": "validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe568001000010000000000000000000000000000000000000000000000000000000000000000",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "binary_variant_0x7f",
+    "op": "validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe568007f00010000000000000000000000000000000000000000000000000000000000000000",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "binary_variant_0xfe",
+    "op": "validate_invalid",
+    "input_kind": "binary_hex",
+    "input_hex": "018bcfe56800fe00010000000000000000000000000000000000000000000000000000000000000000",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "b64_variant_0x00",
+    "op": "validate_invalid",
+    "input_kind": "b64",
+    "input_str": "AYvP5WgAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "crockford_variant_0x00",
+    "op": "validate_invalid",
+    "input_kind": "crockford",
+    "input_str": "065WZSB80000008000000000000000000000000000000000000000000000000000",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "b64_variant_0x05",
+    "op": "validate_invalid",
+    "input_kind": "b64",
+    "input_str": "AYvP5WgABQABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "crockford_variant_0x05",
+    "op": "validate_invalid",
+    "input_kind": "crockford",
+    "input_str": "065WZSB8002G008000000000000000000000000000000000000000000000000000",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "b64_variant_0xff",
+    "op": "validate_invalid",
+    "input_kind": "b64",
+    "input_str": "AYvP5WgA_wABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "expected_error": "UnknownVariant"
+  },
+  {
+    "name": "crockford_variant_0xff",
+    "op": "validate_invalid",
+    "input_kind": "crockford",
+    "input_str": "065WZSB803ZG008000000000000000000000000000000000000000000000000000",
+    "expected_error": "UnknownVariant"
   }
 ]

@@ -2,6 +2,7 @@ package tesseraid
 
 import (
 	"bytes"
+	"errors"
 	"sync"
 	"testing"
 )
@@ -94,6 +95,76 @@ func TestDecode(t *testing.T) {
 	}
 	if d.TimestampMS == 0 {
 		t.Errorf("timestamp = 0")
+	}
+}
+
+// TestCounterExhaustClockRegression drives the rare counter-exhaust path
+// while the clock has regressed below the generator's lastTS. The spec
+// (sec03) requires the exhaust spin to run `while now <= last_ts`: the
+// emitted ID must carry a timestamp strictly greater than lastTS, never a
+// regressed one (which would sort before its predecessor).
+func TestCounterExhaustClockRegression(t *testing.T) {
+	const t0 int64 = 1_750_000_000_000
+
+	calls := 0
+	prev := SetNowMSForTesting(func() int64 {
+		calls++
+		if calls < 5 {
+			return t0 - 5_000 // regressed clock
+		}
+		return t0 + 1 // clock finally passes lastTS
+	})
+	defer SetNowMSForTesting(prev)
+
+	g := StandardGenerator{lastTS: t0, counter: maxCounter} // any step exhausts
+
+	id, err := g.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := Decode(id[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.TimestampMS <= t0 {
+		t.Fatalf("timestamp = %d; want > lastTS %d (exhaust spin must not exit on a regressed clock)",
+			d.TimestampMS, t0)
+	}
+	if g.lastTS != d.TimestampMS {
+		t.Fatalf("lastTS = %d; want %d (must track emitted timestamp)", g.lastTS, d.TimestampMS)
+	}
+}
+
+// TestStringDecodeUnknownVariant pins the string-decode contract: both text
+// decoders MUST reject unknown variant bytes at decode (not only in a
+// separate validate step).
+func TestStringDecodeUnknownVariant(t *testing.T) {
+	id, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []byte{0x00, 0x03, 0x7F, 0xFF} {
+		tampered := id
+		tampered[6] = bad
+
+		if _, err := DecodeBase64URL(EncodeBase64URL(tampered)); !errors.Is(err, ErrUnknownVariant) {
+			t.Errorf("DecodeBase64URL(variant 0x%02x) err = %v; want ErrUnknownVariant", bad, err)
+		}
+		if _, err := DecodeCrockford(EncodeCrockford(tampered)); !errors.Is(err, ErrUnknownVariant) {
+			t.Errorf("DecodeCrockford(variant 0x%02x) err = %v; want ErrUnknownVariant", bad, err)
+		}
+	}
+
+	// Known variants still decode through both text forms.
+	for _, good := range []byte{VariantStandard, VariantHLC} {
+		ok := id
+		ok[6] = good
+		if _, err := DecodeBase64URL(EncodeBase64URL(ok)); err != nil {
+			t.Errorf("DecodeBase64URL(variant 0x%02x) unexpected err: %v", good, err)
+		}
+		if _, err := DecodeCrockford(EncodeCrockford(ok)); err != nil {
+			t.Errorf("DecodeCrockford(variant 0x%02x) unexpected err: %v", good, err)
+		}
 	}
 }
 

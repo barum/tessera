@@ -134,6 +134,94 @@ def test_clock_clamp():
     print("✓ clock regression handled by clamp rule")
 
 
+class _FakeClock:
+    """Deterministic _now_ms replacement: returns queued values in order,
+    repeating the final value once the queue is drained."""
+
+    def __init__(self, values):
+        self._values = list(values)
+
+    def __call__(self):
+        if len(self._values) > 1:
+            return self._values.pop(0)
+        return self._values[0]
+
+
+def _spin_regression_case(module):
+    """Clock regression + counter exhaust must spin until the clock strictly
+    exceeds last_ts (spec sec03: `while now_ms() <= last_ts`), never emit a
+    regressed timestamp, and preserve strict monotonic byte order."""
+    t0 = 1_800_000_000_000
+    real_now = module._now_ms
+    try:
+        # First call at t0 sets last_ts = t0. Then the clock regresses by
+        # 500ms while the counter is exhausted; the generator must spin
+        # until the clock strictly exceeds t0 (here: t0 + 1).
+        module._now_ms = _FakeClock([t0, t0 - 500, t0 - 500, t0 - 500, t0, t0 + 1])
+        g = module.StandardGenerator()
+        a = g.new()
+        assert int.from_bytes(a[0:6], "big") == t0
+        g._counter = module.MAX_COUNTER  # force exhaust on the next same-ms step
+        b = g.new()
+    finally:
+        module._now_ms = real_now
+    ts_b = int.from_bytes(b[0:6], "big")
+    assert ts_b == t0 + 1, \
+        f"{module.__name__}: expected spin past regression to t0+1, got ts {ts_b}"
+    assert b > a, f"{module.__name__}: strict monotonic byte order violated"
+    assert g._last_ts == t0 + 1, f"{module.__name__}: last_ts moved backward"
+
+
+def test_spin_clock_regression_counter_exhaust():
+    _spin_regression_case(tessera_id)
+    _spin_regression_case(tessera_id_fast)
+    print("✓ counter exhaust during clock regression spins past last_ts (canonical + fast)")
+
+
+def test_decode_text_unknown_variant():
+    """decode_b64 / decode_b32 must validate the variant byte at decode time."""
+    raw = tessera_id.new()
+    for bad_variant in (0x00, 0x05, 0xFF):
+        bad = raw[:6] + bytes([bad_variant]) + raw[7:]
+        s64 = tessera_id.encode_b64(bad)
+        s32 = tessera_id.encode_b32(bad)
+        for decoder, s in ((tessera_id.decode_b64, s64), (tessera_id.decode_b32, s32)):
+            try:
+                decoder(s)
+                assert False, \
+                    f"{decoder.__name__} accepted variant 0x{bad_variant:02x}"
+            except tessera_id.UnknownVariant:
+                pass
+    # Known variants still decode fine through both text forms.
+    assert tessera_id.decode_b64(tessera_id.encode_b64(raw)) == raw
+    assert tessera_id.decode_b32(tessera_id.encode_b32(raw)) == raw
+    print("✓ text decoders reject unknown variants (0x00/0x05/0xFF, b64 + crockford)")
+
+
+def test_fast_exception_parity():
+    """tessera_id_fast must raise the SAME exception classes as tessera_id."""
+    assert tessera_id_fast.TesseraIDError is tessera_id.TesseraIDError
+    assert tessera_id_fast.HLCDriftError is tessera_id.HLCDriftError
+    assert tessera_id_fast.InvalidEncoding is tessera_id.InvalidEncoding
+    assert tessera_id_fast.UnknownVariant is tessera_id.UnknownVariant
+
+    bad_ts = int(time.time() * 1000) + 120_000  # 2 minutes ahead
+    drifted = bad_ts.to_bytes(6, "big") + bytes([0x02]) + (0).to_bytes(2, "big") + b"\x00" * 32
+    g = tessera_id_fast.HLCGenerator()
+    try:
+        g.new(observe=drifted)
+        assert False, "fast HLC should have raised HLCDriftError"
+    except tessera_id.HLCDriftError:
+        pass
+
+    try:
+        g.new(observe=b"\x00" * 40)  # wrong length
+        assert False, "fast HLC should have raised InvalidEncoding"
+    except tessera_id.InvalidEncoding:
+        pass
+    print("✓ fast raises the same exception types as the canonical reference")
+
+
 def test_canonical_vs_fast_compatibility():
     """Both implementations produce wire-compatible output."""
     a = tessera_id.new()
@@ -156,5 +244,8 @@ if __name__ == "__main__":
     test_hlc_drift_bound()
     test_decode_unknown_variant()
     test_clock_clamp()
+    test_spin_clock_regression_counter_exhaust()
+    test_decode_text_unknown_variant()
+    test_fast_exception_parity()
     test_canonical_vs_fast_compatibility()
     print("\nAll tests passed.")

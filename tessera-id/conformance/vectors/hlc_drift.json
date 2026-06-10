@@ -1,0 +1,38 @@
+[
+  {
+    "name": "doc",
+    "op": "hlc_overflow",
+    "doc": "HLC drift-bound KATs (TP-043). HLC_MAX_DRIFT_MS = 60_000 and the comparison is STRICT (l_msg - pt > 60_000 rejects): a peer exactly 60_000 ms ahead of the local physical clock MUST be accepted; 60_001 ms ahead MUST raise the HLC drift error (HLCDriftError / TESSERA_ID_E_HLC_DRIFT / ErrHLCDrift) and produce no output \u2014 never a clamp. Records with `expects_error` = \"HLC_DRIFT\" assert the rejection; runners treat success there as FAIL."
+  },
+  {
+    "name": "drift_60000ms_boundary_accepted",
+    "op": "hlc_overflow",
+    "start": {
+      "l_old": 1700000000000,
+      "c_old": 3
+    },
+    "physical_time_ms": 1700000000000,
+    "observe": {
+      "l_msg": 1700000060000,
+      "c_msg": 7
+    },
+    "expected": {
+      "l_new": 1700000060000,
+      "c_new": 8
+    }
+  },
+  {
+    "name": "drift_60001ms_rejected",
+    "op": "hlc_overflow",
+    "start": {
+      "l_old": 1700000000000,
+      "c_old": 3
+    },
+    "physical_time_ms": 1700000000000,
+    "observe": {
+      "l_msg": 1700000060001,
+      "c_msg": 0
+    },
+    "expects_error": "HLC_DRIFT"
+  }
+]

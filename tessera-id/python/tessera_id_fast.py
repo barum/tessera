@@ -20,6 +20,16 @@ import threading
 import time
 from typing import Optional
 
+# Shared error taxonomy: raise the SAME exception classes as the canonical
+# reference so callers can catch tessera_id.* types regardless of which
+# implementation produced the error (TP-035 / TID-00017).
+from tessera_id import (  # noqa: F401  (re-exported as public API)
+    HLCDriftError,
+    InvalidEncoding,
+    TesseraIDError,
+    UnknownVariant,
+)
+
 VARIANT_STANDARD = 0x01
 VARIANT_HLC = 0x02
 TESSERA_ID_SIZE = 41
@@ -59,7 +69,11 @@ class StandardGenerator:
             step = 1 + (rnd[0] & 0x0F)
             counter = self._counter + step
             if counter > MAX_COUNTER:
-                while _now_ms() == ts:
+                # Spin until the wall clock strictly exceeds last_ts (spec
+                # sec03: `while now_ms() <= last_ts`). Equality-only spin
+                # would exit immediately after a clock regression and emit
+                # a regressed timestamp.
+                while _now_ms() <= self._last_ts:
                     pass
                 ts = _now_ms()
                 counter = rnd[0]
@@ -90,12 +104,12 @@ class HLCGenerator:
 
             if observe is not None:
                 if len(observe) != TESSERA_ID_SIZE:
-                    raise ValueError("observe must be 41 bytes")
+                    raise InvalidEncoding(f"observe must be {TESSERA_ID_SIZE} bytes")
                 l_msg = int.from_bytes(observe[0:6], "big")
                 c_msg = int.from_bytes(observe[7:9], "big")
 
                 if l_msg - pt > HLC_MAX_DRIFT_MS:
-                    raise ValueError(
+                    raise HLCDriftError(
                         f"observed HLC {l_msg - pt}ms ahead of physical clock"
                     )
 

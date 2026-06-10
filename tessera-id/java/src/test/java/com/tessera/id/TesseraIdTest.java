@@ -28,6 +28,16 @@ public class TesseraIdTest {
         run("crockford_sort_preserving",  TesseraIdTest::testCrockfordSortPreserving);
         run("hlc_observation_advances",   TesseraIdTest::testHLCObservation);
         run("hlc_drift_rejected",         TesseraIdTest::testHLCDriftRejected);
+        run("hlc_observe_decoded_id",     TesseraIdTest::testHLCObserveDecodedId);
+        run("hlc_observe_decoded_drift_rejected", TesseraIdTest::testHLCObserveDecodedDriftRejected);
+        run("hlc_drift_bound_relax_rejected",     TesseraIdTest::testHLCDriftBoundRelaxRejected);
+        run("hlc_drift_bound_stricter_allowed",   TesseraIdTest::testHLCDriftBoundStricterAllowed);
+        run("b64_decode_rejects_unknown_variant",       TesseraIdTest::testB64DecodeRejectsUnknownVariant);
+        run("crockford_decode_rejects_unknown_variant", TesseraIdTest::testCrockfordDecodeRejectsUnknownVariant);
+        run("standard_clock_regression_clamps",     TesseraIdTest::testStandardClockRegressionClamps);
+        run("standard_regression_exhaust_monotonic", TesseraIdTest::testStandardRegressionExhaustMonotonic);
+        run("locking_contract",           TesseraIdTest::testLockingContract);
+        run("synchronized_wrapper_concurrent",    TesseraIdTest::testSynchronizedWrapperConcurrent);
         run("decoder_rejects_short",      TesseraIdTest::testDecoderRejectsShort);
         run("decoder_rejects_bad_char",   TesseraIdTest::testDecoderRejectsBadChar);
         run("decoder_rejects_bad_pad",    TesseraIdTest::testDecoderRejectsBadPad);
@@ -171,9 +181,209 @@ public class TesseraIdTest {
         try {
             h.nextObserving(farFuture, 0);
             throw new AssertionError("expected drift rejection");
-        } catch (HLCGenerator.DriftExceededException expected) {
+        } catch (HLCGenerator.HLCDriftError expected) {
             // ok
         }
+    }
+
+    private static void testHLCObserveDecodedId() {
+        HLCGenerator a = new HLCGenerator();
+        HLCGenerator b = new HLCGenerator();
+        TesseraId first = a.next();
+        TesseraId peer = b.next();
+        TesseraId merged = a.nextObserving(peer);
+        assertTrue(merged.compareTo(first) > 0, "HLC didn't advance after decoded observation");
+        assertTrue(merged.timestampMs() >= peer.timestampMs(), "merged l below observed l");
+        try {
+            a.nextObserving((TesseraId) null);
+            throw new AssertionError("expected null-observation rejection");
+        } catch (IllegalArgumentException expected) { }
+    }
+
+    private static void testHLCObserveDecodedDriftRejected() {
+        HLCGenerator h = new HLCGenerator();
+        long far = System.currentTimeMillis() + 120_000L;  // 2 minutes ahead
+        byte[] raw = new byte[41];
+        raw[0] = (byte)((far >>> 40) & 0xFF);
+        raw[1] = (byte)((far >>> 32) & 0xFF);
+        raw[2] = (byte)((far >>> 24) & 0xFF);
+        raw[3] = (byte)((far >>> 16) & 0xFF);
+        raw[4] = (byte)((far >>>  8) & 0xFF);
+        raw[5] = (byte)( far         & 0xFF);
+        raw[6] = TesseraId.VARIANT_HLC;
+        TesseraId peer = new TesseraId(raw);  // valid length + variant, far-future HLC
+        try {
+            h.nextObserving(peer);
+            throw new AssertionError("expected drift rejection for decoded observation");
+        } catch (HLCGenerator.HLCDriftError expected) {
+            // ok
+        }
+    }
+
+    private static void testHLCDriftBoundRelaxRejected() {
+        // The normative 60 000 ms bound may be tightened, never relaxed.
+        long[] invalid = { 60_001L, 120_000L, 0L, -1L };
+        for (long bound : invalid) {
+            try {
+                new HLCGenerator(new java.security.SecureRandom(), bound);
+                throw new AssertionError("expected rejection of maxDriftMs=" + bound);
+            } catch (IllegalArgumentException expected) { }
+        }
+        // The normative default itself is accepted.
+        new HLCGenerator(new java.security.SecureRandom(), HLCGenerator.DEFAULT_MAX_DRIFT_MS);
+    }
+
+    private static void testHLCDriftBoundStricterAllowed() {
+        HLCGenerator strict = new HLCGenerator(new java.security.SecureRandom(), 30_000L);
+        try {
+            strict.nextObserving(System.currentTimeMillis() + 45_000L, 0);
+            throw new AssertionError("expected stricter-bound rejection at +45s");
+        } catch (HLCGenerator.HLCDriftError expected) { }
+        strict.nextObserving(System.currentTimeMillis() + 10_000L, 0);   // within 30s: ok
+        HLCGenerator dflt = new HLCGenerator();
+        dflt.nextObserving(System.currentTimeMillis() + 45_000L, 0);     // within normative 60s: ok
+    }
+
+    private static final byte[] UNKNOWN_VARIANTS = { 0x00, 0x03, 0x05, (byte) 0xFF };
+
+    private static void testB64DecodeRejectsUnknownVariant() {
+        for (byte v : UNKNOWN_VARIANTS) {
+            byte[] raw = new byte[41];
+            raw[6] = v;
+            String s = Codec.encodeBase64Url(raw);
+            try {
+                Codec.decodeBase64Url(s);
+                throw new AssertionError(String.format(
+                    "expected b64 decode rejection of variant 0x%02X", v));
+            } catch (IllegalArgumentException expected) { }
+        }
+    }
+
+    private static void testCrockfordDecodeRejectsUnknownVariant() {
+        for (byte v : UNKNOWN_VARIANTS) {
+            byte[] raw = new byte[41];
+            raw[6] = v;
+            String s = Codec.encodeCrockford(raw);
+            try {
+                Codec.decodeCrockford(s);
+                throw new AssertionError(String.format(
+                    "expected Crockford decode rejection of variant 0x%02X", v));
+            } catch (IllegalArgumentException expected) { }
+        }
+    }
+
+    private static void testStandardClockRegressionClamps() {
+        final long t0 = 1_750_000_000_000L;
+        try {
+            StandardGenerator.setNowMsForTesting(t0);
+            StandardGenerator g = new StandardGenerator();
+            TesseraId first = g.next();
+            assertTrue(first.timestampMs() == t0, "ts != t0");
+            // Regress the test clock 30 s; the generator must clamp to lastTs.
+            StandardGenerator.setNowMsForTesting(t0 - 30_000L);
+            TesseraId second = g.next();
+            assertTrue(second.timestampMs() == t0, "regressed clock leaked into timestamp");
+            assertTrue(second.compareTo(first) > 0, "non-monotonic across regression");
+        } finally {
+            StandardGenerator.setNowMsForTesting(Long.MIN_VALUE);
+        }
+    }
+
+    /**
+     * TP-025 contract: when the counter exhausts while the wall clock has
+     * regressed, the generator must spin on {@code now <= last_ts} (spec §3) —
+     * never emit an ID with a regressed timestamp. A buggy {@code now == ts}
+     * spin would exit immediately during regression and break monotonicity.
+     */
+    private static void testStandardRegressionExhaustMonotonic() {
+        final long t0 = 1_750_000_000_000L;
+        Thread releaser = null;
+        try {
+            StandardGenerator.setNowMsForTesting(t0);
+            StandardGenerator g = new StandardGenerator();
+            TesseraId prev = g.next();
+            assertTrue(prev.timestampMs() == t0, "ts != t0");
+
+            // Regress the test clock 5 s and drive the counter to exhaustion.
+            StandardGenerator.setNowMsForTesting(t0 - 5_000L);
+            boolean advanced = false;
+            for (int i = 0; i < 80_000; i++) {
+                TesseraId cur = g.next();
+                assertTrue(cur.compareTo(prev) > 0, "non-monotonic at i=" + i
+                    + " prevTs=" + prev.timestampMs() + " curTs=" + cur.timestampMs());
+                if (cur.timestampMs() > t0) {
+                    // Exhaust path taken: the spin only exits once the clock
+                    // moves strictly past lastTs, never on the regressed value.
+                    assertTrue(cur.timestampMs() == t0 + 1,
+                        "unexpected post-spin timestamp " + cur.timestampMs());
+                    advanced = true;
+                    break;
+                }
+                assertTrue(cur.timestampMs() == t0, "timestamp regressed at i=" + i);
+                prev = cur;
+                if (releaser == null && cur.counter() >= 0xFFF0) {
+                    // Exhaustion is at most 16 calls away (step is 1..16).
+                    // Arm a watcher that advances the clock so a spec-correct
+                    // spin can exit; a buggy '==' spin exits immediately with
+                    // the regressed timestamp and fails the asserts above
+                    // long before this watcher fires.
+                    releaser = new Thread(() -> {
+                        try { Thread.sleep(250); } catch (InterruptedException ignored) { }
+                        StandardGenerator.setNowMsForTesting(t0 + 1);
+                    });
+                    releaser.setDaemon(true);
+                    releaser.start();
+                }
+            }
+            assertTrue(advanced, "counter never exhausted within 80k iterations");
+        } finally {
+            if (releaser != null) {
+                try { releaser.join(2_000); } catch (InterruptedException ignored) { }
+            }
+            StandardGenerator.setNowMsForTesting(Long.MIN_VALUE);
+        }
+    }
+
+    private static void testLockingContract() {
+        try {
+            java.lang.reflect.Method base = StandardGenerator.class.getDeclaredMethod("next");
+            assertTrue(!java.lang.reflect.Modifier.isSynchronized(base.getModifiers()),
+                "StandardGenerator.next() must NOT be synchronized (cross-language contract)");
+            java.lang.reflect.Method wrap = SynchronizedStandardGenerator.class.getDeclaredMethod("next");
+            assertTrue(java.lang.reflect.Modifier.isSynchronized(wrap.getModifiers()),
+                "SynchronizedStandardGenerator.next() must be synchronized");
+            java.lang.reflect.Method hlc = HLCGenerator.class.getDeclaredMethod("next");
+            assertTrue(java.lang.reflect.Modifier.isSynchronized(hlc.getModifiers()),
+                "HLCGenerator.next() must be synchronized (cross-language contract)");
+        } catch (NoSuchMethodException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static void testSynchronizedWrapperConcurrent() {
+        final SynchronizedStandardGenerator g = new SynchronizedStandardGenerator();
+        final int nThreads = 8;
+        final int perThread = 5_000;
+        final Set<String> all = java.util.Collections.synchronizedSet(
+            new HashSet<>(nThreads * perThread * 2));
+        final java.util.concurrent.atomic.AtomicBoolean dup =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+        Thread[] workers = new Thread[nThreads];
+        for (int t = 0; t < nThreads; t++) {
+            workers[t] = new Thread(() -> {
+                for (int i = 0; i < perThread; i++) {
+                    if (!all.add(Codec.encodeBase64Url(g.next()))) {
+                        dup.set(true);
+                    }
+                }
+            });
+            workers[t].start();
+        }
+        for (Thread w : workers) {
+            try { w.join(); } catch (InterruptedException e) { throw new RuntimeException(e); }
+        }
+        assertTrue(!dup.get(), "duplicate ID from shared synchronized generator");
+        assertTrue(all.size() == nThreads * perThread, "lost IDs under concurrency");
     }
 
     private static void testDecoderRejectsShort() {

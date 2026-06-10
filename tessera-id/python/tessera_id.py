@@ -133,8 +133,13 @@ class StandardGenerator:
             step = 1 + (os.urandom(1)[0] & 0x0F)
             self._counter += step
             if self._counter > MAX_COUNTER:
-                # Counter exhausted in this ms — spin to next ms.
-                while _now_ms() == ts:
+                # Counter exhausted in this ms — spin until the wall clock
+                # strictly exceeds last_ts (spec sec03 pseudocode:
+                # `while now_ms() <= last_ts`; C reference tessera_id.c).
+                # Spinning on equality alone would exit immediately after a
+                # clock regression and emit a regressed timestamp, moving
+                # last_ts backward and breaking strict monotonicity.
+                while _now_ms() <= self._last_ts:
                     pass
                 ts = _now_ms()
                 self._counter = os.urandom(1)[0]
@@ -313,6 +318,9 @@ def decode_b64(s: str) -> bytes:
     plus 2 bits of zero padding. Inputs whose pad bits are non-zero are
     rejected (matching the C reference and spec sec03). Implemented as a
     re-encode-and-compare check on the stdlib decoder.
+
+    Also validates the variant byte: unknown variants are rejected at
+    decode time (UnknownVariant), not deferred to a separate validate step.
     """
     if len(s) != 55:
         raise InvalidEncoding(f"Base64URL TesseraID must be 55 chars, got {len(s)}")
@@ -326,6 +334,9 @@ def decode_b64(s: str) -> bytes:
     # Enforce bijection: non-canonical pad bits mean the input is invalid.
     if encode_b64(raw) != s:
         raise InvalidEncoding("non-canonical Base64URL (pad bits non-zero)")
+    variant = raw[6]
+    if variant not in (VARIANT_STANDARD, VARIANT_HLC):
+        raise UnknownVariant(f"unknown variant byte 0x{variant:02x}")
     return raw
 
 
@@ -378,6 +389,9 @@ def decode_b32(s: str) -> bytes:
 
     Inverse of encode_b32: MSB-first, with the final character's low 2 bits
     required to be zero (the encoder's padding).
+
+    Also validates the variant byte: unknown variants are rejected at
+    decode time (UnknownVariant), not deferred to a separate validate step.
     """
     if len(s) != 66:
         raise InvalidEncoding(f"Crockford Base32 TesseraID must be 66 chars, got {len(s)}")
@@ -400,4 +414,7 @@ def decode_b32(s: str) -> bytes:
         raise InvalidEncoding("Crockford Base32 string has non-zero padding bits")
     if idx != TESSERA_ID_SIZE_BYTES:
         raise InvalidEncoding(f"decoded length {idx} != {TESSERA_ID_SIZE_BYTES}")
+    variant = out[6]
+    if variant not in (VARIANT_STANDARD, VARIANT_HLC):
+        raise UnknownVariant(f"unknown variant byte 0x{variant:02x}")
     return bytes(out)

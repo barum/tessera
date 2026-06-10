@@ -53,7 +53,14 @@ typedef struct {
     uint16_t counter;     /* per-ms monotonic counter */
 } tessera_id_std_generator_t;
 
-/* HLC generator (variant 0x02). Caller serializes access externally. */
+/* HLC generator (variant 0x02). Caller serializes access externally.
+ *
+ * max_drift_ms: per-generator drift bound, CLAMPED to the normative maximum
+ * (TID-00020). A caller MAY set a STRICTER (smaller) bound; 0 means the
+ * normative default (TESSERA_ID_HLC_MAX_DRIFT_MS). Setting a bound LARGER
+ * than TESSERA_ID_HLC_MAX_DRIFT_MS is a configuration error:
+ * tessera_id_hlc_new() rejects it with TESSERA_ID_E_HLC_DRIFT and produces
+ * no output. The field is retained for ABI compatibility. */
 typedef struct {
     uint64_t l;           /* logical time (ms) */
     uint16_t c;           /* logical counter */
@@ -69,6 +76,10 @@ tessera_id_status_t tessera_id_std_new(tessera_id_std_generator_t *g, uint8_t ou
 /* Generate an HLC (0x02) TesseraID. If observe is non-NULL, treat it as a peer's
  * 9-byte clock prefix (6-byte ts || 1-byte variant=0x02 || 2-byte counter)
  * and update local HLC accordingly. Returns TESSERA_ID_OK / TESSERA_ID_E_RNG / TESSERA_ID_E_HLC_DRIFT.
+ * Also returns TESSERA_ID_E_HLC_DRIFT (without generating) when
+ * g->max_drift_ms exceeds TESSERA_ID_HLC_MAX_DRIFT_MS — the drift bound is
+ * clamped to the normative maximum; only stricter (smaller) bounds are
+ * accepted, and 0 selects the default (TID-00020).
  */
 tessera_id_status_t tessera_id_hlc_new(tessera_id_hlc_generator_t *g,
                            const uint8_t *observe9,
@@ -78,7 +89,10 @@ tessera_id_status_t tessera_id_hlc_new(tessera_id_hlc_generator_t *g,
 void tessera_id_encode_b64url(const uint8_t in[TESSERA_ID_SIZE_BYTES],
                         char out[TESSERA_ID_ENCODED_LEN_B64]);
 
-/* Decode 55-char Base64URL into 41 bytes. Returns TESSERA_ID_OK or TESSERA_ID_E_*. */
+/* Decode 55-char Base64URL into 41 bytes. Returns TESSERA_ID_OK or TESSERA_ID_E_*.
+ * Validates the variant byte (TID-00020): inputs whose decoded variant is not
+ * 0x01/0x02 are rejected with TESSERA_ID_E_UNKNOWN_VARIANT. On any error the
+ * contents of out are unspecified. */
 tessera_id_status_t tessera_id_decode_b64url(const char in[TESSERA_ID_ENCODED_LEN_B64],
                                  uint8_t out[TESSERA_ID_SIZE_BYTES]);
 
@@ -87,11 +101,14 @@ void tessera_id_encode_crockford(const uint8_t in[TESSERA_ID_SIZE_BYTES],
                            char out[TESSERA_ID_ENCODED_LEN_B32]);
 
 /* Decode 66-char Crockford Base32 into 41 bytes. Case-insensitive,
- * accepts I/L→1, O→0 confusables. Returns TESSERA_ID_OK or TESSERA_ID_E_*. */
+ * accepts I/L→1, O→0 confusables. Returns TESSERA_ID_OK or TESSERA_ID_E_*.
+ * Validates the variant byte (TID-00020): inputs whose decoded variant is not
+ * 0x01/0x02 are rejected with TESSERA_ID_E_UNKNOWN_VARIANT. On any error the
+ * contents of out are unspecified. */
 tessera_id_status_t tessera_id_decode_crockford(const char in[TESSERA_ID_ENCODED_LEN_B32],
                                     uint8_t out[TESSERA_ID_SIZE_BYTES]);
 
-/* Field accessors (no validation; use tessera_id_decode_validate first if needed). */
+/* Field accessors (no validation; use tessera_id_validate first if needed). */
 uint64_t tessera_id_timestamp_ms(const uint8_t in[TESSERA_ID_SIZE_BYTES]);
 uint8_t  tessera_id_variant(const uint8_t in[TESSERA_ID_SIZE_BYTES]);
 uint16_t tessera_id_counter(const uint8_t in[TESSERA_ID_SIZE_BYTES]);

@@ -45,10 +45,47 @@ inline constexpr std::uint64_t kHLCDefaultDriftMs = 60'000;
 // only for TesseraIDs at or after this epoch.
 inline constexpr std::uint64_t kMinTimestampMs = 1'700'000'000'000ULL;
 
-// --- Error type --------------------------------------------------------
+// --- Error types --------------------------------------------------------
+// Typed taxonomy (TID-00020), mirroring the C status enum and the Python
+// reference's exception classes. TesseraIdError remains the catch-all base,
+// so existing `catch (const TesseraIdError&)` call sites keep working.
+//
+//   C status                       C++ exception
+//   ----------------------------   ---------------------
+//   TESSERA_ID_E_RNG               RngError
+//   TESSERA_ID_E_INVALID_LEN       InvalidEncodingError
+//   TESSERA_ID_E_INVALID_CHAR      InvalidEncodingError
+//   TESSERA_ID_E_PADDING_BITS      InvalidEncodingError
+//   TESSERA_ID_E_UNKNOWN_VARIANT   UnknownVariantError
+//   TESSERA_ID_E_HLC_DRIFT         HLCDriftError
 class TesseraIdError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
+};
+
+// CSPRNG failure (no output is produced).
+class RngError : public TesseraIdError {
+public:
+    using TesseraIdError::TesseraIdError;
+};
+
+// Malformed text/binary encoding: wrong length, invalid character,
+// or non-zero padding bits.
+class InvalidEncodingError : public TesseraIdError {
+public:
+    using TesseraIdError::TesseraIdError;
+};
+
+// Variant byte is not 0x01 (Standard) or 0x02 (HLC).
+class UnknownVariantError : public TesseraIdError {
+public:
+    using TesseraIdError::TesseraIdError;
+};
+
+// Peer HLC observed more than the drift bound ahead of local physical time.
+class HLCDriftError : public TesseraIdError {
+public:
+    using TesseraIdError::TesseraIdError;
 };
 
 // --- TesseraId value type ----------------------------------------------
@@ -81,7 +118,7 @@ inline void getrandom(std::uint8_t* buf, std::size_t n) {
         ssize_t r = ::getrandom(buf + off, n - off, 0);
         if (r < 0) {
             if (errno == EINTR) continue;
-            throw TesseraIdError("getrandom failed");
+            throw RngError("getrandom failed");
         }
         off += static_cast<std::size_t>(r);
     }
@@ -92,7 +129,7 @@ inline void getrandom(std::uint8_t* buf, std::size_t n) {
         std::size_t chunk = std::min<std::size_t>(n - off, 256);
         if (::getentropy(buf + off, chunk) != 0) {
             if (errno == EINTR) continue;
-            throw TesseraIdError("getentropy failed");
+            throw RngError("getentropy failed");
         }
         off += chunk;
     }
@@ -193,7 +230,16 @@ class HLCGenerator {
     std::uint64_t max_drift_ms_ = kHLCDefaultDriftMs;
     mutable std::mutex m_;
 public:
-    void set_max_drift_ms(std::uint64_t d) noexcept { max_drift_ms_ = d; }
+    // Set the per-generator drift bound, CLAMPED to the normative maximum
+    // (TID-00020). A caller MAY set a STRICTER (smaller) bound; 0 selects
+    // the normative default (kHLCDefaultDriftMs). Attempting to RELAX the
+    // bound beyond kHLCDefaultDriftMs throws std::invalid_argument.
+    void set_max_drift_ms(std::uint64_t d) {
+        if (d > kHLCDefaultDriftMs)
+            throw std::invalid_argument(
+                "max_drift_ms may not exceed the normative bound of 60000 ms");
+        max_drift_ms_ = (d == 0) ? kHLCDefaultDriftMs : d;
+    }
     // Test-only: force internal (l, c) state.
     void set_state_for_testing(std::uint64_t l, std::uint16_t c) {
         std::lock_guard guard(m_);
@@ -215,7 +261,7 @@ public:
             std::uint64_t l_msg = observe->logical_time_ms;
             std::uint16_t c_msg = observe->counter;
             if (l_msg > pt && (l_msg - pt) > max_drift_ms_) {
-                throw TesseraIdError("HLC drift exceeded");
+                throw HLCDriftError("HLC drift exceeded");
             }
             l_new = std::max({l_old, l_msg, pt});
             if (l_new == l_old && l_old == l_msg)
@@ -281,9 +327,12 @@ inline const std::array<std::uint8_t, 256>& b64url_table() {
 }
 } // namespace detail
 
+// Decodes a 55-char Base64URL TesseraID. Validates the variant byte
+// (TID-00020): inputs whose decoded variant is not 0x01/0x02 throw
+// UnknownVariantError. Malformed text throws InvalidEncodingError.
 [[nodiscard]] inline TesseraId decode_b64url(std::string_view s) {
     if (s.size() != kEncodedLenB64URL)
-        throw TesseraIdError("B64URL TesseraID must be 55 chars");
+        throw InvalidEncodingError("B64URL TesseraID must be 55 chars");
     const auto& T = detail::b64url_table();
     TesseraId out;
     auto& b = out.bytes;
@@ -293,7 +342,7 @@ inline const std::array<std::uint8_t, 256>& b64url_table() {
         std::uint8_t bb = T[(std::uint8_t)s[i+1]];
         std::uint8_t c = T[(std::uint8_t)s[i+2]];
         std::uint8_t d = T[(std::uint8_t)s[i+3]];
-        if ((a | bb | c | d) == 0xFF) throw TesseraIdError("invalid B64URL char");
+        if ((a | bb | c | d) == 0xFF) throw InvalidEncodingError("invalid B64URL char");
         std::uint32_t v = ((std::uint32_t)a << 18) | ((std::uint32_t)bb << 12) |
                           ((std::uint32_t)c <<  6) | (std::uint32_t)d;
         b[j+0] = static_cast<std::uint8_t>(v >> 16);
@@ -303,11 +352,15 @@ inline const std::array<std::uint8_t, 256>& b64url_table() {
     std::uint8_t a = T[(std::uint8_t)s[i+0]];
     std::uint8_t bb = T[(std::uint8_t)s[i+1]];
     std::uint8_t c = T[(std::uint8_t)s[i+2]];
-    if ((a | bb | c) == 0xFF) throw TesseraIdError("invalid B64URL char");
+    if ((a | bb | c) == 0xFF) throw InvalidEncodingError("invalid B64URL char");
     std::uint32_t v = ((std::uint32_t)a << 10) | ((std::uint32_t)bb << 4) | ((std::uint32_t)c >> 2);
-    if ((c & 0x03) != 0) throw TesseraIdError("non-zero padding bits");
+    if ((c & 0x03) != 0) throw InvalidEncodingError("non-zero padding bits");
     b[j+0] = static_cast<std::uint8_t>(v >> 8);
     b[j+1] = static_cast<std::uint8_t>(v     );
+    // String-decode variant contract (TID-00020): text decoders MUST reject
+    // unknown variant bytes.
+    if (out.variant() != kVariantStandard && out.variant() != kVariantHLC)
+        throw UnknownVariantError("unknown TesseraID variant");
     return out;
 }
 
@@ -359,9 +412,13 @@ inline const std::array<std::uint8_t, 256>& crockford_table() {
 }
 } // namespace detail
 
+// Decodes a 66-char Crockford Base32 TesseraID (case-insensitive, I/L→1,
+// O→0 confusables accepted). Validates the variant byte (TID-00020): inputs
+// whose decoded variant is not 0x01/0x02 throw UnknownVariantError.
+// Malformed text throws InvalidEncodingError.
 [[nodiscard]] inline TesseraId decode_crockford(std::string_view s) {
     if (s.size() != kEncodedLenCrockford)
-        throw TesseraIdError("Crockford TesseraID must be 66 chars");
+        throw InvalidEncodingError("Crockford TesseraID must be 66 chars");
     const auto& T = detail::crockford_table();
     TesseraId out;
     auto& b = out.bytes;
@@ -370,7 +427,7 @@ inline const std::array<std::uint8_t, 256>& crockford_table() {
         std::uint64_t acc = 0;
         for (int k = 0; k < 8; k++) {
             std::uint8_t v = T[(std::uint8_t)s[i+k]];
-            if (v == 0xFF) throw TesseraIdError("invalid Crockford char");
+            if (v == 0xFF) throw InvalidEncodingError("invalid Crockford char");
             acc = (acc << 5) | v;
         }
         b[j+0] = static_cast<std::uint8_t>(acc >> 32);
@@ -382,10 +439,14 @@ inline const std::array<std::uint8_t, 256>& crockford_table() {
     }
     std::uint8_t a = T[(std::uint8_t)s[i+0]];
     std::uint8_t bb = T[(std::uint8_t)s[i+1]];
-    if ((a | bb) == 0xFF) throw TesseraIdError("invalid Crockford char");
+    if ((a | bb) == 0xFF) throw InvalidEncodingError("invalid Crockford char");
     std::uint16_t acc = static_cast<std::uint16_t>((a << 5) | bb);
-    if ((acc & 0x03) != 0) throw TesseraIdError("non-zero padding bits");
+    if ((acc & 0x03) != 0) throw InvalidEncodingError("non-zero padding bits");
     b[j] = static_cast<std::uint8_t>(acc >> 2);
+    // String-decode variant contract (TID-00020): text decoders MUST reject
+    // unknown variant bytes.
+    if (out.variant() != kVariantStandard && out.variant() != kVariantHLC)
+        throw UnknownVariantError("unknown TesseraID variant");
     return out;
 }
 
@@ -393,7 +454,7 @@ inline const std::array<std::uint8_t, 256>& crockford_table() {
 [[nodiscard]] inline TesseraId validate(const TesseraId& p) {
     auto v = p.variant();
     if (v != kVariantStandard && v != kVariantHLC)
-        throw TesseraIdError("unknown TesseraID variant");
+        throw UnknownVariantError("unknown TesseraID variant");
     return p;
 }
 

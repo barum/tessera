@@ -23,6 +23,7 @@ build:
 		$(SRC_MAIN)/TesseraId.java \
 		$(SRC_MAIN)/Codec.java \
 		$(SRC_MAIN)/StandardGenerator.java \
+		$(SRC_MAIN)/SynchronizedStandardGenerator.java \
 		$(SRC_MAIN)/HLCGenerator.java \
 		$(SRC_MAIN)/Bench.java \
 		$(SRC_MAIN)/FuzzDecode.java

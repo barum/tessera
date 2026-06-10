@@ -307,6 +307,13 @@ impl StandardGenerator {
         StandardGenerator { last_ts: 0, counter: 0 }
     }
 
+    /// Test-only: force the internal (last_ts, counter) state. Production
+    /// code should never need this.
+    pub fn set_state_for_testing(&mut self, last_ts: i64, counter: u16) {
+        self.last_ts = last_ts;
+        self.counter = counter;
+    }
+
     pub fn new_id(&mut self) -> Result<TesseraId, Error> {
         let mut out = [0u8; SIZE_BYTES];
         let mut rnd = [0u8; RANDOM_FIELD_BYTES + 1];
@@ -322,10 +329,20 @@ impl StandardGenerator {
             match self.counter.checked_add(step) {
                 Some(c) => self.counter = c,
                 None => {
-                    while now_ms() == ts {
+                    // Counter exhausted in this ms — spin until the clock
+                    // passes last_ts (spec sec03: `while now <= last_ts`;
+                    // matches the C reference). The <= bound also covers a
+                    // clock regression observed mid-exhaust: with `==` the
+                    // loop would exit immediately on a regressed clock and
+                    // last_ts would move backward, breaking strict
+                    // monotonicity.
+                    loop {
+                        ts = now_ms();
+                        if ts > self.last_ts {
+                            break;
+                        }
                         std::hint::spin_loop();
                     }
-                    ts = now_ms();
                     self.counter = rnd[0] as u16;
                 }
             }
@@ -423,6 +440,11 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
+    /// Serializes tests that set or are sensitive to the global test clock
+    /// override (`set_now_ms_for_testing`), since cargo runs tests in
+    /// parallel by default.
+    static CLOCK_TEST_LOCK: Mutex<()> = Mutex::new(());
+
     #[test]
     fn size() {
         assert_eq!(TesseraId::new().0.len(), SIZE_BYTES);
@@ -481,8 +503,86 @@ mod tests {
         assert!(matches!(TesseraId::from_bytes(&bytes), Err(Error::UnknownVariant(0xFF))));
     }
 
+    /// Drives the rare counter-exhaust path while the clock has regressed
+    /// below the generator's last_ts. The spec (sec03) requires the exhaust
+    /// spin to run `while now <= last_ts`: the emitted ID must carry a
+    /// timestamp strictly greater than last_ts, never a regressed one
+    /// (which would sort before its predecessor).
+    #[test]
+    fn counter_exhaust_clock_regression() {
+        let _guard = CLOCK_TEST_LOCK.lock().unwrap();
+        const T0: i64 = 1_750_000_000_000;
+
+        // Regressed clock: now < last_ts.
+        set_now_ms_for_testing(T0 - 5_000);
+
+        let mut g = StandardGenerator::new();
+        g.set_state_for_testing(T0, MAX_COUNTER); // any step exhausts
+
+        // The exhaust spin reads the global clock override; advance it from
+        // another thread so the spin can terminate once the clock finally
+        // passes last_ts.
+        let bumper = std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            set_now_ms_for_testing(T0 + 1);
+        });
+
+        let id = g.new_id().unwrap();
+        bumper.join().unwrap();
+        set_now_ms_for_testing(-1); // restore the real clock
+
+        assert!(
+            id.timestamp_ms() > T0,
+            "timestamp {} must be > last_ts {} (exhaust spin must not exit on a regressed clock)",
+            id.timestamp_ms(),
+            T0
+        );
+    }
+
+    /// Pins the string-decode contract: both text decoders MUST reject
+    /// unknown variant bytes at decode (not only in a separate validate
+    /// step).
+    #[test]
+    fn unknown_variant_rejected_in_text_decoders() {
+        let id = TesseraId::new();
+        for bad in [0x00u8, 0x03, 0x7F, 0xFF] {
+            let mut bytes = id.0;
+            bytes[6] = bad;
+            let tampered = TesseraId(bytes);
+
+            assert!(
+                matches!(
+                    TesseraId::from_base64url(&tampered.to_base64url()),
+                    Err(Error::UnknownVariant(v)) if v == bad
+                ),
+                "Base64URL decode must reject variant 0x{:02x}",
+                bad
+            );
+            assert!(
+                matches!(
+                    TesseraId::from_crockford(&tampered.to_crockford()),
+                    Err(Error::UnknownVariant(v)) if v == bad
+                ),
+                "Crockford decode must reject variant 0x{:02x}",
+                bad
+            );
+        }
+
+        // Known variants still decode through both text forms.
+        for good in [VARIANT_STANDARD, VARIANT_HLC] {
+            let mut bytes = id.0;
+            bytes[6] = good;
+            let ok = TesseraId(bytes);
+            assert_eq!(TesseraId::from_base64url(&ok.to_base64url()).unwrap(), ok);
+            assert_eq!(TesseraId::from_crockford(&ok.to_crockford()).unwrap(), ok);
+        }
+    }
+
     #[test]
     fn hlc_drift() {
+        // Clock-sensitive: this test derives a drift bound from now_ms(),
+        // which a concurrently-running clock-override test would skew.
+        let _guard = CLOCK_TEST_LOCK.lock().unwrap();
         let mut g = HlcGenerator::new();
         let mut peer = [0u8; SIZE_BYTES];
         let bad_ts = now_ms() + 120_000;

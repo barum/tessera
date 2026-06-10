@@ -10,11 +10,15 @@
  *   tessera_id.new_hlc(observe=None) -> bytes (41-byte HLC TesseraID; observe is 9-byte peer prefix or None)
  *   tessera_id.encode_b64(b)         -> str  (55-char Base64URL)
  *   tessera_id.encode_b32(b)         -> str  (66-char Crockford Base32)
- *   tessera_id.decode_b64(s)         -> bytes
- *   tessera_id.decode_b32(s)         -> bytes
+ *   tessera_id.decode_b64(s)         -> bytes (rejects unknown variant bytes)
+ *   tessera_id.decode_b32(s)         -> bytes (rejects unknown variant bytes)
  *   tessera_id.timestamp_ms(b)       -> int
  *   tessera_id.variant(b)            -> int
  *   tessera_id.counter(b)            -> int
+ *   tessera_id.validate(b)           -> None (raises UnknownVariantError on non-0x01/0x02 variant)
+ *
+ * Exceptions (TID-00020): TesseraIdError (base), RngError,
+ * InvalidEncodingError, UnknownVariantError, HLCDriftError.
  *
  * Module attributes:
  *   tessera_id.SIZE_BYTES            41
@@ -36,21 +40,40 @@
 static tessera_id_std_generator_t g_std;
 static tessera_id_hlc_generator_t g_hlc;
 
+/* Typed exception taxonomy (TID-00020), mirroring the C status enum and the
+ * Python reference (tessera_id.py). TesseraIdError stays the catch-all base;
+ * RngError / InvalidEncodingError / UnknownVariantError / HLCDriftError are
+ * subclasses, so existing `except TesseraIdError` call sites keep working.
+ *
+ *   C status                       Python exception
+ *   ----------------------------   ---------------------
+ *   TESSERA_ID_E_RNG               RngError
+ *   TESSERA_ID_E_INVALID_LEN       InvalidEncodingError
+ *   TESSERA_ID_E_INVALID_CHAR      InvalidEncodingError
+ *   TESSERA_ID_E_PADDING_BITS      InvalidEncodingError
+ *   TESSERA_ID_E_UNKNOWN_VARIANT   UnknownVariantError
+ *   TESSERA_ID_E_HLC_DRIFT         HLCDriftError
+ */
 static PyObject *TesseraIdError;
+static PyObject *RngError;
+static PyObject *InvalidEncodingError;
+static PyObject *UnknownVariantError;
+static PyObject *HLCDriftError;
 
 /* Helpers ---------------------------------------------------------------- */
 static int raise_status(tessera_id_status_t s, const char *prefix) {
     const char *msg;
+    PyObject *exc;
     switch (s) {
-        case TESSERA_ID_E_RNG:             msg = "CSPRNG failed"; break;
-        case TESSERA_ID_E_INVALID_LEN:     msg = "invalid length"; break;
-        case TESSERA_ID_E_INVALID_CHAR:    msg = "invalid character"; break;
-        case TESSERA_ID_E_PADDING_BITS:    msg = "non-zero padding bits"; break;
-        case TESSERA_ID_E_UNKNOWN_VARIANT: msg = "unknown variant byte"; break;
-        case TESSERA_ID_E_HLC_DRIFT:       msg = "HLC drift exceeded"; break;
-        default:                           msg = "unknown error"; break;
+        case TESSERA_ID_E_RNG:             msg = "CSPRNG failed";          exc = RngError;             break;
+        case TESSERA_ID_E_INVALID_LEN:     msg = "invalid length";         exc = InvalidEncodingError; break;
+        case TESSERA_ID_E_INVALID_CHAR:    msg = "invalid character";      exc = InvalidEncodingError; break;
+        case TESSERA_ID_E_PADDING_BITS:    msg = "non-zero padding bits";  exc = InvalidEncodingError; break;
+        case TESSERA_ID_E_UNKNOWN_VARIANT: msg = "unknown variant byte";   exc = UnknownVariantError;  break;
+        case TESSERA_ID_E_HLC_DRIFT:       msg = "HLC drift exceeded";     exc = HLCDriftError;        break;
+        default:                           msg = "unknown error";          exc = TesseraIdError;       break;
     }
-    PyErr_Format(TesseraIdError, "%s: %s", prefix, msg);
+    PyErr_Format(exc, "%s: %s", prefix, msg);
     return -1;
 }
 
@@ -78,7 +101,7 @@ static PyObject *py_new_hlc(PyObject *self, PyObject *args, PyObject *kwds) {
         got_buf = 1;
         if (buf.len != 9) {
             PyBuffer_Release(&buf);
-            PyErr_SetString(TesseraIdError, "observe must be a 9-byte buffer");
+            PyErr_SetString(InvalidEncodingError, "observe must be a 9-byte buffer");
             return NULL;
         }
         peer9 = (const uint8_t *)buf.buf;
@@ -98,7 +121,7 @@ static PyObject *py_encode_b64(PyObject *self, PyObject *arg) {
     if (PyObject_GetBuffer(arg, &buf, PyBUF_SIMPLE) != 0) return NULL;
     if (buf.len != TESSERA_ID_SIZE_BYTES) {
         PyBuffer_Release(&buf);
-        PyErr_SetString(TesseraIdError, "TesseraID bytes must be 41 bytes");
+        PyErr_SetString(InvalidEncodingError, "TesseraID bytes must be 41 bytes");
         return NULL;
     }
     char out[TESSERA_ID_ENCODED_LEN_B64];
@@ -114,7 +137,7 @@ static PyObject *py_decode_b64(PyObject *self, PyObject *arg) {
     const char *s = PyUnicode_AsUTF8AndSize(arg, &n);
     if (s == NULL) return NULL;
     if (n != TESSERA_ID_ENCODED_LEN_B64) {
-        PyErr_Format(TesseraIdError, "Base64URL TesseraID must be %d chars, got %zd",
+        PyErr_Format(InvalidEncodingError, "Base64URL TesseraID must be %d chars, got %zd",
                      TESSERA_ID_ENCODED_LEN_B64, n);
         return NULL;
     }
@@ -131,7 +154,7 @@ static PyObject *py_encode_b32(PyObject *self, PyObject *arg) {
     if (PyObject_GetBuffer(arg, &buf, PyBUF_SIMPLE) != 0) return NULL;
     if (buf.len != TESSERA_ID_SIZE_BYTES) {
         PyBuffer_Release(&buf);
-        PyErr_SetString(TesseraIdError, "TesseraID bytes must be 41 bytes");
+        PyErr_SetString(InvalidEncodingError, "TesseraID bytes must be 41 bytes");
         return NULL;
     }
     char out[TESSERA_ID_ENCODED_LEN_B32];
@@ -147,7 +170,7 @@ static PyObject *py_decode_b32(PyObject *self, PyObject *arg) {
     const char *s = PyUnicode_AsUTF8AndSize(arg, &n);
     if (s == NULL) return NULL;
     if (n != TESSERA_ID_ENCODED_LEN_B32) {
-        PyErr_Format(TesseraIdError, "Crockford TesseraID must be %d chars, got %zd",
+        PyErr_Format(InvalidEncodingError, "Crockford TesseraID must be %d chars, got %zd",
                      TESSERA_ID_ENCODED_LEN_B32, n);
         return NULL;
     }
@@ -162,7 +185,7 @@ static int get_tessera_id_bytes(PyObject *arg, Py_buffer *buf) {
     if (PyObject_GetBuffer(arg, buf, PyBUF_SIMPLE) != 0) return -1;
     if (buf->len != TESSERA_ID_SIZE_BYTES) {
         PyBuffer_Release(buf);
-        PyErr_SetString(TesseraIdError, "TesseraID bytes must be 41 bytes");
+        PyErr_SetString(InvalidEncodingError, "TesseraID bytes must be 41 bytes");
         return -1;
     }
     return 0;
@@ -190,6 +213,19 @@ static PyObject *py_counter(PyObject *self, PyObject *arg) {
     uint16_t c = tessera_id_counter((const uint8_t *)buf.buf);
     PyBuffer_Release(&buf);
     return PyLong_FromLong(c);
+}
+
+/* validate(b) -> None or raises (TID-00020, TP-027) ----------------------
+ * Binds the C reference's tessera_id_validate(): rejects any variant byte
+ * that is not 0x01 (Standard) or 0x02 (HLC) with UnknownVariantError. */
+static PyObject *py_validate(PyObject *self, PyObject *arg) {
+    (void)self;
+    Py_buffer buf;
+    if (get_tessera_id_bytes(arg, &buf) < 0) return NULL;
+    tessera_id_status_t st = tessera_id_validate((const uint8_t *)buf.buf);
+    PyBuffer_Release(&buf);
+    if (st != TESSERA_ID_OK) { raise_status(st, "tessera_id.validate"); return NULL; }
+    Py_RETURN_NONE;
 }
 
 static PyObject *py_validate_min_timestamp(PyObject *self, PyObject *arg) {
@@ -369,6 +405,7 @@ static PyMethodDef Methods[] = {
     {"timestamp_ms", py_timestamp_ms,                     METH_O,       "Extract 48-bit timestamp (ms) from a TesseraID."},
     {"variant",      py_variant,                          METH_O,       "Extract variant byte (0x01 or 0x02)."},
     {"counter",      py_counter,                          METH_O,       "Extract 16-bit counter."},
+    {"validate",     py_validate,                         METH_O,       "Validate a 41-byte TesseraID: raises UnknownVariantError unless the variant byte is 0x01 or 0x02."},
     {"validate_min_timestamp", py_validate_min_timestamp, METH_O,       "Non-normative defensive helper: returns True iff timestamp_ms >= MIN_TIMESTAMP_MS."},
     /* TesseraHash */
     {"tessera_hash_hash_only",    py_tessera_hash_hash_only,    METH_O,       "SHAKE-256(content) truncated to 64 bytes."},
@@ -397,6 +434,27 @@ PyMODINIT_FUNC PyInit_tessera_id_ext(void) {
     Py_INCREF(TesseraIdError);
     if (PyModule_AddObject(m, "TesseraIdError", TesseraIdError) < 0) {
         Py_DECREF(TesseraIdError); Py_DECREF(m); return NULL;
+    }
+    /* Typed subclasses (TID-00020). Each is-a TesseraIdError. */
+    RngError = PyErr_NewException("tessera_id_ext.RngError", TesseraIdError, NULL);
+    Py_INCREF(RngError);
+    if (PyModule_AddObject(m, "RngError", RngError) < 0) {
+        Py_DECREF(RngError); Py_DECREF(m); return NULL;
+    }
+    InvalidEncodingError = PyErr_NewException("tessera_id_ext.InvalidEncodingError", TesseraIdError, NULL);
+    Py_INCREF(InvalidEncodingError);
+    if (PyModule_AddObject(m, "InvalidEncodingError", InvalidEncodingError) < 0) {
+        Py_DECREF(InvalidEncodingError); Py_DECREF(m); return NULL;
+    }
+    UnknownVariantError = PyErr_NewException("tessera_id_ext.UnknownVariantError", TesseraIdError, NULL);
+    Py_INCREF(UnknownVariantError);
+    if (PyModule_AddObject(m, "UnknownVariantError", UnknownVariantError) < 0) {
+        Py_DECREF(UnknownVariantError); Py_DECREF(m); return NULL;
+    }
+    HLCDriftError = PyErr_NewException("tessera_id_ext.HLCDriftError", TesseraIdError, NULL);
+    Py_INCREF(HLCDriftError);
+    if (PyModule_AddObject(m, "HLCDriftError", HLCDriftError) < 0) {
+        Py_DECREF(HLCDriftError); Py_DECREF(m); return NULL;
     }
     PyModule_AddIntConstant(m, "SIZE_BYTES",       TESSERA_ID_SIZE_BYTES);
     PyModule_AddIntConstant(m, "VARIANT_STANDARD", TESSERA_ID_VARIANT_STANDARD);

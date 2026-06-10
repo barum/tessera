@@ -9,6 +9,7 @@ byte-identical JSON.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -277,6 +278,44 @@ def build_invalid_vectors() -> list:
             "expected_error": "InvalidEncoding",
         },
     ]
+
+    # --- TESS-00009 (TP-044): mid-range / boundary-adjacent reserved variant
+    # bytes, binary form. tessera-seal's invalid.json already pins 0x05/0x10/
+    # 0x7F/0xFE rejection; mirror that coverage here so the reserved-range
+    # contract is KAT-enforced symmetrically across all three projects.
+    for variant in (0x05, 0x10, 0x7F, 0xFE):
+        out.append({
+            "name": f"binary_variant_0x{variant:02x}",
+            "op": "validate_invalid",
+            "input_kind": "binary_hex",
+            "input_hex": hex_of(valid_raw[:6] + bytes([variant]) + valid_raw[7:]),
+            "expected_error": "UnknownVariant",
+        })
+
+    # --- TESS-00009 (TP-028): string-form unknown-variant records. Text
+    # decoders (both the 55-char Base64URL and the 66-char Crockford form)
+    # MUST validate the variant byte at decode time and reject reserved /
+    # unassigned values with the UnknownVariant error class. These records
+    # exercise the library decoders directly, so a runner can no longer mask
+    # a permissive decoder with a harness-side variant check. The encoders
+    # are length-checked only, so they can emit wire-valid strings carrying
+    # reserved variant bytes.
+    for variant in (0x00, 0x05, 0xFF):
+        bad_raw = valid_raw[:6] + bytes([variant]) + valid_raw[7:]
+        out.append({
+            "name": f"b64_variant_0x{variant:02x}",
+            "op": "validate_invalid",
+            "input_kind": "b64",
+            "input_str": tessera_id.encode_b64(bad_raw),
+            "expected_error": "UnknownVariant",
+        })
+        out.append({
+            "name": f"crockford_variant_0x{variant:02x}",
+            "op": "validate_invalid",
+            "input_kind": "crockford",
+            "input_str": tessera_id.encode_b32(bad_raw),
+            "expected_error": "UnknownVariant",
+        })
     return out
 
 
@@ -327,6 +366,93 @@ def build_hlc_overflow_vectors() -> list:
             "physical_time_ms": 1_700_000_000_000,
             "observe": {"l_msg": 1_700_000_000_500, "c_msg": 0xFFFF},
             "expected": {"l_new": 1_700_000_000_501, "c_new": 0},
+        },
+    ]
+
+
+def build_hlc_drift_vectors() -> list:
+    """KATs for the HLC drift bound (TESS-00009 / TP-043).
+
+    HLC_MAX_DRIFT_MS = 60_000. The Python reference (authoritative, matched
+    by the C reference and every other port) rejects an observation iff
+    ``l_msg - pt > 60_000`` — strict inequality, so a peer EXACTLY 60_000 ms
+    ahead is ACCEPTED (the boundary lies on the accept side) while 60_001 ms
+    ahead raises HLCDriftError and produces no output.
+
+    Schema: the same state-machine shape as hlc_overflow.json (and the same
+    ``hlc_overflow`` op so every runner reuses its existing handler). Records
+    carrying an ``expects_error`` field assert an error class instead of an
+    expected (l_new, c_new); a runner MUST treat generator success on such a
+    record as a FAIL. The only ``expects_error`` value today is "HLC_DRIFT".
+    """
+    pt = 1_700_000_000_000
+    bound = tessera_id.HLC_MAX_DRIFT_MS
+    assert bound == 60_000, f"HLC_MAX_DRIFT_MS moved: {bound}"
+
+    def _peer(l_msg: int, c_msg: int) -> bytes:
+        return (
+            l_msg.to_bytes(6, "big")
+            + bytes([0x02])
+            + c_msg.to_bytes(2, "big")
+            + b"\x00" * 32
+        )
+
+    # Pin both records by driving the Python reference under a frozen clock.
+    orig = tessera_id._now_ms
+    tessera_id._now_ms = lambda: pt
+    try:
+        # Boundary: peer exactly +60_000 → accepted; merge takes l_msg.
+        g = tessera_id.HLCGenerator()
+        g._state.l = pt
+        g._state.c = 3
+        d = tessera_id.decode(g.new(observe=_peer(pt + bound, 7)))
+        boundary_expected = {"l_new": d.timestamp_ms, "c_new": d.counter}
+        assert boundary_expected == {"l_new": pt + bound, "c_new": 8}, boundary_expected
+
+        # Rejection: peer +60_001 → HLCDriftError, no output, state unchanged.
+        g2 = tessera_id.HLCGenerator()
+        g2._state.l = pt
+        g2._state.c = 3
+        try:
+            g2.new(observe=_peer(pt + bound + 1, 0))
+        except tessera_id.HLCDriftError:
+            pass
+        else:
+            raise AssertionError("observation 60_001 ms ahead was not rejected")
+        assert (g2._state.l, g2._state.c) == (pt, 3), "drift rejection mutated state"
+    finally:
+        tessera_id._now_ms = orig
+
+    return [
+        {
+            "name": "doc",
+            "op": "hlc_overflow",
+            "doc": (
+                "HLC drift-bound KATs (TP-043). HLC_MAX_DRIFT_MS = 60_000 and "
+                "the comparison is STRICT (l_msg - pt > 60_000 rejects): a peer "
+                "exactly 60_000 ms ahead of the local physical clock MUST be "
+                "accepted; 60_001 ms ahead MUST raise the HLC drift error "
+                "(HLCDriftError / TESSERA_ID_E_HLC_DRIFT / ErrHLCDrift) and "
+                "produce no output — never a clamp. Records with `expects_error` "
+                "= \"HLC_DRIFT\" assert the rejection; runners treat success "
+                "there as FAIL."
+            ),
+        },
+        {
+            "name": "drift_60000ms_boundary_accepted",
+            "op": "hlc_overflow",
+            "start": {"l_old": pt, "c_old": 3},
+            "physical_time_ms": pt,
+            "observe": {"l_msg": pt + bound, "c_msg": 7},
+            "expected": boundary_expected,
+        },
+        {
+            "name": "drift_60001ms_rejected",
+            "op": "hlc_overflow",
+            "start": {"l_old": pt, "c_old": 3},
+            "physical_time_ms": pt,
+            "observe": {"l_msg": pt + bound + 1, "c_msg": 0},
+            "expects_error": "HLC_DRIFT",
         },
     ]
 
@@ -382,22 +508,59 @@ def build_min_timestamp_vectors() -> list:
     return out
 
 
-def write_json(path: Path, data: list) -> None:
-    with path.open("w") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
-    print(f"wrote {path.relative_to(ROOT.parent)} ({len(data)} records)")
+def render_json(data: list) -> str:
+    return json.dumps(data, indent=2) + "\n"
 
 
-def main() -> None:
-    write_json(VECTORS_DIR / "decode.json", build_decode_vectors())
-    write_json(VECTORS_DIR / "encode_b64url.json", build_encode_b64_vectors())
-    write_json(VECTORS_DIR / "decode_b64url.json", build_decode_b64_vectors())
-    write_json(VECTORS_DIR / "encode_crockford.json", build_encode_crockford_vectors())
-    write_json(VECTORS_DIR / "decode_crockford.json", build_decode_crockford_vectors())
-    write_json(VECTORS_DIR / "invalid.json", build_invalid_vectors())
-    write_json(VECTORS_DIR / "hlc_overflow.json", build_hlc_overflow_vectors())
-    write_json(VECTORS_DIR / "min_timestamp.json", build_min_timestamp_vectors())
+def emit_json(path: Path, data: list, write: bool) -> None:
+    """Write (or, by default, dry-run-report) one vector file.
+
+    TESS-00009 / TP-113: the default is a DRY RUN — nothing on disk changes
+    unless --write is passed, so an accidental invocation (or `--help`) can
+    never silently rewrite frozen vectors.
+    """
+    content = render_json(data)
+    if path.exists():
+        status = "unchanged" if path.read_text() == content else "WOULD CHANGE"
+    else:
+        status = "NEW FILE"
+    rel = path.relative_to(ROOT.parent)
+    if write:
+        with path.open("w") as f:
+            f.write(content)
+        print(f"wrote {rel} ({len(data)} records, was {status})")
+    else:
+        print(f"dry-run {rel} ({len(data)} records, {status})")
+
+
+def main(argv: list | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Regenerate the TesseraID conformance vectors from the Python "
+            "reference. Default is a dry run that only reports what would "
+            "change; pass --write to actually rewrite vectors/*.json. "
+            "Committed vector records are FROZEN append-only — verify with "
+            "tools/scripts/check-vector-freeze.sh after any --write."
+        )
+    )
+    parser.add_argument(
+        "--write",
+        action="store_true",
+        help="actually write the vector files (default: dry run, no writes)",
+    )
+    args = parser.parse_args(argv)
+
+    emit_json(VECTORS_DIR / "decode.json", build_decode_vectors(), args.write)
+    emit_json(VECTORS_DIR / "encode_b64url.json", build_encode_b64_vectors(), args.write)
+    emit_json(VECTORS_DIR / "decode_b64url.json", build_decode_b64_vectors(), args.write)
+    emit_json(VECTORS_DIR / "encode_crockford.json", build_encode_crockford_vectors(), args.write)
+    emit_json(VECTORS_DIR / "decode_crockford.json", build_decode_crockford_vectors(), args.write)
+    emit_json(VECTORS_DIR / "invalid.json", build_invalid_vectors(), args.write)
+    emit_json(VECTORS_DIR / "hlc_overflow.json", build_hlc_overflow_vectors(), args.write)
+    emit_json(VECTORS_DIR / "hlc_drift.json", build_hlc_drift_vectors(), args.write)
+    emit_json(VECTORS_DIR / "min_timestamp.json", build_min_timestamp_vectors(), args.write)
+    if not args.write:
+        print("dry run complete — re-run with --write to apply")
 
 
 if __name__ == "__main__":

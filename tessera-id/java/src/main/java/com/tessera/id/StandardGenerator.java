@@ -5,18 +5,44 @@ import java.security.SecureRandom;
 /**
  * Generator for Standard TesseraIDs (variant 0x01). Wall-clock time source.
  *
- * <p>Thread-safe: methods synchronize on {@code this}. For high-throughput
- * single-thread workloads, prefer {@link #unsynchronized()} or one generator
- * per thread.
+ * <p><b>Thread-safety: NOT internally locked.</b> This matches the documented
+ * cross-language contract ("StandardGenerator is not internally locked —
+ * one-per-thread, or caller wraps it"). Use one generator per thread, guard
+ * calls with external synchronization, or use
+ * {@link SynchronizedStandardGenerator} for a drop-in internally-synchronized
+ * convenience wrapper. Sharing a plain {@code StandardGenerator} across
+ * threads without synchronization may corrupt the (lastTs, counter) state and
+ * break per-generator monotonicity; it never weakens the 256-bit random tail
+ * ({@link SecureRandom} is itself thread-safe).
  *
  * <p>Behavior matches the reference algorithm in the spec:
  * <ul>
  *   <li>Clamp on regression: if wall clock moves backward, reuse last_ts.
  *   <li>Within a single ms, counter steps by a random amount in [1, 16].
- *   <li>Counter exhaustion (rare) spins on the wall clock.
+ *   <li>Counter exhaustion (rare) spins on the wall clock until it advances
+ *       strictly past last_ts ({@code while now <= last_ts}, per spec §3) —
+ *       strict monotonicity holds even when exhaustion coincides with a
+ *       backward clock jump.
  * </ul>
  */
 public class StandardGenerator {
+
+    /**
+     * Test-only clock override. {@code Long.MIN_VALUE} means "use real clock".
+     * Mirrors the C reference's {@code tessera_id_set_now_ms_for_testing()} and
+     * the override already exposed by {@link HLCGenerator}. Never set this in
+     * production code.
+     */
+    public static volatile long nowMsOverride = Long.MIN_VALUE;
+
+    public static void setNowMsForTesting(long valueMs) {
+        nowMsOverride = valueMs;
+    }
+
+    private static long currentMillis() {
+        long o = nowMsOverride;
+        return o != Long.MIN_VALUE ? o : System.currentTimeMillis();
+    }
 
     private final SecureRandom rng;
     private long lastTs = 0L;
@@ -30,20 +56,26 @@ public class StandardGenerator {
         this.rng = rng;
     }
 
-    /** Returns a thin un-synchronized wrapper for single-thread hot paths. */
+    /**
+     * @deprecated {@code StandardGenerator} is now unsynchronized by default,
+     * matching the cross-language locking contract; this method returns
+     * {@code this}. For an internally locked generator, construct a
+     * {@link SynchronizedStandardGenerator} instead.
+     */
+    @Deprecated
     public StandardGenerator unsynchronized() {
-        return new UnsyncStandardGenerator(rng);
+        return this;
     }
 
-    public synchronized TesseraId next() {
-        return generate();
-    }
-
-    TesseraId generate() {
+    /**
+     * Generates the next Standard TesseraID. <b>Not synchronized</b> — see the
+     * class javadoc for the thread-safety contract.
+     */
+    public TesseraId next() {
         byte[] rnd = new byte[33];
         rng.nextBytes(rnd);
 
-        long ts = System.currentTimeMillis();
+        long ts = currentMillis();
         if (ts < lastTs) {
             ts = lastTs;          // clamp on regression
         }
@@ -53,11 +85,12 @@ public class StandardGenerator {
             int step = 1 + (rnd[0] & 0x0F);
             int next = counter + step;
             if (next > 0xFFFF) {
-                // Counter exhausted: spin until wall clock advances
-                while (System.currentTimeMillis() <= lastTs) {
+                // Counter exhausted: spin until the wall clock advances
+                // strictly past lastTs (spec §3: while now <= last_ts).
+                do {
                     Thread.onSpinWait();
-                }
-                ts = System.currentTimeMillis();
+                    ts = currentMillis();
+                } while (ts <= lastTs);
                 newCounter = rnd[0] & 0xFF;   // reseed at small value
             } else {
                 newCounter = next;
@@ -86,10 +119,5 @@ public class StandardGenerator {
         System.arraycopy(rnd, 1, out, 9, 32);
 
         return new TesseraId(out);
-    }
-
-    private static final class UnsyncStandardGenerator extends StandardGenerator {
-        UnsyncStandardGenerator(SecureRandom rng) { super(rng); }
-        @Override public TesseraId next() { return generate(); }
     }
 }

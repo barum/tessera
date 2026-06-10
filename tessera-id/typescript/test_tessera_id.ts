@@ -1,7 +1,7 @@
 import {
   newTesseraId, newHlcTesseraId, decode, encodeBase64URL, decodeBase64URL,
   encodeCrockford, decodeCrockford, StandardGenerator, HLCGenerator,
-  HLCDriftError, UnknownVariantError, SIZE_BYTES,
+  HLCDriftError, UnknownVariantError, SIZE_BYTES, setNowMsForTesting,
   VARIANT_STANDARD, VARIANT_HLC, ENCODED_LEN_B64, ENCODED_LEN_B32,
 } from "./tessera_id.js";
 
@@ -93,6 +93,62 @@ ok(newHlcTesseraId()[6] === VARIANT_HLC, "HLC variant byte");
   let threw = false;
   try { decode(bad); } catch (e) { threw = e instanceof UnknownVariantError; }
   ok(threw, "unknown variant rejected on decode");
+}
+
+// --- counter exhaust under clock regression ---
+// The spec (sec03) requires the exhaust spin to run `while now <= last_ts`:
+// the emitted ID must carry a timestamp strictly greater than lastTs, never
+// a regressed one (which would sort before its predecessor).
+{
+  const T0 = 1_750_000_000_000;
+  let calls = 0;
+  setNowMsForTesting(() => {
+    calls++;
+    // First reads: regressed clock; then the clock finally passes lastTs.
+    return calls < 5 ? T0 - 5_000 : T0 + 1;
+  });
+  const g = new StandardGenerator();
+  g.setStateForTesting(T0, 0xffff); // any step exhausts the counter
+  const id = g.newId();
+  setNowMsForTesting(null);
+  const d = decode(id);
+  ok(
+    d.timestampMs > T0,
+    "counter exhaust under clock regression advances past lastTs",
+  );
+}
+
+// --- string decoders reject unknown variants (both text forms) ---
+{
+  const id = newTesseraId();
+  for (const bad of [0x00, 0x03, 0x7f, 0xff]) {
+    const tampered = new Uint8Array(id);
+    tampered[6] = bad;
+
+    let threwB64 = false;
+    try { decodeBase64URL(encodeBase64URL(tampered)); }
+    catch (e) { threwB64 = e instanceof UnknownVariantError; }
+    ok(threwB64, `Base64URL decode rejects unknown variant 0x${bad.toString(16)}`);
+
+    let threwCk = false;
+    try { decodeCrockford(encodeCrockford(tampered)); }
+    catch (e) { threwCk = e instanceof UnknownVariantError; }
+    ok(threwCk, `Crockford decode rejects unknown variant 0x${bad.toString(16)}`);
+  }
+
+  // Known variants still decode through both text forms.
+  for (const good of [VARIANT_STANDARD, VARIANT_HLC]) {
+    const okBytes = new Uint8Array(id);
+    okBytes[6] = good;
+    ok(
+      compareBytes(decodeBase64URL(encodeBase64URL(okBytes)), okBytes),
+      `Base64URL decode accepts variant 0x${good.toString(16)}`,
+    );
+    ok(
+      compareBytes(decodeCrockford(encodeCrockford(okBytes)), okBytes),
+      `Crockford decode accepts variant 0x${good.toString(16)}`,
+    );
+  }
 }
 
 // --- HLC drift bound ---

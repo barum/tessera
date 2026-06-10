@@ -2,6 +2,10 @@
 
 Reverse-chronological. One entry per PR (or per logical change shipped together).
 
+- 2026-06-10 — [TID-00020 — C/C++/CPython ext: decode-time variant validation, drift clamp, typed errors (sec)](2026-06-10-tid-00020-c-cpp-ext-variant-and-taxonomy.md)
+- 2026-06-10 — [TID-00019 — Java contract alignment: unsynchronized generator, HLCDriftError, drift clamp (sec)](2026-06-10-tid-00019-java-contract-alignment.md)
+- 2026-06-10 — [TID-00018 — Go/Rust/TS: spec spin semantics + decode-time variant validation (sec)](2026-06-10-tid-00018-go-rust-ts-spin-decode.md)
+- 2026-06-10 — [TID-00017 — Python reference: spec spin semantics + decode-time variant validation (sec)](2026-06-10-tid-00017-generator-spin-and-decode-variant.md)
 - 2026-06-08 — [PQID-00016 — CPython CSPRNG link fix + Appendix A vector correction](2026-06-08-pqid-00016-cpython-csprng-link-and-appendix-vectors.md)
 - 2026-05-21 — [PQID-00015 — Cross-reject PQCrypt variant `0x04`](2026-05-21-pqid-00015-cross-reject-pqcrypt.md)
 - 2026-05-19 — [PQID-00014 — Bench methodology](2026-05-19-pqid-00014-bench-methodology.md)

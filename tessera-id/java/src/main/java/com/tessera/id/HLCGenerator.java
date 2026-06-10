@@ -9,10 +9,18 @@ import java.security.SecureRandom;
  * <p>Always serialized: HLC's read-modify-write of (l, c) requires it. Methods
  * synchronize on {@code this}.
  *
- * <p>Default drift bound is 60,000 ms — observations more than that ahead of
- * the local physical clock are rejected via {@link DriftExceededException}.
+ * <p>The drift bound defaults to the normative 60,000 ms — observations more
+ * than {@code maxDriftMs} ahead of the local physical clock are rejected via
+ * {@link HLCDriftError}, never clamped. A caller MAY configure a STRICTER
+ * (smaller) bound; attempting to configure a bound larger than the normative
+ * 60,000 ms is an {@link IllegalArgumentException} (relaxing the bound would
+ * defeat the monotonicity guarantee).
  */
 public class HLCGenerator {
+    /**
+     * Normative drift bound (spec: {@code HLC_MAX_DRIFT_MS}). This is both the
+     * default and the maximum permitted value for {@code maxDriftMs}.
+     */
     public static final long DEFAULT_MAX_DRIFT_MS = 60_000L;
 
     /**
@@ -39,7 +47,19 @@ public class HLCGenerator {
         this(new SecureRandom(), DEFAULT_MAX_DRIFT_MS);
     }
 
+    /**
+     * @param maxDriftMs drift bound in milliseconds; MUST be in
+     *        {@code [1, DEFAULT_MAX_DRIFT_MS]}. Values below 60,000 ms tighten
+     *        the bound locally; values above the normative 60,000 ms are
+     *        rejected with {@link IllegalArgumentException}.
+     */
     public HLCGenerator(SecureRandom rng, long maxDriftMs) {
+        if (maxDriftMs < 1 || maxDriftMs > DEFAULT_MAX_DRIFT_MS) {
+            throw new IllegalArgumentException(
+                "maxDriftMs must be in [1, " + DEFAULT_MAX_DRIFT_MS + "] ms: the normative "
+                + "HLC drift bound may be tightened locally but never relaxed (got "
+                + maxDriftMs + ")");
+        }
         this.rng = rng;
         this.maxDriftMs = maxDriftMs;
     }
@@ -55,9 +75,26 @@ public class HLCGenerator {
         return generate(null);
     }
 
-    /** Generate a new HLC TesseraID after observing a peer's HLC value. */
+    /** Generate a new HLC TesseraID after observing a peer's raw HLC value. */
     public synchronized TesseraId nextObserving(long peerL, int peerC) {
         return generate(new long[] { peerL, peerC });
+    }
+
+    /**
+     * Generate a new HLC TesseraID after observing a received, decoded
+     * TesseraID. The {@link TesseraId} type guarantees the observation already
+     * passed length (41 bytes) and variant-byte validation at decode time;
+     * only the timestamp and counter fields are merged (any valid variant is
+     * accepted, matching the Python reference's {@code new(observe=...)}).
+     *
+     * @throws HLCDriftError if the observed HLC is more than {@code maxDriftMs}
+     *         ahead of the local physical clock.
+     */
+    public synchronized TesseraId nextObserving(TesseraId peer) {
+        if (peer == null) {
+            throw new IllegalArgumentException("observed TesseraId must not be null");
+        }
+        return generate(new long[] { peer.timestampMs(), peer.counter() });
     }
 
     /** Snapshot the current (l, c) for transmission to peers. */
@@ -80,9 +117,9 @@ public class HLCGenerator {
             long lMsg = observe[0];
             int  cMsg = (int)(observe[1] & 0xFFFFL);
             if (lMsg > pt && (lMsg - pt) > maxDriftMs) {
-                throw new DriftExceededException(
-                    "HLC observation " + lMsg + " exceeds local " + pt + " by more than "
-                    + maxDriftMs + "ms drift bound");
+                throw new HLCDriftError(
+                    "observed HLC " + (lMsg - pt) + " ms ahead of physical clock "
+                    + "(drift bound " + maxDriftMs + " ms)");
             }
             lNew = Math.max(Math.max(lOld, lMsg), pt);
             if (lNew == lOld && lNew == lMsg) {
@@ -122,7 +159,12 @@ public class HLCGenerator {
         return new TesseraId(out);
     }
 
-    public static final class DriftExceededException extends RuntimeException {
-        public DriftExceededException(String msg) { super(msg); }
+    /**
+     * Thrown when an observed peer HLC exceeds the drift bound. Name aligns
+     * with the cross-language taxonomy (Python {@code HLCDriftError}, Go
+     * {@code ErrHLCDrift}); formerly {@code DriftExceededException}.
+     */
+    public static final class HLCDriftError extends RuntimeException {
+        public HLCDriftError(String msg) { super(msg); }
     }
 }

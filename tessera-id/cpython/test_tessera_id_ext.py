@@ -97,23 +97,74 @@ def main():
     p = tessera_id_ext.new_hlc(observe=peer9)
     check(tessera_id_ext.timestamp_ms(p) >= peer_ts, "HLC adopts in-bound peer time")
 
-    # HLC drift rejection
+    # HLC drift rejection — typed as HLCDriftError (TID-00020)
     peer_ts = now + 120_000  # 2 minutes ahead
     peer9 = peer_ts.to_bytes(6, "big") + bytes([tessera_id_ext.VARIANT_HLC, 0, 0])
     threw = False
     try:
         tessera_id_ext.new_hlc(observe=peer9)
-    except Exception:  # TesseraIdError
+    except tessera_id_ext.HLCDriftError:
         threw = True
-    check(threw, "HLC rejects out-of-drift peer")
+    check(threw, "HLC rejects out-of-drift peer with HLCDriftError")
 
-    # Decoder rejects malformed input
+    # Decoder rejects malformed input — typed as InvalidEncodingError
     threw = False
     try:
         tessera_id_ext.decode_b64("x" * 54)  # wrong length
-    except Exception:
+    except tessera_id_ext.InvalidEncodingError:
         threw = True
-    check(threw, "decode_b64 rejects wrong-length input")
+    check(threw, "decode_b64 rejects wrong-length input with InvalidEncodingError")
+
+    # Exception taxonomy (TID-00020): subclasses of TesseraIdError
+    for name in ("RngError", "InvalidEncodingError", "UnknownVariantError", "HLCDriftError"):
+        cls = getattr(tessera_id_ext, name)
+        check(issubclass(cls, tessera_id_ext.TesseraIdError),
+              f"{name} is a subclass of TesseraIdError")
+
+    # Unknown-variant rejection (TID-00020): raw bytes via validate(),
+    # plus both text forms via decode_b64 / decode_b32.
+    for bad_variant in (0x00, 0x05, 0xFF):
+        raw = bytearray(tessera_id_ext.new())
+        raw[6] = bad_variant
+        raw = bytes(raw)
+
+        threw = False
+        try:
+            tessera_id_ext.validate(raw)
+        except tessera_id_ext.UnknownVariantError as e:
+            threw = "unknown variant" in str(e)
+        check(threw, f"validate() rejects raw variant 0x{bad_variant:02x} with UnknownVariantError")
+
+        threw = False
+        try:
+            tessera_id_ext.decode_b64(tessera_id_ext.encode_b64(raw))
+        except tessera_id_ext.UnknownVariantError:
+            threw = True
+        check(threw, f"decode_b64 rejects variant 0x{bad_variant:02x} with UnknownVariantError")
+
+        threw = False
+        try:
+            tessera_id_ext.decode_b32(tessera_id_ext.encode_b32(raw))
+        except tessera_id_ext.UnknownVariantError:
+            threw = True
+        check(threw, f"decode_b32 rejects variant 0x{bad_variant:02x} with UnknownVariantError")
+
+    # validate() accepts both known variants
+    ok = True
+    try:
+        tessera_id_ext.validate(tessera_id_ext.new())
+        tessera_id_ext.validate(tessera_id_ext.new_hlc())
+    except Exception:
+        ok = False
+    check(ok, "validate() accepts Standard and HLC variants")
+
+    # validate() rejects wrong-length input with InvalidEncodingError
+    threw = False
+    try:
+        tessera_id_ext.validate(b"\x00" * 40)
+    except tessera_id_ext.InvalidEncodingError:
+        threw = True
+    check(threw, "validate() rejects 40-byte input with InvalidEncodingError")
 
     print(f"\n{passes} passed, {failures} failed.")
     return 0 if failures == 0 else 1

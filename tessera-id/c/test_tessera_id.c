@@ -136,6 +136,98 @@ int main(void) {
     bad[TESSERA_ID_VARIANT_OFFSET] = 0x7F;
     CHECK(tessera_id_validate(bad) == TESSERA_ID_E_UNKNOWN_VARIANT, "validate rejects unknown variant");
 
+    /* -- Unknown variant rejection at string decode (TID-00020) --------- */
+    {
+        const uint8_t bad_variants[] = {0x00, 0x05, 0xFF};
+        int b64_reject_ok = 1, b32_reject_ok = 1;
+        for (size_t bi = 0; bi < sizeof(bad_variants); bi++) {
+            uint8_t raw[TESSERA_ID_SIZE_BYTES] = {0};
+            raw[0] = 0x01; raw[1] = 0x8B;  /* plausible timestamp prefix */
+            raw[TESSERA_ID_VARIANT_OFFSET] = bad_variants[bi];
+            uint8_t dec[TESSERA_ID_SIZE_BYTES];
+            char e64[TESSERA_ID_ENCODED_LEN_B64];
+            tessera_id_encode_b64url(raw, e64);
+            if (tessera_id_decode_b64url(e64, dec) != TESSERA_ID_E_UNKNOWN_VARIANT) {
+                b64_reject_ok = 0;
+            }
+            char e32[TESSERA_ID_ENCODED_LEN_B32];
+            tessera_id_encode_crockford(raw, e32);
+            if (tessera_id_decode_crockford(e32, dec) != TESSERA_ID_E_UNKNOWN_VARIANT) {
+                b32_reject_ok = 0;
+            }
+        }
+        CHECK(b64_reject_ok, "decode_b64url rejects variants 0x00/0x05/0xFF");
+        CHECK(b32_reject_ok, "decode_crockford rejects variants 0x00/0x05/0xFF");
+    }
+
+    /* -- Valid variants still decode through text forms ------------------ */
+    {
+        const uint8_t good_variants[] = {TESSERA_ID_VARIANT_STANDARD, TESSERA_ID_VARIANT_HLC};
+        int good_ok = 1;
+        for (size_t gi = 0; gi < sizeof(good_variants); gi++) {
+            uint8_t raw[TESSERA_ID_SIZE_BYTES] = {0};
+            raw[0] = 0x01; raw[1] = 0x8B;
+            raw[TESSERA_ID_VARIANT_OFFSET] = good_variants[gi];
+            uint8_t dec[TESSERA_ID_SIZE_BYTES];
+            char e64[TESSERA_ID_ENCODED_LEN_B64];
+            tessera_id_encode_b64url(raw, e64);
+            if (tessera_id_decode_b64url(e64, dec) != TESSERA_ID_OK ||
+                byte_compare(raw, dec, TESSERA_ID_SIZE_BYTES) != 0) { good_ok = 0; }
+            char e32[TESSERA_ID_ENCODED_LEN_B32];
+            tessera_id_encode_crockford(raw, e32);
+            if (tessera_id_decode_crockford(e32, dec) != TESSERA_ID_OK ||
+                byte_compare(raw, dec, TESSERA_ID_SIZE_BYTES) != 0) { good_ok = 0; }
+        }
+        CHECK(good_ok, "known variants 0x01/0x02 still round-trip via both text forms");
+    }
+
+    /* -- HLC drift bound is clamped (TID-00020) -------------------------- */
+    {
+        tessera_id_hlc_generator_t hc; tessera_id_hlc_init(&hc);
+        uint8_t out[TESSERA_ID_SIZE_BYTES];
+
+        /* Default bound (60,000 ms) is unchanged by init. */
+        CHECK(hc.max_drift_ms == TESSERA_ID_HLC_MAX_DRIFT_MS, "hlc_init sets default drift bound");
+
+        /* Bound larger than the normative maximum -> hard error, no output. */
+        hc.max_drift_ms = TESSERA_ID_HLC_MAX_DRIFT_MS + 1;
+        CHECK(tessera_id_hlc_new(&hc, NULL, out) == TESSERA_ID_E_HLC_DRIFT,
+              "hlc_new rejects relaxed (>60s) drift bound");
+
+        /* Stricter bound is honored: peer 5s ahead vs 1s bound -> drift error. */
+        tessera_id_hlc_init(&hc);
+        hc.max_drift_ms = 1000;
+        uint8_t strict_peer9[9] = {0};
+        uint64_t strict_ts = pt_now + 5000;
+        strict_peer9[0] = (uint8_t)(strict_ts >> 40); strict_peer9[1] = (uint8_t)(strict_ts >> 32);
+        strict_peer9[2] = (uint8_t)(strict_ts >> 24); strict_peer9[3] = (uint8_t)(strict_ts >> 16);
+        strict_peer9[4] = (uint8_t)(strict_ts >>  8); strict_peer9[5] = (uint8_t)(strict_ts      );
+        strict_peer9[6] = TESSERA_ID_VARIANT_HLC;
+        CHECK(tessera_id_hlc_new(&hc, strict_peer9, out) == TESSERA_ID_E_HLC_DRIFT,
+              "stricter (1s) drift bound rejects peer 5s ahead");
+
+        /* 0 means default: peer 100ms ahead accepted, peer 2min ahead rejected. */
+        tessera_id_hlc_init(&hc);
+        hc.max_drift_ms = 0;
+        uint8_t near_peer9[9] = {0};
+        uint64_t near_ts = pt_now + 100;
+        near_peer9[0] = (uint8_t)(near_ts >> 40); near_peer9[1] = (uint8_t)(near_ts >> 32);
+        near_peer9[2] = (uint8_t)(near_ts >> 24); near_peer9[3] = (uint8_t)(near_ts >> 16);
+        near_peer9[4] = (uint8_t)(near_ts >>  8); near_peer9[5] = (uint8_t)(near_ts      );
+        near_peer9[6] = TESSERA_ID_VARIANT_HLC;
+        CHECK(tessera_id_hlc_new(&hc, near_peer9, out) == TESSERA_ID_OK,
+              "drift bound 0 selects default (accepts peer 100ms ahead)");
+        hc.max_drift_ms = 0;
+        uint8_t far_peer9[9] = {0};
+        uint64_t far_ts = pt_now + 120000;
+        far_peer9[0] = (uint8_t)(far_ts >> 40); far_peer9[1] = (uint8_t)(far_ts >> 32);
+        far_peer9[2] = (uint8_t)(far_ts >> 24); far_peer9[3] = (uint8_t)(far_ts >> 16);
+        far_peer9[4] = (uint8_t)(far_ts >>  8); far_peer9[5] = (uint8_t)(far_ts      );
+        far_peer9[6] = TESSERA_ID_VARIANT_HLC;
+        CHECK(tessera_id_hlc_new(&hc, far_peer9, out) == TESSERA_ID_E_HLC_DRIFT,
+              "drift bound 0 selects default (rejects peer 2min ahead)");
+    }
+
     printf("\n%d passed, %d failed.\n", passes, failures);
     return failures == 0 ? 0 : 1;
 }

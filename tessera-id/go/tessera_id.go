@@ -116,12 +116,20 @@ func (g *StandardGenerator) New() ([SizeBytes]byte, error) {
 		step := uint16(1) + uint16(rnd[0]&0x0F)
 		nc := uint32(g.counter) + uint32(step)
 		if nc > uint32(maxCounter) {
-			// Counter exhausted in this ms — spin to next ms.
-			for nowMS() == ts {
-				// Busy-wait. The counter overflow path is extremely rare
-				// outside of synthetic load; a sleep is overkill.
+			// Counter exhausted in this ms — spin until the clock passes
+			// lastTS (spec sec03: `while now <= last_ts`; matches the C
+			// reference c/tessera_id.c). The <= bound also covers a clock
+			// regression observed mid-exhaust: with `==` the loop would
+			// exit immediately on a regressed clock and lastTS would move
+			// backward, breaking strict monotonicity.
+			// Busy-wait: the counter overflow path is extremely rare
+			// outside of synthetic load; a sleep is overkill.
+			for {
+				ts = nowMS()
+				if ts > g.lastTS {
+					break
+				}
 			}
-			ts = nowMS()
 			g.counter = uint16(rnd[0])
 		} else {
 			g.counter = uint16(nc)
@@ -327,6 +335,11 @@ func DecodeBase64URL(s string) ([SizeBytes]byte, error) {
 	if b64enc.EncodeToString(out[:]) != s {
 		return out, fmt.Errorf("%w: non-canonical Base64URL (pad bits non-zero)", ErrInvalidEncoding)
 	}
+	// Text decoders validate the variant byte: unknown variants are
+	// rejected at decode, matching Decode and the Crockford decoder.
+	if v := out[6]; v != VariantStandard && v != VariantHLC {
+		return out, fmt.Errorf("%w: 0x%02x", ErrUnknownVariant, v)
+	}
 	return out, nil
 }
 
@@ -354,7 +367,8 @@ var crockfordDecode = func() [256]int8 {
 // EncodeCrockford returns the 66-character Crockford Base32 form.
 // Output is uppercase. Decoder accepts either case.
 func EncodeCrockford(raw [SizeBytes]byte) string {
-	// 41 bytes = 328 bits → 66 base32 chars (330 bits, top 2 bits zero)
+	// 41 bytes = 328 bits → 66 base32 chars (330 bits; the low 2 bits of
+	// the final character are zero stream-trailing pad bits)
 	out := make([]byte, EncodedLengthB32)
 	// Process big-endian via a 5-bit shift register.
 	// Bits remaining in buf, MSB-aligned.
@@ -406,9 +420,15 @@ func DecodeCrockford(s string) ([SizeBytes]byte, error) {
 	if idx != SizeBytes {
 		return out, fmt.Errorf("%w: decoded %d bytes", ErrInvalidEncoding, idx)
 	}
-	// Top 2 bits of original 330-bit value must have been zero.
+	// The 2 stream-trailing pad bits — the low 2 bits of the final
+	// character — must be zero (the 41-byte payload is only 328 bits).
 	if buf&((1<<uint(bits))-1) != 0 {
 		return out, fmt.Errorf("%w: overflow bits set", ErrInvalidEncoding)
+	}
+	// Text decoders validate the variant byte: unknown variants are
+	// rejected at decode, matching Decode and the Base64URL decoder.
+	if v := out[6]; v != VariantStandard && v != VariantHLC {
+		return out, fmt.Errorf("%w: 0x%02x", ErrUnknownVariant, v)
 	}
 	return out, nil
 }
