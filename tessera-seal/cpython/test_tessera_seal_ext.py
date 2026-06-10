@@ -88,6 +88,34 @@ def main():
     except Exception as e:
         print(f"FAIL structural_rejection: {type(e).__name__}: {e}"); fails += 1
 
+    # --- suite 0x06 (hybrid) rejection — TSEAL-00044 (TP-030) ----------------
+    # The CPython ext wraps the C reference, which has no hybrid support yet
+    # (TSEAL-00030/TSEAL-00034 backlog). The normative contract is that
+    # non-hybrid languages MUST reject suite 0x06 as UnknownSuite — never
+    # BadKey, never the auth-class DecryptionError. assert_raises() catches
+    # exactly UnknownSuite and reports any other exception class as a
+    # failure, so the not-BadKey / not-DecryptionError half of the contract
+    # is enforced automatically.
+    #
+    # Header bytes are copied verbatim from the first record (hybrid_empty)
+    # of ../conformance/vectors/hybrid_decrypt.json: ts=1700000000000,
+    # variant=0x04, suite=0x06, ctr=10, kem_ct_len=1600, ad_len=0. The body
+    # is zero-padded to the declared structural size (1600 KEM_CT + 12 nonce
+    # + 16 tag + 32 commit = 1676 bytes total), so the only thing wrong with
+    # this envelope is the suite.
+    try:
+        hybrid_env = _h("018bcfe568000406000a064000000000") + bytes(1600 + 12 + 16 + 32)
+        fails += assert_raises(lambda: tseal.peek_header(hybrid_env),
+                               tseal.UnknownSuite, "suite_0x06_peek_header_unknown_suite")
+        fails += assert_raises(lambda: tseal.decrypt(hybrid_env, sk),
+                               tseal.UnknownSuite, "suite_0x06_decrypt_unknown_suite")
+        # A well-formed 0x01 envelope re-tagged 0x06 must also be UnknownSuite.
+        retag = bytearray(env); retag[7] = 0x06
+        fails += assert_raises(lambda: tseal.decrypt(bytes(retag), sk),
+                               tseal.UnknownSuite, "suite_0x06_retag_decrypt_unknown_suite")
+    except Exception as e:
+        print(f"FAIL suite_0x06_rejection: {type(e).__name__}: {e}"); fails += 1
+
     # --- exception taxonomy (TSEAL-00036) ------------------------------------
     try:
         fails += assert_eq(issubclass(tseal.BadKey, tseal.TesseraSealError), True,

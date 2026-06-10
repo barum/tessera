@@ -94,6 +94,44 @@ test("suite rejection", () => {
     }
 });
 
+test("suite 0x06 (hybrid) rejected as UnknownSuite", () => {
+    // TSEAL-00044 (TP-030): the TypeScript port has no hybrid support yet
+    // (TSEAL-00032 backlog). The normative contract is that non-hybrid
+    // languages MUST reject suite 0x06 as UnknownSuite — never BadKeyError,
+    // never the auth-class DecryptionError. In this port peekHeader() owns
+    // suite validation and decrypt() runs it before the priv.suite BadKey
+    // check, so both layers must throw UnknownSuite here.
+    //
+    // Header bytes are copied verbatim from the first record (hybrid_empty)
+    // of ../conformance/vectors/hybrid_decrypt.json: ts=1700000000000,
+    // variant=0x04, suite=0x06, ctr=10, kemCtLen=1600, adLen=0. The body is
+    // zero-padded to the declared structural size (1600 KEM_CT + 12 nonce +
+    // 16 tag + 32 commit = 1676 B total), so the only thing wrong with this
+    // envelope is the suite.
+    const env = new Uint8Array(16 + 1600 + 12 + 16 + 32);
+    env.set(hex("018bcfe568000406000a064000000000"), 0);
+
+    // Structural layer: peekHeader rejects the unimplemented suite.
+    assert.throws(() => peekHeader(env), UnknownSuite);
+
+    // Decrypt layer: MUST be UnknownSuite — explicitly not BadKeyError
+    // (priv is tagged 0x01, so an implementation that skipped suite
+    // validation would surface BadKeyError) and not DecryptionError.
+    const { priv, pub } = generateKeypair();
+    assert.throws(
+        () => decrypt(env, priv, new Uint8Array(0)),
+        (e: unknown) =>
+            e instanceof UnknownSuite &&
+            !(e instanceof BadKeyError) &&
+            !(e instanceof DecryptionError)
+    );
+
+    // A well-formed 0x01 envelope re-tagged 0x06 must also be UnknownSuite.
+    const env2 = encrypt(new TextEncoder().encode("x"), pub);
+    env2[7] = 0x06;
+    assert.throws(() => decrypt(env2, priv, new Uint8Array(0)), UnknownSuite);
+});
+
 test("tamper detection", () => {
     const { priv, pub } = generateKeypair();
     const ad = new TextEncoder().encode("id");

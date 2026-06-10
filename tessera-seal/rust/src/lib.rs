@@ -201,12 +201,11 @@ pub fn generate_keypair(suite: u8) -> Result<(PrivateKey, PublicKey), Error> {
 }
 
 fn fill_random(buf: &mut [u8]) -> Result<(), Error> {
-    use std::io::Read;
     // Per umbrella security invariant #1: OS CSPRNG only, no userspace PRNG.
-    let mut f = std::fs::File::open("/dev/urandom")
-        .map_err(|_| Error::Internal("CSPRNG open"))?;
-    f.read_exact(buf).map_err(|_| Error::Internal("CSPRNG read"))?;
-    Ok(())
+    // `getrandom::fill` routes to getentropy / getrandom(2) / BCryptGenRandom
+    // per platform (TSEAL-00041) — no direct /dev/urandom device reads, and
+    // failure surfaces an error instead of producing output.
+    getrandom::fill(buf).map_err(|_| Error::Internal("CSPRNG"))
 }
 
 /// Deterministic keypair from a seed.

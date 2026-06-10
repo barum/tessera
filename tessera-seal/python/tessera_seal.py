@@ -132,7 +132,13 @@ class UnknownVariant(TesseraSealError):
 
 
 class UnknownSuite(TesseraSealError):
-    """Suite byte at offset 7 is not allocated in v1 (only 0x01, 0x02)."""
+    """Suite byte at offset 7 is not an allocated v1.x suite.
+
+    Allocated: 0x01 (ML-KEM-1024 + AES-256-GCM), 0x02 (ML-KEM-1024 +
+    ChaCha20-Poly1305), and 0x06 (hybrid X25519 + ML-KEM-1024 + AES-256-GCM,
+    TSEAL-00021). Everything else — including reserved-future 0x03–0x05 —
+    is rejected with this error.
+    """
 
 
 class InvalidLength(TesseraSealError):
@@ -910,11 +916,15 @@ def decrypt(
     # to a bad AEAD tag.
     nonce_ok = _constant_time_compare(nonce, derived_nonce)
 
-    # 7. Reconstruct the AD that the sender bound.
+    # 7. Check the caller's expected AD against the on-wire AD. The AEAD AAD
+    # below is built from the ON-WIRE ad — matching the C/Go/Rust/TS/Java
+    # ports (TSEAL-00042); this constant-time equality check is what catches
+    # substitution. Observably identical to verifying against expected_ad:
+    # either way a mismatch ends in the same DecryptionError.
     if not isinstance(expected_ad, (bytes, bytearray)):
         raise InvalidLength("expected_ad must be bytes-like")
     ad_ok = _constant_time_compare(bytes(ad), bytes(expected_ad))
-    aad = header_bytes + kem_ct + bytes(expected_ad)
+    aad = header_bytes + kem_ct + bytes(ad)
 
     # 8. UtC commit verification. Compute against the on-wire AD (`ad`); the
     # AD-match check above catches substitution.

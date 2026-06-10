@@ -58,7 +58,7 @@ When changing wire format / encoding / generator semantics:
 
 **Cross-language byte-identity** confirmed for suites `0x01`/`0x02` across all 8 implementations; hybrid `0x06` is currently a 3-way contract (Python ↔ Rust ↔ Go). Languages without hybrid MUST reject suite `0x06` as `UNKNOWN_SUITE` and skip `hybrid_*.json` KAT files per [`tools/conformance/run.sh:hybrid_supported()`](../tools/conformance/run.sh).
 
-Latest conformance (alpha quick loop, 2026-06-08): **Python 267 / Rust 267 / Go 267 / C 258 PASS, 0 FAIL** across tessera-id + tessera-hash + tessera-seal (1059 = summed PASS across the 4 alpha languages: python 267 + c 258 + go 267 + rust 267, not 1059 distinct vectors). The full 8-language run is green (cpp/ts/java/cpython report 207 each — tessera-id + tessera-hash only).
+Latest conformance (alpha quick loop, 2026-06-10, post TESS-00009 KAT expansion): **Python 296 / Rust 296 / Go 296 / C 287 PASS, 0 FAIL** across tessera-id + tessera-hash + tessera-seal. The full 8-language run is green (cpp/ts/java report 229 each, cpython 224 + 11 SKIP — tessera-id + tessera-hash only).
 
 ## Plugin protocol (PQCK-00008, keyfile v1.1)
 
@@ -76,7 +76,7 @@ Keyfile format **`.tseal-key-v1.1`** (v1.1 of PQCK-00018; the v1.0 `.tseal-key-v
 
 Hybrid suite `0x06` vectors (`hybrid_*.json`) are filtered by language via `hybrid_supported()` in `run.sh`. As of v1.3 (2026-05-21), hybrid-capable languages are: Python (PQCK-00021), Rust (PQCK-00028), Go (PQCK-00029). C/C++/TS/Java/CPython ext skip hybrid until their v1.4 ports.
 
-Latest pass: **Python 267 / Rust 267 / Go 267 / C 258 PASS, 0 FAIL** across all 3 projects (258 standard + 9 hybrid).
+Latest pass: **Python 296 / Rust 296 / Go 296 / C 287 PASS, 0 FAIL** across all 3 projects (287 standard + 9 hybrid for the hybrid-capable languages).
 
 > Note: the wire-tag literals `"pqcrypt v1 header"`, `"pqcrypt v1 aead k"`, `"pqcrypt v1 aead n"`, `"pqcrypt v1 commit"`, `"pqcrypt v1 timing pad"`, and `"pqcrypt v1 hybrid combiner"` are **frozen v1 wire tags — not rebrandable names**. They are byte strings hashed into every envelope and into every conformance vector; they remain verbatim across the rename and are the only legitimate place the token `pqcrypt` survives in code.
 

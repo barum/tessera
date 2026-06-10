@@ -26,6 +26,9 @@
  * Suites (offset 7):
  *   0x01  ML-KEM-1024 + AES-256-GCM + UtC commit  (v1 mandatory)
  *   0x02  ML-KEM-1024 + ChaCha20-Poly1305 + UtC   (v1 optional)
+ *   0x06  X25519 + ML-KEM-1024 + AES-256-GCM + UtC (v1.2 hybrid; allocated
+ *         spec-wide but REJECTED by this C reference until its hybrid port
+ *         lands — TSEAL-00030)
  *   else  reject (UNKNOWN_SUITE)
  *
  * Implementation note: this reference is built on OpenSSL 3.5+ for
@@ -131,9 +134,12 @@ typedef struct {
 /* Note: tessera_seal_pub_t and tessera_seal_priv_t hold non-hybrid (suite 0x01/0x02)
  * keys only. The hybrid suite 0x06 keys (1600 B pk, 3200 B sk) require a
  * larger struct and are not exposed by the C ABI — full hybrid C support
- * is backlog (PQCK-00030, targeting v1.4). Current C decoders accept hybrid
- * envelopes only insofar as `tessera_seal_peek_header()` reports the suite byte;
- * subsequent decrypt() returns TESSERA_SEAL_E_UNKNOWN_SUITE. */
+ * is backlog (TSEAL-00030, targeting v1.4). Until then this C reference
+ * rejects suite 0x06 at the earliest decode point: `tessera_seal_peek_header()`
+ * itself returns TESSERA_SEAL_E_UNKNOWN_SUITE for any suite byte other than
+ * 0x01/0x02 (so validate()/decrypt(), which call it, reject 0x06 too).
+ * Hybrid envelopes therefore cannot be inspected with this header's API;
+ * use the Python/Go/Rust ports for suite 0x06 until TSEAL-00030 lands. */
 
 /* ----- Decoded header -----
  *

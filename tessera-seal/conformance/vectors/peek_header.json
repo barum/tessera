@@ -50,5 +50,18 @@
       "kem_ct_len": 1568,
       "ad_len": 8
     }
+  },
+  {
+    "name": "aesgcm_ctr0xFFFF_ad0",
+    "op": "peek_header",
+    "header_hex": "018bcfe568000401ffff062000000000",
+    "expected": {
+      "timestamp_ms": 1700000000000,
+      "variant": 4,
+      "suite": 1,
+      "counter": 65535,
+      "kem_ct_len": 1568,
+      "ad_len": 0
+    }
   }
 ]

@@ -36,6 +36,7 @@ every other language decrypts them identically.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -104,12 +105,26 @@ def _hex(b: bytes) -> str:
     return b.hex()
 
 
+# TESS-00009 / TP-113: module-level write switch. False = dry run (default);
+# main() flips it only when --write is passed, so an accidental invocation
+# (or `--help`) can never silently rewrite frozen vectors.
+_WRITE = False
+
+
 def _write(path: Path, records: list) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as f:
-        json.dump(records, f, indent=2)
-        f.write("\n")
-    print(f"wrote {path.relative_to(PROJECT_ROOT)} ({len(records)} record(s))")
+    content = json.dumps(records, indent=2) + "\n"
+    if path.exists():
+        status = "unchanged" if path.read_text() == content else "WOULD CHANGE"
+    else:
+        status = "NEW FILE"
+    rel = path.relative_to(PROJECT_ROOT)
+    if _WRITE:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w") as f:
+            f.write(content)
+        print(f"wrote {rel} ({len(records)} record(s), was {status})")
+    else:
+        print(f"dry-run {rel} ({len(records)} record(s), {status})")
 
 
 # ---------------------------------------------------------------------------
@@ -134,11 +149,28 @@ def make_decrypt_vectors():
         ("empty_chacha", b"", b"", tessera_seal.SUITE_MLKEM1024_CHACHA),
         ("short_chacha", b"hello chacha", b"", tessera_seal.SUITE_MLKEM1024_CHACHA),
         ("ad_chacha", b"chacha + AD", b"pqid-like-41-byte-string-padded___........", tessera_seal.SUITE_MLKEM1024_CHACHA),
+        # TESS-00009 / TP-046 boundary KATs. APPENDED at the end of the list
+        # so the DRBG draw order (and therefore every earlier record's bytes)
+        # is unchanged — the committed records are frozen. The explicit
+        # sender_counter values keep the module-level SenderContext state
+        # untouched too (implicit-counter encrypts would shift the ctr field
+        # of every later implicit envelope, mutating frozen records).
+        #   - 64 KiB plaintext (vectors previously maxed out at 256 B).
+        #   - AD at exactly the MAX_AD_LEN = 65_536 cap (previously <= 41 B).
+        ("pt_64kib_aesgcm", bytes(range(256)) * 256, b"", tessera_seal.SUITE_MLKEM1024_AESGCM, 7),
+        ("ad_max_65536_aesgcm", b"boundary: max-length AD", b"A" * tessera_seal.MAX_AD_LEN, tessera_seal.SUITE_MLKEM1024_AESGCM, 8),
     ]
-    for idx, (name, pt, ad, suite) in enumerate(cases):
+    for idx, case in enumerate(cases):
+        name, pt, ad, suite = case[:4]
+        counter = case[4] if len(case) > 4 else None
         seed = _kp_seed(100 + idx)
         priv, pub = tessera_seal.generate_keypair_from_seed(seed, suite=suite)
-        env = tessera_seal.encrypt(pt, pub, suite=suite, associated_data=ad)
+        if counter is None:
+            env = tessera_seal.encrypt(pt, pub, suite=suite, associated_data=ad)
+        else:
+            env = tessera_seal.encrypt(
+                pt, pub, suite=suite, associated_data=ad, sender_counter=counter
+            )
         # Sanity: round-trip locally.
         assert tessera_seal.decrypt(env, priv, expected_ad=ad) == pt
         records.append(
@@ -174,6 +206,9 @@ def make_peek_header_vectors():
         ("aesgcm_ctr7_ad41", tessera_seal.SUITE_MLKEM1024_AESGCM, 7, 41),
         ("chacha_ctr0_ad0", tessera_seal.SUITE_MLKEM1024_CHACHA, 0, 0),
         ("chacha_ctr0xFFFE_ad8", tessera_seal.SUITE_MLKEM1024_CHACHA, 0xFFFE, 8),
+        # TESS-00009 / TP-046: counter saturated at the 16-bit maximum.
+        # APPENDED at the end so earlier records' DRBG draw order is unchanged.
+        ("aesgcm_ctr0xFFFF_ad0", tessera_seal.SUITE_MLKEM1024_AESGCM, 0xFFFF, 0),
     ]):
         _, pub = tessera_seal.generate_keypair_from_seed(_kp_seed(400 + idx), suite=suite)
         env = tessera_seal.encrypt(
@@ -349,6 +384,90 @@ def make_invalid_vectors():
             "envelope_hex": _hex(bk_env),
             "expected_ad_hex": "",
             "error_kind": "BAD_KEY",
+        }
+    )
+
+    # 6. Truncation classes (TESS-00009 / TP-045). A well-formed envelope cut
+    # short MUST fail the total-length-vs-declared-lengths check with the
+    # INVALID_LEN class — never auth-class. The private key is included so
+    # every runner exercises decrypt() (the truncated envelopes still carry a
+    # perfectly valid 16-byte header, so a key-less record would degrade to a
+    # peek_header call that succeeds). Cut points:
+    #   - mid-KEM_CT          (700 bytes into the 1568-byte KEM ciphertext)
+    #   - mid-AEAD_CT         (3 bytes into the AEAD ciphertext)
+    #   - one byte short of the commit tag (empty-plaintext envelope, so the
+    #     missing byte provably falls inside the 32-byte commit region)
+    # All three land below HEADER + kem_ct_len + ad_len + NONCE + TAG + COMMIT.
+    # Explicit sender_counter values: implicit-counter encrypts would advance
+    # the module-level SenderContext and shift the ctr field of every later
+    # implicit envelope (mutating frozen records downstream).
+    _reset_kat_drbg()
+    tr_seed = _kp_seed(260)
+    tr_priv, tr_pub = tessera_seal.generate_keypair_from_seed(tr_seed)
+    tr_ad = b"ad"
+    tr_env = tessera_seal.encrypt(
+        b"truncation-target", tr_pub, associated_data=tr_ad, sender_counter=0
+    )
+    e_seed = _kp_seed(261)
+    e_priv, e_pub = tessera_seal.generate_keypair_from_seed(e_seed)
+    e_ad = b"ad3"
+    e_env = tessera_seal.encrypt(b"", e_pub, associated_data=e_ad, sender_counter=1)
+    truncations = [
+        ("trunc_mid_kem_ct", tr_seed, tr_priv, tr_ad,
+         tr_env[: tessera_seal.HEADER_BYTES + 700]),
+        ("trunc_mid_aead_ct", tr_seed, tr_priv, tr_ad,
+         tr_env[: tessera_seal.HEADER_BYTES + tessera_seal.MLKEM1024_CT_BYTES
+                + len(tr_ad) + tessera_seal.AEAD_NONCE_BYTES + 3]),
+        ("trunc_one_byte_short_of_commit", e_seed, e_priv, e_ad, e_env[:-1]),
+    ]
+    for name, seed, priv, ad, env in truncations:
+        # Pin the class against the Python reference at generation time.
+        try:
+            tessera_seal.decrypt(env, priv, expected_ad=ad)
+            raise AssertionError(f"{name}: truncated envelope decrypted")
+        except tessera_seal.InvalidLength:
+            pass
+        records.append(
+            {
+                "name": name,
+                "op": "decrypt_should_fail",
+                "private_key_seed_hex": _hex(seed),
+                "private_key_hex": _hex(priv.to_bytes()),
+                "envelope_hex": _hex(env),
+                "expected_ad_hex": _hex(ad),
+                "error_kind": "INVALID_LEN",
+            }
+        )
+
+    # 7. Wrong KEM_CT_LEN under a structurally valid header (TESS-00009 /
+    # TP-046). The header itself parses (4096 == MAX_KEM_CT_LEN, peek_header
+    # succeeds) but declares more KEM ciphertext than the envelope carries,
+    # so decrypt MUST reject with INVALID_LEN — uniformly in every port.
+    _reset_kat_drbg()
+    wk_seed = _kp_seed(262)
+    wk_priv, wk_pub = tessera_seal.generate_keypair_from_seed(wk_seed)
+    wk_env = bytearray(
+        tessera_seal.encrypt(b"x", wk_pub, associated_data=b"", sender_counter=0)
+    )
+    wk_env[tessera_seal.KEM_CT_LEN_OFFSET : tessera_seal.KEM_CT_LEN_OFFSET + 2] = (
+        tessera_seal.MAX_KEM_CT_LEN
+    ).to_bytes(2, "big")
+    wk_env = bytes(wk_env)
+    assert tessera_seal.peek_header(wk_env).kem_ct_len == tessera_seal.MAX_KEM_CT_LEN
+    try:
+        tessera_seal.decrypt(wk_env, wk_priv, expected_ad=b"")
+        raise AssertionError("wrong-kem_ct_len envelope decrypted")
+    except tessera_seal.InvalidLength:
+        pass
+    records.append(
+        {
+            "name": "wrong_kem_ct_len_valid_header",
+            "op": "decrypt_should_fail",
+            "private_key_seed_hex": _hex(wk_seed),
+            "private_key_hex": _hex(wk_priv.to_bytes()),
+            "envelope_hex": _hex(wk_env),
+            "expected_ad_hex": "",
+            "error_kind": "INVALID_LEN",
         }
     )
 
@@ -581,7 +700,30 @@ def make_hybrid_peek_header_vectors():
     _write(VECTORS_DIR / "hybrid_peek_header.json", records)
 
 
-def main():
+def main(argv=None):
+    global _WRITE
+    parser = argparse.ArgumentParser(
+        description=(
+            "Regenerate the TesseraSeal conformance vectors from the Python "
+            "reference. Default is a dry run that only reports what would "
+            "change; pass --write to actually rewrite vectors/*.json. "
+            "Committed vector records are FROZEN append-only — verify with "
+            "tools/scripts/check-vector-freeze.sh after any --write. KNOWN "
+            "non-reproducible files (pre-existing, tracked separately): "
+            "ad_binding.json, hybrid_decrypt.json, hybrid_ad_binding.json "
+            "regenerate with different bytes (hybrid X25519 ephemerals come "
+            "from the OS CSPRNG, not the seeded DRBG) — do NOT commit "
+            "rewrites of those three without re-pinning them deliberately."
+        )
+    )
+    parser.add_argument(
+        "--write",
+        action="store_true",
+        help="actually write the vector files (default: dry run, no writes)",
+    )
+    args = parser.parse_args(argv)
+    _WRITE = args.write
+
     VECTORS_DIR.mkdir(parents=True, exist_ok=True)
     tessera_seal.set_now_ms_for_testing(KAT_TS_MS)
     try:
@@ -597,7 +739,10 @@ def main():
         make_hybrid_peek_header_vectors()
     finally:
         tessera_seal.set_now_ms_for_testing(None)
-    print(f"\nAll vectors written under {VECTORS_DIR}.")
+    if _WRITE:
+        print(f"\nAll vectors written under {VECTORS_DIR}.")
+    else:
+        print("\ndry run complete — re-run with --write to apply")
 
 
 if __name__ == "__main__":

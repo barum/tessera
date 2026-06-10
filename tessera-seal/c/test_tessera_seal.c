@@ -301,6 +301,65 @@ done:
     tessera_seal_zeroize_priv(&priv);
 }
 
+static void test_suite_0x06_hybrid_rejected(void) {
+    /* TSEAL-00044 (TP-030): the C port has no hybrid support yet
+     * (TSEAL-00030 backlog). The normative contract (whitepaper sec03 /
+     * tessera-seal/CLAUDE.md "Polyglot hybrid coverage gate") is that
+     * non-hybrid languages MUST reject suite 0x06 as UNKNOWN_SUITE —
+     * never BAD_KEY, never the auth-class DECRYPT_FAILED. In the C port,
+     * tessera_seal_peek_header() owns suite validation (it rejects every
+     * suite it does not implement), and tessera_seal_decrypt() runs
+     * peek_header before its priv->suite BAD_KEY check, so both layers
+     * must report UNKNOWN_SUITE here.
+     *
+     * The 16 header bytes below are copied verbatim from the first record
+     * (hybrid_empty) of ../conformance/vectors/hybrid_decrypt.json:
+     * ts=1700000000000, variant=0x04, suite=0x06, ctr=10, kem_ct_len=1600,
+     * ad_len=0. The body is zero-padded to the declared structural size
+     * (1600 KEM_CT + 12 nonce + 0 AEAD_CT + 16 tag + 32 commit = 1676 B
+     * total), so the only thing wrong with this envelope is the suite. */
+    const char *name = "suite_0x06_hybrid_rejected";
+    static const uint8_t hybrid_header[TESSERA_SEAL_HEADER_BYTES] = {
+        0x01, 0x8b, 0xcf, 0xe5, 0x68, 0x00, /* TS = 1700000000000 */
+        0x04,                               /* VAR  = TesseraSeal */
+        0x06,                               /* SUITE = hybrid (unsupported) */
+        0x00, 0x0a,                         /* CTR = 10 */
+        0x06, 0x40,                         /* KEM_CT_LEN = 1600 */
+        0x00, 0x00, 0x00, 0x00              /* AD_LEN = 0 */
+    };
+    uint8_t env[TESSERA_SEAL_HEADER_BYTES + 1600 + TESSERA_SEAL_AEAD_NONCE_BYTES
+                + TESSERA_SEAL_AEAD_TAG_BYTES + TESSERA_SEAL_COMMIT_BYTES] = {0};
+    tessera_seal_priv_t priv = {0};
+    tessera_seal_pub_t  pub  = {0};
+    memcpy(env, hybrid_header, sizeof(hybrid_header));
+
+    /* Structural layer: peek_header rejects the unimplemented suite. */
+    tessera_seal_header_t h;
+    ASSERT_RC(tessera_seal_peek_header(env, sizeof(env), &h),
+              TESSERA_SEAL_E_UNKNOWN_SUITE, name);
+
+    /* Decrypt layer: MUST be UNKNOWN_SUITE, not BAD_KEY (priv is tagged
+     * 0x01 here, so a wrong implementation that skipped suite validation
+     * would surface BAD_KEY) and not DECRYPT_FAILED. */
+    ASSERT_OK(tessera_seal_generate_keypair(TESSERA_SEAL_SUITE_MLKEM1024_AESGCM, &priv, &pub), name);
+    uint8_t out[64]; size_t out_len = sizeof(out);
+    ASSERT_RC(tessera_seal_decrypt(env, sizeof(env), &priv, NULL, 0, out, sizeof(out), &out_len),
+              TESSERA_SEAL_E_UNKNOWN_SUITE, name);
+
+    /* Same MUST for a well-formed non-hybrid envelope re-tagged 0x06. */
+    uint8_t env2[2048]; size_t env2_len = sizeof(env2);
+    ASSERT_OK(tessera_seal_encrypt((const uint8_t *)"x", 1, &pub, TESSERA_SEAL_SUITE_MLKEM1024_AESGCM,
+                              NULL, 0, UINT64_MAX, 0,
+                              env2, sizeof(env2), &env2_len), name);
+    env2[TESSERA_SEAL_SUITE_OFFSET] = 0x06;
+    out_len = sizeof(out);
+    ASSERT_RC(tessera_seal_decrypt(env2, env2_len, &priv, NULL, 0, out, sizeof(out), &out_len),
+              TESSERA_SEAL_E_UNKNOWN_SUITE, name);
+    PASS(name);
+done:
+    tessera_seal_zeroize_priv(&priv);
+}
+
 static void test_peek_header(void) {
     const char *name = "peek_header";
     tessera_seal_priv_t priv;
@@ -366,10 +425,28 @@ static void test_kat_decrypt(void) {
             g_fail++;
             continue;
         }
-        uint8_t env[8192]; size_t env_len = sizeof(env);
-        if (hex_decode(env_hex_p, env_hex_l, env, &env_len) != 0) {
+        /* Heap-allocate from hex lengths: decrypt.json now carries large
+         * records (64 KiB plaintext, 65536-byte AD) that overflow fixed
+         * stack buffers (TESS-00009). */
+        size_t env_cap = env_hex_l / 2 + 1;
+        size_t ad_cap  = ad_hex_l / 2 + 1;
+        size_t pt_cap  = pt_hex_l / 2 + 1;
+        uint8_t *env = malloc(env_cap);
+        uint8_t *ad = malloc(ad_cap);
+        uint8_t *expected_pt = malloc(pt_cap);
+        uint8_t *out = malloc(pt_cap);
+        if (!env || !ad || !expected_pt || !out) {
+            fprintf(stderr, "FAIL kat:%s: out of memory\n", rec_name);
+            g_fail++;
+            free(env); free(ad); free(expected_pt); free(out);
+            continue;
+        }
+        size_t env_len = env_cap;
+        if (hex_decode(env_hex_p, env_hex_l, env, &env_len) != 0 ||
+            env_len <= TESSERA_SEAL_SUITE_OFFSET) {
             fprintf(stderr, "FAIL kat:%s: envelope too large or bad hex\n", rec_name);
             g_fail++;
+            free(env); free(ad); free(expected_pt); free(out);
             continue;
         }
         /* Tag the key with the envelope's own suite byte (offset 7) so this
@@ -378,31 +455,34 @@ static void test_kat_decrypt(void) {
          * mixes 0x01 (AES-GCM) and 0x02 (ChaCha) records. */
         priv.suite = env[TESSERA_SEAL_SUITE_OFFSET];
 
-        uint8_t ad[1024]; size_t ad_len = sizeof(ad);
+        size_t ad_len = ad_cap;
         if (ad_hex_l == 0) {
             ad_len = 0;
         } else if (hex_decode(ad_hex_p, ad_hex_l, ad, &ad_len) != 0) {
             fprintf(stderr, "FAIL kat:%s: bad ad hex\n", rec_name);
             g_fail++;
+            free(env); free(ad); free(expected_pt); free(out);
             continue;
         }
 
-        uint8_t expected_pt[1024]; size_t expected_pt_len = sizeof(expected_pt);
+        size_t expected_pt_len = pt_cap;
         if (pt_hex_l == 0) {
             expected_pt_len = 0;
         } else if (hex_decode(pt_hex_p, pt_hex_l, expected_pt, &expected_pt_len) != 0) {
             fprintf(stderr, "FAIL kat:%s: bad pt hex\n", rec_name);
             g_fail++;
+            free(env); free(ad); free(expected_pt); free(out);
             continue;
         }
 
-        uint8_t out[1024]; size_t out_len = sizeof(out);
+        size_t out_len = pt_cap;
         int rc = tessera_seal_decrypt(env, env_len, &priv,
                                  ad_len ? ad : NULL, ad_len,
-                                 out, sizeof(out), &out_len);
+                                 out, pt_cap, &out_len);
         if (rc != TESSERA_SEAL_OK) {
             fprintf(stderr, "FAIL kat:%s: decrypt rc=%d\n", rec_name, rc);
             g_fail++;
+            free(env); free(ad); free(expected_pt); free(out);
             continue;
         }
         if (out_len != expected_pt_len ||
@@ -410,11 +490,13 @@ static void test_kat_decrypt(void) {
             fprintf(stderr, "FAIL kat:%s: plaintext mismatch (got %zu B, want %zu B)\n",
                     rec_name, out_len, expected_pt_len);
             g_fail++;
+            free(env); free(ad); free(expected_pt); free(out);
             continue;
         }
         printf("PASS kat:%s\n", rec_name);
         g_pass++;
         records_seen++;
+        free(env); free(ad); free(expected_pt); free(out);
     }
     free(buf);
     if (records_seen == 0) {
@@ -515,6 +597,7 @@ int main(void) {
     test_unknown_variant();
     test_unknown_suite();
     test_bad_key_suite_mismatch();
+    test_suite_0x06_hybrid_rejected();
     test_peek_header();
     test_kat_decrypt();
     test_kat_ad_binding();

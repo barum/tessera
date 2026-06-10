@@ -28,6 +28,7 @@ public class TesseraSealTest {
         testADBindingWrongAD();
         testVariantRejection();
         testSuiteRejection();
+        testSuite0x06HybridRejected();
         testSuiteKeyConsistency();
         testTamperDetection();
         testPeekHeader();
@@ -120,6 +121,54 @@ public class TesseraSealTest {
             if (!threw) { System.out.println("FAIL suite_rejection 0x" + Integer.toHexString(s)); gFail++; return; }
         }
         expect(true, "suite_rejection (7 cases)");
+    }
+
+    static void testSuite0x06HybridRejected() {
+        // TSEAL-00044 (TP-030): the Java port has no hybrid support yet
+        // (TSEAL-00033 backlog). The normative contract is that non-hybrid
+        // languages MUST reject suite 0x06 as UnknownSuite — never the
+        // structural BadKey, never the auth-class DecryptionError. In this
+        // port peekHeader() owns suite validation and decrypt() runs it
+        // before the priv.suite BadKey check, so both layers must throw
+        // UnknownSuite here.
+        //
+        // Header bytes are copied verbatim from the first record
+        // (hybrid_empty) of ../conformance/vectors/hybrid_decrypt.json:
+        // ts=1700000000000, variant=0x04, suite=0x06, ctr=10,
+        // kemCtLen=1600, adLen=0. The body is zero-padded to the declared
+        // structural size (1600 KEM_CT + 12 nonce + 16 tag + 32 commit =
+        // 1676 B total), so the only thing wrong with this envelope is the
+        // suite.
+        byte[] env = new byte[16 + 1600 + 12 + 16 + 32];
+        byte[] hybridHeader = hex("018bcfe568000406000a064000000000");
+        System.arraycopy(hybridHeader, 0, env, 0, hybridHeader.length);
+
+        // Structural layer: peekHeader rejects the unimplemented suite.
+        boolean peekThrew = false;
+        try { TesseraSeal.peekHeader(env); }
+        catch (UnknownSuite e) { peekThrew = true; }
+        catch (Exception e) {}
+        expect(peekThrew, "suite_0x06_peek_header_unknown_suite");
+
+        // Decrypt layer: MUST be UnknownSuite — explicitly not BadKey (the
+        // key is tagged 0x01, so an implementation that skipped suite
+        // validation would surface BadKey) and not DecryptionError.
+        KeyPair kp = TesseraSeal.generateKeypair(TesseraSeal.SUITE_MLKEM1024_AESGCM);
+        boolean decThrew = false;
+        try { TesseraSeal.decrypt(env, kp.priv, new byte[0]); }
+        catch (UnknownSuite e) { decThrew = true; }
+        catch (Exception e) {}  // BadKey / DecryptionError / anything else = FAIL
+        expect(decThrew, "suite_0x06_decrypt_unknown_suite");
+
+        // A well-formed 0x01 envelope re-tagged 0x06 must also be UnknownSuite.
+        byte[] env2 = TesseraSeal.encrypt("x".getBytes(), kp.pub,
+                TesseraSeal.SUITE_MLKEM1024_AESGCM, new byte[0], null, 0);
+        env2[7] = 0x06;
+        boolean retagThrew = false;
+        try { TesseraSeal.decrypt(env2, kp.priv, new byte[0]); }
+        catch (UnknownSuite e) { retagThrew = true; }
+        catch (Exception e) {}
+        expect(retagThrew, "suite_0x06_retag_decrypt_unknown_suite");
     }
 
     static void testSuiteKeyConsistency() {

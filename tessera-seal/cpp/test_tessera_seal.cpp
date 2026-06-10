@@ -123,6 +123,53 @@ int main() {
         std::printf("PASS tamper (6 sites)\n"); ++g_pass;
     }
 
+    // Suite 0x06 (hybrid) rejection — TSEAL-00044 (TP-030).
+    //
+    // The C++ wrapper has no hybrid support yet (TSEAL-00031 backlog). The
+    // normative contract is that non-hybrid languages MUST reject suite 0x06
+    // as UnknownSuite — never the BadKey-class Error, never the auth-class
+    // DecryptionError. The wrapper delegates to the C reference, where
+    // tessera_seal_peek_header() owns suite validation and decrypt() runs it
+    // before the priv->suite BAD_KEY check, so both layers must throw
+    // UnknownSuite here.
+    //
+    // Header bytes are copied verbatim from the first record (hybrid_empty)
+    // of ../conformance/vectors/hybrid_decrypt.json: ts=1700000000000,
+    // variant=0x04, suite=0x06, ctr=10, kem_ct_len=1600, ad_len=0. The body
+    // is zero-padded to the declared structural size (1600 KEM_CT + 12 nonce
+    // + 16 tag + 32 commit = 1676 B total), so the only thing wrong with
+    // this envelope is the suite.
+    {
+        const std::uint8_t hybrid_header[16] = {
+            0x01, 0x8b, 0xcf, 0xe5, 0x68, 0x00, 0x04, 0x06,
+            0x00, 0x0a, 0x06, 0x40, 0x00, 0x00, 0x00, 0x00,
+        };
+        std::vector<std::uint8_t> env(16 + 1600 + 12 + 16 + 32, 0x00);
+        std::memcpy(env.data(), hybrid_header, sizeof(hybrid_header));
+
+        bool peek_threw = false;
+        try { (void)peek_header(env); }
+        catch (const UnknownSuite&) { peek_threw = true; }
+        catch (...) {}
+        EXPECT(peek_threw, "suite_0x06_peek_header_unknown_suite");
+
+        auto [priv, pub] = generate_keypair();
+        bool dec_threw = false;
+        try { (void)decrypt(env, priv, {}); }
+        catch (const UnknownSuite&) { dec_threw = true; }
+        catch (...) {}  // BadKey / DecryptionError / anything else = FAIL
+        EXPECT(dec_threw, "suite_0x06_decrypt_unknown_suite");
+
+        // A well-formed 0x01 envelope re-tagged 0x06 must also be UnknownSuite.
+        auto env2 = encrypt({'x'}, pub);
+        env2[7] = 0x06;
+        bool retag_threw = false;
+        try { (void)decrypt(env2, priv, {}); }
+        catch (const UnknownSuite&) { retag_threw = true; }
+        catch (...) {}
+        EXPECT(retag_threw, "suite_0x06_retag_decrypt_unknown_suite");
+    }
+
     // Peek header
     {
         auto [priv, pub] = generate_keypair();

@@ -63,13 +63,43 @@ Passphrase-wrapped private key on disk.
 1. Generate an ML-KEM-1024 keypair (`pk`, `sk`).
 2. Read a passphrase from the terminal (no echo) or from `$TESSERA_SEAL_PASSPHRASE`.
 3. Derive a 32-byte symmetric key: `K_wrap = Argon2id(passphrase, salt=CSPRNG(16), m=64MiB, t=3, p=1, 32 bytes)`.
-4. Wrap: `wrapped = AES-256-GCM-Encrypt(K_wrap, nonce=CSPRNG(12), plaintext=sk)`.
-5. Serialize:
+4. Wrap: `wrapped = AES-256-GCM-Encrypt(K_wrap, nonce=CSPRNG(12), plaintext=sk, aad=header || kdf_block)`.
+5. Serialize (current write format, v1.1 + KDF block):
    ```
-   tseal-key-v1
-   <base64url(salt || nonce || wrapped || tag)>
+   tseal-key-v1.1
+   <base64url(salt[16] || nonce[12] || pk[1568] || wrapped[3168] || tag[16] || kdf_block[13])>
    ```
    Two lines, trailing newline. File extension `.tseal-key`.
+
+### Keyfile KDF block (TSEAL-00040)
+
+The trailing 13-byte KDF block makes the passphrase-KDF choice **explicit and
+authenticated** instead of environment-dependent:
+
+```
+kdf_block = kdf_id[1] || p0[4] || p1[4] || p2[4]      (big-endian)
+  kdf_id 0x01 = Argon2id            (p0 = memory_kib, p1 = time_cost, p2 = parallelism)
+  kdf_id 0x02 = PBKDF2-HMAC-SHA-512 (p0 = iterations, p1 = p2 = 0)
+```
+
+Rules:
+
+- **Wrap fails closed.** If `argon2-cffi` is unavailable, `keygen` refuses to
+  write a keyfile unless the caller explicitly opts in with `--allow-pbkdf2`
+  (`allow_pbkdf2=True` in the API). No environment variable can enable the
+  fallback — silent Argon2id→PBKDF2 downgrade is not possible.
+- **Unwrap selects the KDF from the file, never from the environment.** A
+  keyfile whose block names Argon2id hard-fails when `argon2-cffi` is missing;
+  it is never silently retried under another KDF.
+- The KDF block is bound into the AES-256-GCM AAD (`header || kdf_block`), so
+  on-disk tampering with the KDF id or params fails the wrap tag.
+- Parsers cap the block's cost parameters (≤ 4 GiB Argon2id memory, ≤ 1024
+  time_cost, ≤ 64 lanes, ≤ 1e8 PBKDF2 iterations) so a forged keyfile cannot
+  drive resource exhaustion.
+- **Backward compatibility:** `tseal-key-v1` files and KDF-block-less
+  `tseal-key-v1.1` files (distinguished by exact blob length) still unwrap via
+  the legacy derive path (Argon2id preferred, warned PBKDF2 fallback). New
+  keyfiles always carry the block.
 
 ### Key use (during encrypt / decrypt)
 

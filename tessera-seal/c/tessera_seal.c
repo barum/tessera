@@ -751,9 +751,11 @@ int tessera_seal_decrypt(const uint8_t *env, size_t env_len,
     OPENSSL_cleanse(out, aead_ct_len);
     *out_len = 0;
 
-    /* For full-flat timing, also run the synthetic-key schedule + a
-     * synthetic AEAD verify call. This is the C analogue of
-     * python/_synthetic_decrypt_keys. We discard the result. */
+    /* Timing pad on the auth-failure path: run the synthetic-key SCHEDULE
+     * (HKDF derivations, discarded) — the C analogue of
+     * python/_synthetic_decrypt_keys. NOTE: key derivation only; no
+     * synthetic AEAD verify call happens here. Whitepaper §9.2's stronger
+     * wording is reconciled to this implemented behavior (TP-031). */
     uint8_t syn_k[32], syn_nonce[TESSERA_SEAL_AEAD_NONCE_BYTES], syn_commit_key[32];
     (void)derive_synthetic_keys(header_bytes, syn_k, syn_nonce, syn_commit_key);
     OPENSSL_cleanse(syn_k, sizeof(syn_k));

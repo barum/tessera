@@ -2,6 +2,11 @@
 
 Reverse-chronological. One entry per PR (or per logical change shipped together).
 
+- 2026-06-10 — [TSEAL-00044 — Suite-0x06 MUST-reject unit tests in C/C++/TS/Java/CPython (sec)](2026-06-10-tseal-00044-suite-0x06-reject-tests.md)
+- 2026-06-10 — [TSEAL-00043 — Comment/docstring truthfulness sweep (docs)](2026-06-10-tseal-00043-seal-comment-sweep.md)
+- 2026-06-10 — [TSEAL-00042 — Python decrypt AAD construction aligned to on-wire AD (refactor)](2026-06-10-tseal-00042-python-decrypt-aad-alignment.md)
+- 2026-06-10 — [TSEAL-00041 — Rust randomness via getrandom crate (sec)](2026-06-10-tseal-00041-rust-getrandom.md)
+- 2026-06-10 — [TSEAL-00040 — Plugin keyfile KDF fail-closed + KDF id in format (sec)](2026-06-10-tseal-00040-plugin-kdf-fail-closed.md)
 - 2026-06-10 — [TSEAL-00039 — CLI keygen rejects unsupported --suite values (sec)](2026-06-10-tseal-00039-cli-suite-flag-reject.md)
 - 2026-06-10 — [TSEAL-00038 — BadKey suite/key consistency in Java (sec)](2026-06-10-tseal-00038-java-badkey.md)
 - 2026-06-10 — [TSEAL-00037 — BadKey suite/key consistency in TypeScript (sec)](2026-06-10-tseal-00037-typescript-badkey.md)
