@@ -24,8 +24,9 @@ specification, rationale, security analysis, and benchmark methodology, see
 
 - **Base64URL** (canonical wire form): 55 chars, no padding.
 - **Crockford Base32** (human-typable): 66 chars, case-insensitive, folds
-  `I`/`L` → `1` and `O` → `0`. Decode rejects values whose top 2 bits (of the
-  330-bit decoded number) are non-zero.
+  `I`/`L` → `1` and `O` → `0`. Decode rejects non-canonical values: the 330-bit decoded
+  string carries a 328-bit value, and the 2 stream-trailing pad bits (the low
+  2 bits of the final character) must be zero.
 
 ## Tree
 

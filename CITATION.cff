@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use Tessera or cite its specifications, please cite this repository as below."
+title: "Tessera: spec-first polyglot reference implementations for TesseraID, TesseraHash, and TesseraSeal"
+type: software
+authors:
+  - family-names: Samani
+    given-names: Bahram
+repository-code: "https://github.com/barum/tessera"
+license: Apache-2.0
+date-released: "2026-06-08"
+abstract: >-
+  Tessera is a specification-first monorepo housing three post-quantum-era wire formats with
+  byte-identical reference implementations in eight languages: TesseraID (a 41-byte sortable
+  identifier with Standard and Hybrid-Logical-Clock variants), TesseraHash (a 73-byte SHAKE-256
+  content hash), and TesseraSeal (an ML-KEM-1024 + AES-256-GCM encryption envelope with a
+  key-committing UtC tag). Each project ships a normative whitepaper, a canonical Python
+  reference, a canonical C ABI, and a cross-language known-answer-test conformance harness.
+references:
+  - type: report
+    title: "TesseraID Whitepaper"
+    authors:
+      - family-names: Samani
+        given-names: Bahram
+    url: "https://github.com/barum/tessera/blob/main/TesseraID_Whitepaper.pdf"
+  - type: report
+    title: "TesseraHash Whitepaper"
+    authors:
+      - family-names: Samani
+        given-names: Bahram
+    url: "https://github.com/barum/tessera/blob/main/tessera-hash/latex"
+  - type: report
+    title: "TesseraSeal Whitepaper"
+    authors:
+      - family-names: Samani
+        given-names: Bahram
+    url: "https://github.com/barum/tessera/blob/main/tessera-seal/latex"

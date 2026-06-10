@@ -1,0 +1,13 @@
+Tessera — TesseraID, TesseraHash, TesseraSeal
+Copyright 2026 Bahram Samani
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes a vendored implementation of Keccak/SHAKE-256 under common/
+(see common/c/ source headers for provenance).
+
+NOTE (pre-publication): the copyright attribution above is the maintainer's draft
+declaration. Portions of this repository were authored during employment under a
+corporate email identity; an employer IP carve-out or acknowledgment should be
+confirmed and recorded in docs/decisions/2026-06-10-ip-provenance.md before the
+repository or any artifact is published publicly.
