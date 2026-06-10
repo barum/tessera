@@ -1,9 +1,9 @@
 TesseraID CPython extension benchmarks (single thread)
--------------------------------------------------
+------------------------------------------------------
 
-  Standard generation                    2,063,662 ops/sec   (   485 ns/op)
-  HLC generation (no observe)            2,779,397 ops/sec   (   360 ns/op)
-  encode Base64URL                      10,731,271 ops/sec   (    93 ns/op)
-  encode Crockford Base32               10,427,287 ops/sec   (    96 ns/op)
-  decode Base64URL                      12,009,008 ops/sec   (    83 ns/op)
-  decode Crockford Base32               10,868,105 ops/sec   (    92 ns/op)
+  Standard generation                      999,564 ops/sec   (  1000 ns/op)
+  HLC generation (no observe)              998,045 ops/sec   (  1002 ns/op)
+  encode Base64URL                      19,010,752 ops/sec   (    53 ns/op)
+  encode Crockford Base32               20,067,913 ops/sec   (    50 ns/op)
+  decode Base64URL                      20,133,248 ops/sec   (    50 ns/op)
+  decode Crockford Base32               21,506,272 ops/sec   (    46 ns/op)

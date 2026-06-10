@@ -45,7 +45,8 @@ A TesseraID is exactly 41 bytes (328 bits), structured as four contiguous fields
       \item \code{0x02} = HLC (Hybrid Logical Clock).
       \item \code{0x03} = TesseraHash (sibling content-identifier format, §\ref{sec:tessera_hash}). Allocated 2026 from the reserved-future range; TesseraID decoders MUST reject \code{0x03} (a 0x03 buffer is not a TesseraID).
       \item \code{0x00} and \code{0xFF} are \textbf{permanently reserved}: they MUST be rejected by conformant decoders and MUST NOT be assigned in any future revision of this specification. These two values are reserved defensively so that TesseraID buffers cannot be confused with zero-filled or all-ones uninitialized memory.
-      \item \code{0x04}--\code{0xFE} are reserved for future variants. Conformant decoders MUST reject them with an unknown-variant error until they are assigned by a future revision of this specification.
+      \item \code{0x04} = \tesseraseal{} (sibling encryption-envelope format; allocated 2026 from the reserved-future range). TesseraID decoders MUST reject \code{0x04} with an unknown-variant error: a \code{0x04} buffer is a \tesseraseal{} envelope, not a TesseraID.
+      \item \code{0x05}--\code{0xFE} are reserved for future variants. Conformant decoders MUST reject them with an unknown-variant error until they are assigned by a future revision of this specification.
     \end{itemize}
   \item[Counter (offsets 7--8).] Big-endian unsigned 16-bit integer. For Standard, the counter is incremented within a single millisecond by a small random step (1--16); for HLC, it is the HLC logical counter.
   \item[Random tail (offsets 9--40).] 32 bytes from a cryptographically-strong random source. The full 256 bits provide $2^{128}$ effective post-quantum security against second-preimage attacks.
@@ -78,6 +79,8 @@ procedure new_standard():
 
 The random step (rather than a fixed +1 increment) is a deliberate choice. It provides modest unlinkability of consecutive IDs from a single generator while preserving strict monotonicity (the step is always at least 1, so consecutive IDs always increase).
 
+\emph{Non-normative remark on the exhaustion spin:} the spin condition \code{while now\_ms() <= last\_ts} is deliberately \code{<=}, not \code{==}. After a clock regression, \code{last\_ts} may sit ahead of the wall clock; spinning until \code{now\_ms()} strictly exceeds \code{last\_ts} guarantees the post-spin timestamp is strictly greater than every previously emitted timestamp, preserving strict monotonicity even when the regression spans the exhaustion event. An implementation that spins only while \code{now\_ms() == last\_ts} exits the loop immediately during a regression and can emit an identifier that sorts before its predecessor.
+
 \subsection{Optional defensive helper: \code{validate\_min\_timestamp}}
 \label{sec:min-timestamp}
 
@@ -106,7 +109,8 @@ The HLC generator maintains \code{l} (logical time, ms-grained) and \code{c} (lo
 The contract uses two thresholds, distinct in purpose:
 
 \begin{description}
-  \item[Hard outer bound $\Delta_{\max} = 60{,}000$ ms (normative).] Conformant generators MUST reject observations whose logical time exceeds the local physical clock by more than $\Delta_{\max}$. Implementations MUST expose this constant under the name \code{HLC\_MAX\_DRIFT\_MS} (or the language's idiomatic equivalent). $\Delta_{\max}$ is part of the wire contract: a 60-second peer-ahead-of-local observation that one implementation accepts and another rejects is an interoperability bug.
+  \item[Hard outer bound $\Delta_{\max} = 60{,}000$ ms (normative).] Conformant generators MUST reject observations whose logical time exceeds the local physical clock by more than $\Delta_{\max}$. The comparison is \emph{strict}: an observation MUST be rejected iff $l_{\mathit{msg}} - pt > 60{,}000$ ms --- an observation exactly $60{,}000$ ms ahead MUST be accepted, and one $60{,}001$ ms ahead MUST be rejected. A rejected observation MUST leave the generator's $(l, c)$ state unchanged. These boundary semantics are pinned by the \texttt{hlc\_drift} conformance vectors (TESS-00009). Implementations MUST expose this constant under the name \code{HLC\_MAX\_DRIFT\_MS} (or the language's idiomatic equivalent). $\Delta_{\max}$ is part of the wire contract: a 60-second peer-ahead-of-local observation that one implementation accepts and another rejects is an interoperability bug.
+  \item[Local tightening override (optional).] $\Delta_{\max} = 60{,}000$ ms is the normative \emph{maximum} and the default. Implementations MAY expose a per-generator override that only \emph{tightens} the bound: a configured override MUST satisfy $1~\text{ms} \le \Delta < 60{,}000$~ms. Configuring a bound larger than $\Delta_{\max}$ MUST surface an error and produce no output (relaxing the bound defeats the monotonicity guarantee). Where the override API uses an integer field, the value $0$ selects the normative default --- matching the C reference's \code{max\_drift\_ms} semantics (TID-00020). Implementations that expose no override are conformant.
   \item[Soft alarm threshold $\Delta_{\text{alarm}}$ (configurable, default 1{,}000 ms).] Implementations SHOULD emit a log, metric, or alarm when an observation exceeds $\Delta_{\text{alarm}}$, even if it is still below $\Delta_{\max}$. The default of 1 second captures the operational reality that well-disciplined hosts (NTP, chrony, AWS Time Sync, GCP) maintain sub-100~ms drift; a peer 1~s ahead almost certainly indicates a clock-discipline or NTP-outage problem that an operator should know about, even though the wire format still accepts it. $\Delta_{\text{alarm}}$ is NOT part of the wire contract.
 \end{description}
 
@@ -149,10 +153,19 @@ Crockford's alphabet (\code{0123456789ABCDEFGHJKMNPQRSTVWXYZ}) and its case-inse
 
 The Crockford form is intended for use cases where humans handle the identifier directly: pasted into chat messages, read aloud over phones, written on paper, or appearing in CLI tools where mixed-case is hostile. The Base64URL form is intended for everything else.
 
+\subsubsection{Decode-time variant validation (both encodings)}
+\label{sec:decode-variant-contract}
+
+Both text decoders --- the 55-character Base64URL decoder and the 66-character Crockford Base32 decoder --- MUST validate the variant byte of the decoded 41-byte value and MUST reject any value other than \code{0x01} or \code{0x02} with the unknown-variant error \emph{at decode time}. Variant validation is part of decode, not a separate post-decode step: a conformant text decoder never returns a 41-byte buffer whose variant byte it does not own.
+
+\emph{Non-normative remark:} combined with the padding-bit guards above, decode-time variant validation makes each text decoder a bijection onto the set of valid TesseraIDs --- every accepted string maps to exactly one valid TesseraID, and every valid TesseraID maps to exactly one accepted canonical string.
+
 \subsection{TesseraHash --- sibling content-identifier format (variant \code{0x03})}
 \label{sec:tessera_hash}
 
 TesseraHash is a \textbf{sibling format} to TesseraID, sharing TesseraID's 9-byte header layout but extending the wire size and replacing the random tail with a deterministic content digest. TesseraHash is \emph{additive}: it does not change TesseraID, and the two formats are guaranteed to not cross-decode.
+
+\emph{This subsection is a non-normative summary for TesseraID implementers.} The normative source for the TesseraHash wire format, its encodings, and its security claims is the TesseraHash whitepaper (LaTeX sources under \texttt{tessera-hash/latex/}); where this summary and that paper disagree, the TesseraHash paper wins. The only normative statement TesseraID makes about TesseraHash is the cross-format rejection contract in §\ref{sec:variant-reservation} and below.
 
 \subsubsection{Wire layout (73 bytes)}
 
@@ -175,7 +188,7 @@ TesseraHash is a \textbf{sibling format} to TesseraID, sharing TesseraID's 9-byt
 
 The 512-bit tail gives:
 \begin{itemize}
-  \item $2^{256}$ classical and post-quantum (Grover) second-preimage resistance.
+  \item Second-preimage resistance of $\min(2^d, 2^{256})$ per FIPS 202 \citep{fips202} --- $2^{256}$ classical at $d = 512$ output bits (the SHAKE-256 capacity cap, not the output width, is the binding term). The generic quantum (Grover \citep{grover1996}) bound on the same search is also $2^{256}$, so the figure holds post-quantum.
   \item $2^{256}$ classical collision resistance (birthday).
   \item $2^{170}$ post-quantum collision resistance (BHT \citep{bht1998}). This is the surface that matters for content addressing across multi-decade archival horizons.
 \end{itemize}
@@ -203,7 +216,7 @@ else: error
 TesseraHash uses the same Base64URL and Crockford Base32 alphabets as TesseraID, sized for the larger payload:
 
 \begin{itemize}
-  \item \textbf{Base64URL: 98 characters.} $\lceil 73 \cdot 8 / 6 \rceil = 98$. The final character carries 4 bits of value plus 4 bits of zero padding. Decoders MUST reject inputs whose final character carries non-zero padding bits.
+  \item \textbf{Base64URL: 98 characters.} $\lceil 73 \cdot 8 / 6 \rceil = 98$. 584 input bits fill 97 full characters plus 2 bits, so the final character carries 2 bits of value plus 4 bits of zero padding (it is always one of \code{A}, \code{Q}, \code{g}, \code{w}). Decoders MUST reject inputs whose final character carries non-zero padding bits.
   \item \textbf{Crockford Base32: 117 characters.} $\lceil 73 \cdot 8 / 5 \rceil = 117$. 584 bits of input produce 585 output bits with 1 zero pad bit at the bottom of the final character. Case-insensitive decoding with the same I/L→1 and O→0 confusables as TesseraID.
 \end{itemize}
 

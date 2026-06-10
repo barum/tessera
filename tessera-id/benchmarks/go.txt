@@ -1,11 +1,11 @@
-goos: linux
-goarch: amd64
+goos: darwin
+goarch: arm64
 pkg: tesseraid
-cpu: Intel(R) Xeon(R) Processor @ 2.10GHz
-BenchmarkNew             	11623024	       215.9 ns/op	       0 B/op	       0 allocs/op
-BenchmarkNewParallel     	10878355	       226.0 ns/op	       0 B/op	       0 allocs/op
-BenchmarkNewHLC          	12539206	       192.0 ns/op	       0 B/op	       0 allocs/op
-BenchmarkEncodeBase64URL 	27147264	        84.62 ns/op	     128 B/op	       2 allocs/op
-BenchmarkEncodeCrockford 	18847974	       129.1 ns/op	      80 B/op	       1 allocs/op
+cpu: Apple M4 Max
+BenchmarkNew-14                	 4887074	       249.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkNewParallel-14        	 3607357	       341.5 ns/op	       0 B/op	       0 allocs/op
+BenchmarkNewHLC-14             	 4941030	       247.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEncodeBase64URL-14    	29794387	        42.21 ns/op	     128 B/op	       2 allocs/op
+BenchmarkEncodeCrockford-14    	19067834	        60.69 ns/op	      80 B/op	       1 allocs/op
 PASS
-ok  	tesseraid	13.027s
+ok  	tesseraid	7.323s

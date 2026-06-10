@@ -41,7 +41,7 @@ When changing wire/encoding/validation:
 - [rust/src/lib.rs](rust/src/lib.rs)
 - [typescript/tessera_id.ts](typescript/tessera_id.ts)
 - [java/src/](java/src/)
-- [cpython/tessera_id_ext.c](cpython/tessera_id_ext.c) (must match `tessera_id_fast.py`'s API, not `tessera_id.py`'s)
+- [cpython/tessera_id_ext.c](cpython/tessera_id_ext.c) — wraps the C ABI directly (observe takes a 9-byte HLC prefix; `validate()` binds `tessera_id_validate`); its surface intentionally differs from `tessera_id_fast.py` where the C ABI differs (TID-00020)
 
 ## Build, test, bench
 

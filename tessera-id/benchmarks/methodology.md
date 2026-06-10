@@ -3,32 +3,69 @@
 This document describes how the per-language benchmarks under
 `tessera-id/benchmarks/` are run, what they measure, and how to reproduce them.
 
+## Hardware and provenance (current captures)
+
 The checked-in numbers in `bench_results.txt`, `python.txt`, `go.txt`,
 `rust.txt`, `c.txt`, `cpp.txt`, `cpython.txt`, `java.txt`, and
-`typescript.txt` were captured on Linux x86_64 (Intel Xeon @ 2.10 GHz,
-Python 3.12.3) in May 2026. Numbers from re-runs on other hardware will
-differ; what should be stable across machines is the **relative
-ordering** of formats within a single column.
+`typescript.txt` were captured on **2026-06-10** on a physical
+**Apple M4 Max** (`sysctl -n machdep.cpu.brand_string`), **14 cores**
+(`sysctl -n hw.ncpu`), **macOS 26.5.1** (build 25F80, `sw_vers`).
+CPU governor: n/a — macOS performs its own frequency management; no core
+pinning or isolation was applied. Toolchains for these captures:
+Python 3.14.3, Go 1.26.1 (darwin/arm64), Rust/cargo 1.96.0, Node v25.8.2,
+Apple clang 21.0.0 (both `cc` and `c++`), OpenJDK 26.
+
+Numbers from re-runs on other hardware will differ; what should be stable
+across machines is the **relative ordering** of formats within a single
+column.
+
+**Provenance rules:**
+
+- **Captured outputs are verbatim tool output; never hand-edited.** If a
+  number needs to change, re-run the bench and overwrite the whole capture
+  file. Captures are stdout-only (build noise on stderr is not part of a
+  bench capture).
+- Every re-run on different hardware MUST update the hardware section
+  above in the same change.
+
+**Erratum (2026-06-10, TESS-00011):** the previous captures (May 2026)
+described here as "Linux x86_64 (Intel Xeon @ 2.10 GHz)" were in fact
+produced inside a **virtualized AI-agent sandbox** (generic KVM CPU
+string, 1 vCPU, `/home/claude` build paths leaked into `rust.txt`), and
+several files were subsequently hand-edited (the old `java.txt` carried a
+hand-assembled multi-run narrative that the `Bench` harness does not
+emit; `typescript.txt` claimed a Node version that did not match its
+sibling capture). Their provenance was false by omission. All captures
+were regenerated from scratch on the physical hardware above; the three
+stale, undocumented duplicate files `bench_go.txt`, `bench_rust.txt`, and
+`bench_ts.txt` were deleted.
 
 ## What the benchmarks measure
 
-Each language bench measures **single-threaded generation throughput**
-(ops/sec, ns/op) for at least these formats:
+Each per-language bench measures **single-threaded TesseraID throughput**
+(ops/sec, ns/op): Standard and HLC generation plus Base64URL / Crockford
+encode-decode (the TypeScript bench additionally baselines against
+`crypto.randomUUID()`; the Python bench also runs the `_fast` variant).
 
-  - UUIDv4 (the language's standard library, where available)
+The **cross-format comparison** lives only in the aggregate Python
+`benchmarks/bench.py` (`bench_results.txt`), which measures:
+
+  - UUIDv4 (stdlib)
   - UUIDv7 (manual implementation; standard libraries vary widely on v7)
   - ULID (manual implementation)
-  - KSUID (manual implementation, where present)
+  - KSUID (manual implementation)
   - TesseraID Standard, both the canonical and the fast variant
-  - TesseraID HLC, both canonical and fast where applicable
+  - TesseraID HLC, both canonical and fast
 
 Some language benches additionally measure:
 
-  - **Multi-threaded aggregate throughput** (Python `bench.py` and Rust
-    do this with 8 workers; Go's `-bench` flag drives Go's `b.RunParallel`).
+  - **Multi-threaded aggregate throughput** (the aggregate Python
+    `bench.py` does this with 8 threads × 50k IDs; Go's `BenchmarkNewParallel`
+    uses `b.RunParallel`; the Rust bench is single-threaded only).
   - **Encoding throughput** (Base64URL and Crockford Base32, per ID).
-  - **Allocation counts per op** (Go's `BenchmarkNew` reports
-    `0 B/op, 0 allocs/op`; Rust's bench reports analogously).
+  - **Allocation counts per op** (Go only — `go test -benchmem` reports
+    `0 B/op, 0 allocs/op` for `BenchmarkNew`; no other language bench
+    measures allocations).
   - **Decode + round-trip throughput**.
 
 The intent is **not** to compute a single "TesseraID is X times faster than Y"
@@ -47,27 +84,33 @@ cd tessera-id/python && python3 bench.py > ../benchmarks/python.txt
 # Go
 cd tessera-id/go && go test -bench=. -benchmem > ../benchmarks/go.txt
 
-# Rust (release for accurate timing)
-cd tessera-id/rust && cargo bench > ../benchmarks/rust.txt
+# Rust (the bench is the `bench` [[bin]] target; `cargo bench` runs the
+# libtest harness with zero benchmarks and is NOT the right command)
+cd tessera-id/rust && cargo run --release --bin bench > ../benchmarks/rust.txt
 
 # TypeScript
-cd tessera-id/typescript && npm run bench > ../benchmarks/typescript.txt
+cd tessera-id/typescript && npm run bench --silent > ../benchmarks/typescript.txt
 
-# C
-cd tessera-id/c && make bench > ../benchmarks/c.txt
+# C (build, then run the binary so the capture is harness stdout only)
+cd tessera-id/c && make bench_tessera_id && ./bench_tessera_id > ../benchmarks/c.txt
 
 # C++
-cd tessera-id/cpp && make bench > ../benchmarks/cpp.txt
+cd tessera-id/cpp && make bench_tessera_id && ./bench_tessera_id > ../benchmarks/cpp.txt
 
 # Java
-cd tessera-id/java && make bench > ../benchmarks/java.txt
+cd tessera-id/java && make build && java -cp build com.tessera.id.Bench > ../benchmarks/java.txt
 
 # CPython extension
-cd tessera-id/cpython && python3 bench_tessera_id_ext.py > ../benchmarks/cpython.txt
+cd tessera-id/cpython && python3 setup.py build_ext --inplace && \
+    python3 bench_tessera_id_ext.py > ../benchmarks/cpython.txt
 
 # Cross-format / cross-language aggregate (Python)
 cd tessera-id/benchmarks && python3 bench.py > bench_results.txt
 ```
+
+Each capture file holds the harness's stdout verbatim — build/compile
+chatter stays out of the capture (that is why the C/C++/Java lines build
+first and then run the binary directly instead of piping `make bench`).
 
 The aggregate `bench_results.txt` is produced by `bench.py` and includes
 context lines (Python version, platform, CPU, timestamp) at the top.
@@ -76,16 +119,24 @@ context lines (Python version, platform, CPU, timestamp) at the top.
 
 Read the numbers with these caveats in mind:
 
-  - **Python** timings include the interpreter overhead per call; the
-    same wire format is roughly 5–8× faster in Go, Rust, C, C++, and
-    Java. Comparing TesseraID vs. UUIDv4 within Python is meaningful;
-    comparing absolute ns/op across languages is not.
-  - **Go** and **Rust** must be benched in release mode. The Cargo
-    profile in `tessera-id/rust/Cargo.toml` already pins `opt-level = 3`,
-    `lto = true`, `codegen-units = 1`. The Go bench uses the default
-    optimizer.
+  - **Python** timings include the interpreter overhead per call; on the
+    current captures the same wire format is roughly 2–9× faster in Go,
+    Rust, C, C++, and Java (the spread is real: generator cost is
+    CSPRNG-bound and the languages batch randomness differently).
+    Comparing TesseraID vs. UUIDv4 within Python is meaningful; comparing
+    absolute ns/op across languages is not.
+  - **Go** and **Rust** must be benched in release mode. NOTE:
+    `tessera-id/rust/Cargo.toml` declares `opt-level = 3`, `lto = true`,
+    `codegen-units = 1`, but because the package sits inside a Cargo
+    workspace those package-level profile settings are **ignored** (cargo
+    warns "profiles for the non root package will be ignored") — the
+    current captures use the default `release` profile. The Go bench uses
+    the default optimizer.
   - **C** and **C++** are built with `-O3 -DNDEBUG` (see Makefiles).
-    Pre-`make` clean builds avoid stale objects.
+    Pre-`make` clean builds avoid stale objects. The harness banners
+    hard-code "gcc -O3" / "g++ -O3"; the build actually uses the
+    platform's default `cc`/`c++` (Apple clang 21 for the current
+    captures) — banner fix is backlog, the flags are accurate.
   - **TypeScript** runs under Node.js, with the JIT warmed by the
     inner-loop pattern in `bench.ts`. Browser timings will differ
     significantly; we do not characterize them.

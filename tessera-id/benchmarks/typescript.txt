@@ -1,14 +1,14 @@
 TesseraID TypeScript benchmarks
-Node v24.15.0
+Node v25.8.2
 ──────────────────────────────────────────────────────────────────────
 Operation                                     ops/sec       rel
 ──────────────────────────────────────────────────────────────────────
-crypto.randomUUID()                        12,148,519     1.00x
-TesseraID Standard (locked default)                514,077     0.04x
-TesseraID Standard (raw generator)                 522,913     0.04x
-TesseraID HLC (locked default)                     543,100     0.04x
-TesseraID HLC (raw generator)                      530,956     0.04x
-encode Base64URL                            6,428,220     0.53x
-decode Base64URL                            6,341,935     0.52x
-encode Crockford Base32                       878,570     0.07x
-decode Crockford Base32                     4,870,795     0.40x
+crypto.randomUUID()                        25,890,897     1.00x
+TesseraID Standard (locked default)         1,335,527     0.05x
+TesseraID Standard (raw generator)          1,370,567     0.05x
+TesseraID HLC (locked default)              1,465,979     0.06x
+TesseraID HLC (raw generator)               1,366,649     0.05x
+encode Base64URL                            9,354,778     0.36x
+decode Base64URL                            4,625,835     0.18x
+encode Crockford Base32                     1,661,087     0.06x
+decode Crockford Base32                     9,304,302     0.36x

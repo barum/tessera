@@ -664,7 +664,7 @@ function buildScaleAndAI() {
   ]));
 
   out.push(p([
-    tx("TesseraID's specification mandates intra-ms monotonicity unconditionally. The four reference implementations (Python, Go, Rust, TypeScript) all produce strictly-increasing IDs within a generator within a millisecond. There is no method-selection ambiguity to navigate; conformant generators behave identically. This matters more at million-node scale than anywhere else, because the deployment heterogeneity is unavoidable."),
+    tx("TesseraID’s specification mandates intra-ms monotonicity unconditionally. The eight reference implementations (Python, C, C++, Go, Rust, TypeScript, Java, CPython extension) all produce strictly-increasing IDs within a generator within a millisecond. There is no method-selection ambiguity to navigate; conformant generators behave identically. This matters more at million-node scale than anywhere else, because the deployment heterogeneity is unavoidable."),
   ]));
 
   out.push(h2("Capacity and Cost Analysis"));
@@ -796,7 +796,7 @@ function buildFuture() {
   out.push(h2("Compact 33-Byte Variant (deferred)"));
 
   out.push(p([
-    tx("A 33-byte variant — 6-byte timestamp + 1-byte variant + 2-byte counter + 24-byte (192-bit) random tail — has been discussed for use cases where the 96-bit post-quantum security level is acceptable. The savings (8 bytes binary, 11 characters Base64URL) may be worth it for some use cases. If demand materializes, this would be variant 0x04."),
+    tx("A 33-byte variant — 6-byte timestamp + 1-byte variant + 2-byte counter + 24-byte (192-bit) random tail — has been discussed for use cases where the 96-bit post-quantum security level is acceptable. The savings (8 bytes binary, 11 characters Base64URL) may be worth it for some use cases. If demand materializes, this would take a new variant byte from the reserved-future range (0x05–0xFE; 0x03 and 0x04 are now allocated to the sibling TesseraHash and TesseraSeal formats)."),
   ]));
 
   out.push(h2("Time Authority Variant (deferred)"));
@@ -808,7 +808,7 @@ function buildFuture() {
   out.push(h2("Standardization"));
 
   out.push(p([
-    tx("TesseraID is currently a proposed format documented in this paper and four reference implementations. If adoption warrants, the natural next step is an Internet Draft submitted to the IETF, eventually graduating to an RFC. The format itself is stable; the question is whether the ecosystem demand for a new identifier format is large enough to justify the standardization effort. Feedback from early adopters — particularly those operating at the scale described in Part XI — will determine that answer."),
+    tx("TesseraID is currently a proposed format documented in this paper and eight reference implementations. If adoption warrants, the natural next step is an Internet Draft submitted to the IETF, eventually graduating to an RFC. The format itself is stable; the question is whether the ecosystem demand for a new identifier format is large enough to justify the standardization effort. Feedback from early adopters — particularly those operating at the scale described in Part XI — will determine that answer."),
   ]));
 
   return out;
@@ -832,19 +832,19 @@ function buildAppendices() {
     "  Binary  (hex):  018bcfe56800 01 0000\n" +
     "                  0000000000000000000000000000000000000000000000000000000000000000\n" +
     "  Base64URL    :  AYvP5WgAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n" +
-    "  Crockford    :  01HF7YAT0004000000000000000000000000000000000000000000000000000000\n" +
+    "  Crockford    :  065WZSB8000G000000000000000000000000000000000000000000000000000000\n" +
     "\n" +
     "Variant 0x02 (HLC), counter = 0, random = 32 × 0x00:\n" +
     "  Binary  (hex):  018bcfe56800 02 0000\n" +
     "                  0000000000000000000000000000000000000000000000000000000000000000\n" +
     "  Base64URL    :  AYvP5WgAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n" +
-    "  Crockford    :  01HF7YAT0008000000000000000000000000000000000000000000000000000000\n" +
+    "  Crockford    :  065WZSB80010000000000000000000000000000000000000000000000000000000\n" +
     "\n" +
     "Variant 0x01 (Standard), counter = 65535 (0xFFFF), random = 32 × 0x00:\n" +
     "  Binary  (hex):  018bcfe56800 01 FFFF\n" +
     "                  0000000000000000000000000000000000000000000000000000000000000000\n" +
     "  Base64URL    :  AYvP5WgAAf__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n" +
-    "  Crockford    :  01HF7YAT0007ZZY000000000000000000000000000000000000000000000000000"
+    "  Crockford    :  065WZSB8000ZZZR000000000000000000000000000000000000000000000000000"
   ));
 
   out.push(p([
@@ -883,7 +883,7 @@ function buildAppendices() {
     "    Use case:      Human transcription, log lines, CLI\n" +
     "\n" +
     "HLC parameters (variant 0x02):\n" +
-    "  Drift bound:    60,000 ms (configurable)\n" +
+    "  Drift bound:    60,000 ms (normative max + default; overrides only tighten)\n" +
     "  Counter:        bumped on logical-time stasis, reset on advance\n" +
     "  Lock:           required around (l, c) state updates"
   ));
@@ -897,22 +897,22 @@ function buildAppendices() {
   out.push(spacer());
 
   out.push(code(
-    "01KQQK374T040AXPGKVYCTE3TAZPVB8HSRP9V5YRE2XPDJFGPMVY6JVGHF6ZWQGMK8\n" +
-    "01KQQK374T040BH4S4D3DMKBTFAAKG7EJDCKPXET06QGXDVX53G5WXSJV0WSGC78CC\n" +
-    "01KQQK374T040BKJ468BKNPP49WRVWSBZFVPZQ7KNXX608SEDTP6ARK762N7ACVJZ7\n" +
-    "01KQQK374T040C44P8EDP3T7WTJ8ZRYPWXERXDGWVJJ7BE3ZAVPN22SPS0C7CTXYSE\n" +
-    "01KQQK374T040CGXHVXN7232Z9C6R5T4B5TKRMWGRWMWNRB2932APHZNJ97XKJ0JH6\n" +
-    "01KQQK374T040CST5EC8JEATBS7ZH25JMJFNSKVHGY8XB53H90YPE63KF17M1BZ4J0\n" +
-    "01KQQK374T040CYS92HK4CA6CZ27HAKQF6A54R0TDATXXCWRHWXHQSD5Q1PAX2P1HG\n" +
-    "01KQQK374T040DEYJZE7YHS1SP3Z1Q7BQPP1R5DEZ70PAM02MNKPG514BBZ2G1R9NZ\n" +
-    "01KQQK374T040E5324GTJZ30W7T5ZR4DAVWDQ5KKVQYAEE89NAXPNXXNGA3DZ3Q5NJ\n" +
-    "01KQQK374T040F4F3S1RYV46C66ZR6P3DHKPX686BJMFW8A58BHHQFEASG56TYNBP8\n" +
-    "01KQQK374T040FYTPB5XW7MNMK7APP3EDT5GHSNS48NV4P3R9GPAQDW8B78XR58ZZB\n" +
-    "01KQQK374T040G9AKCYMBWX440XAG0HWRH2CAPZ5AD0TMQAHSF6742KG8W4D3TKX89"
+    "06FB6VBCF80G0HZYGHBHEC3NZ8TGY0PZ6F6YR8THW28SHA3QANSCV9VX2C54EGSR1M\n" +
+    "06FB6VBCF80G0MJ2K6VM5NFHTFEM4KGP5588C8BW0D1QSQV0WPZY4T5G88JT47Q5HC\n" +
+    "06FB6VBCF80G0QTJZW65GE40SPEXBPER9RFZQZ49WGC2Y407NXHCCA49SB48MG5P30\n" +
+    "06FB6VBCF80G0TPT7GWXHXQBTGB4R9WDNW4N6GVA2X7KGPJ2GW0KJ8182AH1AHB5PC\n" +
+    "06FB6VBCF80G0V0D6137MM73659VF18B6N0SW2S89KVJM83NATAXFFZXBKGDSJS65M\n" +
+    "06FB6VBCF80G0XR2JB2H8203XGKE8E75ND90ZTKDEPVD9S70BR76SRGSM755YWS3R4\n" +
+    "06FB6VBCF80G0ZE7180J0QN0KPSXZ4F2RY4PQ8ACG13MDAW9J2EPBYWYD4V153PSDR\n" +
+    "06FB6VBCF80G10H71NF10VJQFEKG83HYJK713YNYV6C4C5CJQGS6ET9A0RZ2G76KE4\n" +
+    "06FB6VBCF80G12ETHBZQGP0SW9HEHY9R2P6KC1XV7D6W7EBXZT140NCS4SBZ21GYGC\n" +
+    "06FB6VBCF80G13PY5Q61CXVC8T6PF6TMRMHSG0GZJYJCWPQJQPDX9DNSK0E7H7JS7G\n" +
+    "06FB6VBCF80G148KMQKRGTZRHPZ6AYKADKM01WRYZC7KAKT8R9JVYNYJ4J8MNSK1QG\n" +
+    "06FB6VBCF80G16X0AD6NQXCMS9JV978PPP8AND9KK28WMESJB50S0F0XMC05MW03EC"
   ));
 
   out.push(p([
-    tx("The first 13 characters of each ID are visually identical: they encode the timestamp + variant + counter-high-byte prefix, which is shared across the batch (all twelve IDs were generated in the same millisecond). The remaining 53 characters encode the counter low byte and the random tail and differ between IDs. Each ID round-trips cleanly through decode_b32() to a 41-byte binary form whose bytes are in the same lexicographic order as the strings shown."),
+    tx("The first 12 characters of each ID are identical: those 60 bits encode the 48-bit timestamp, the 0x01 variant byte, and the zero high nibble of the counter, all shared across the batch (all twelve IDs were generated in the same millisecond, timestamp 1781126753402). The remaining 54 characters encode the rest of the counter and the random tail and differ between IDs. Each ID round-trips cleanly through decode_b32() to a 41-byte binary form whose bytes are in the same lexicographic order as the strings shown."),
   ]));
 
   out.push(h2("Appendix D: References"));
@@ -1076,7 +1076,7 @@ function buildAppendices() {
        "Universally Unique IDentifier. A family of 128-bit identifier formats specified by RFC 4122 (versions 1–5) and RFC 9562 (versions 6–8). TesseraID is not a UUID, though Part VIII compares it directly to UUIDv4 and UUIDv7."],
 
       ["Variant byte",
-       "TesseraID's 8-bit field at offset 6 that selects between generation algorithms sharing the same wire format. 0x01 = Standard (wall-clock), 0x02 = HLC. Other values are reserved for future TesseraID variants or vendor extensions. The design lever that lets TesseraID evolve without breaking existing decoders."],
+       "TesseraID's 8-bit field at offset 6 that selects between generation algorithms sharing the same wire format. 0x01 = Standard (wall-clock), 0x02 = HLC.  0x03 and 0x04 are allocated to the sibling TesseraHash and TesseraSeal formats (rejected by TesseraID decoders); 0x00 and 0xFF are permanently reserved; the rest are reserved-future and rejected. The design lever that lets the format family evolve without breaking existing decoders."],
 
       ["Wall clock",
        "A clock that tracks civil time and can be set forward or backward (by NTP, manual adjustment, or VM migration). Distinct from a monotonic clock. TesseraID's Standard variant uses a wall clock with explicit clamping against backward regression."],

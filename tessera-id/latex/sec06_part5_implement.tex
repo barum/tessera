@@ -26,7 +26,7 @@ A more sophisticated implementation could use a monotonic clock to detect regres
 
 The 16-bit counter holds 65{,}536 values. With a random step in $[1, 16]$, the average counter value after $N$ generations within a millisecond is $N \cdot 8.5$. This means the counter exhausts at approximately $7{,}700$ generations per millisecond per generator, i.e., about $7.7$ million IDs per second per generator from a single thread.
 
-In practice, no single-threaded generator hits this rate. The CSPRNG syscall caps single-threaded throughput well below 7M ops/sec on every platform we've measured (the reference C and Rust implementations top out at about 2.3M ops/sec). The exhaustion case is therefore largely theoretical for single-threaded use.
+In practice, no single-threaded generator hits this rate. The CSPRNG syscall caps single-threaded throughput well below 7M ops/sec in every environment measured to date (current per-language figures live in the \texttt{benchmarks/} directory). The exhaustion case is therefore largely theoretical for single-threaded use.
 
 When it does happen --- typically because the system clock is frozen or moving backward and the generator is being driven hard --- the implementation spins in a tight loop waiting for \code{now\_ms()} to advance, then reseeds the counter from \code{rnd[0]}. The spin is bounded because clocks are guaranteed to advance eventually; in practice the spin lasts at most one millisecond.
 

@@ -232,7 +232,8 @@ function buildSpec() {
       ["0x00",            "Permanently reserved", "MUST be rejected by decoders. Reserved defensively so zero-filled buffers cannot be confused with valid TesseraIDs. MUST NOT be assigned in any future revision."],
       ["0xFF",            "Permanently reserved", "MUST be rejected by decoders. Reserved defensively so all-ones uninitialized memory cannot be confused with valid TesseraIDs. MUST NOT be assigned in any future revision."],
       ["0x03",            "TesseraHash (sibling format)", "Allocated 2026. TesseraID decoders MUST reject 0x03 — a 0x03 buffer is a TesseraHash (73 bytes), not a TesseraID (41 bytes). See the TesseraHash section below."],
-      ["0x04–0xFE",       "Reserved for future variants", "MUST be rejected by decoders until a future revision of this specification assigns them."],
+      ["0x04",            "TesseraSeal (sibling format)", "Allocated 2026. TesseraID decoders MUST reject 0x04 — a 0x04 buffer is a TesseraSeal encryption envelope, not a TesseraID."],
+      ["0x05–0xFE",       "Reserved for future variants", "MUST be rejected by decoders until a future revision of this specification assigns them."],
     ],
     [1100, 1500, 6760],
   ));
@@ -336,7 +337,7 @@ function buildSpec() {
 
   out.push(code(
     "Example TesseraID, Crockford Base32 form (same bytes as the Base64URL example above):\n" +
-    "  01KQQK6QWW040D74PQ1VAA6SW1XY2ZS5C7DX0B225AHEH62FQZFMWQV6MASQDY0SXP"
+    "  06EYYCTZKG0G1MWJTW7D98V7G7QRBZ4NGXQM1C88NA5T4R9YZXYKJZCTHB6XQR37PR"
   ));
 
   out.push(p([
@@ -423,7 +424,7 @@ function buildSpec() {
 
   out.push(bullet([
     bold("Base64URL: 98 characters. "),
-    tx("ceil(73*8/6) = 98. Final character carries 4 bits of value plus 4 bits of zero padding. Decoders MUST reject inputs whose final character carries non-zero padding bits."),
+    tx("ceil(73*8/6) = 98. 584 input bits fill 97 full characters plus 2 bits, so the final character carries 2 bits of value plus 4 bits of zero padding (it is always one of A, Q, g, w). Decoders MUST reject inputs whose final character carries non-zero padding bits."),
   ]));
   out.push(bullet([
     bold("Crockford Base32: 117 characters. "),

@@ -1,4 +1,13 @@
 // Compose the full TesseraID whitepaper into a single .docx.
+//
+// STATUS: NON-NORMATIVE (TID-00021, 2026-06-10). The sole normative source for
+// the TesseraID specification is the LaTeX pipeline under tessera-id/latex/
+// (published artifact: TesseraID_Whitepaper.pdf at the repo root). This DOCX
+// pipeline is a convenience rendering for reviewers who need Word; where it and
+// the LaTeX paper disagree, the LaTeX paper wins. Example identifier strings in
+// the wp_section*.js sources MUST decode against the Python reference
+// (tessera-id/python/tessera_id.py); tools/scripts/check-doc-vectors.sh
+// enforces this. See tessera-id/docs/README.md.
 const fs = require("fs");
 const path = require("path");
 const H = require("./wp_helpers");

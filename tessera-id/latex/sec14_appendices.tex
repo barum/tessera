@@ -71,7 +71,7 @@ Crockford Base32 length     & 66 chars (no padding) \\
 Time range                  & through year 10889 (8{,}919-year forward) \\
 Classical PQ security       & 128 bits \\
 Quantum (Grover) security   & 128 bits (second-preimage) \\
-HLC drift bound             & 60{,}000 ms (configurable) \\
+HLC drift bound             & 60{,}000 ms (normative max and default; tighten-only) \\
 Max counter step            & 16 (random in [1,16]) \\
 \bottomrule
 \end{tabular}
@@ -80,24 +80,24 @@ Max counter step            & 16 (random in [1,16]) \\
 \section{Example TesseraIDs (Same Millisecond)}
 \label{app:examples}
 
-The following 12 Crockford-encoded TesseraIDs were generated within a single millisecond by the reference Python implementation. They sort lexicographically in generation order, and each decodes to a valid 41-byte binary value.
+The following 12 Crockford-encoded TesseraIDs (66 characters each) were generated within a single millisecond (timestamp \code{1781126753402}, 2026-06-10) by the reference Python implementation's \code{StandardGenerator}, called in a tight loop; the strings below are its verbatim \code{encode\_b32} output. They sort lexicographically in generation order, and each decodes to a valid 41-byte binary value via \code{decode\_b32}.
 
 \begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
-06KFJ7QJ9G05A1MM2P0V0PMR9P5K3T8MR2X8R7P98E0J3HVD3FX1A0
-06KFJ7QJ9G05B6CKBC1H7VPNYW3GR4ZP9V9HG7VEP59G7Q9PPQ4540
-06KFJ7QJ9G05C2NSXQRH9F4G3X1KZWY7M0YN6QZJP9YVTXSCRA0DC0
-06KFJ7QJ9G05D9P25KZRX5Y4PCJ09KX7Q4FY1A1S6E5MGE7AQEJK40
-06KFJ7QJ9G05ECPM8VWF55XF8MV9MNFP5TGQAW3RT8M8DSPGQAY200
-06KFJ7QJ9G05F8RHMA8B0VP4XJG9RBWDDM4WMA1AKEPYJW2N0VFV40
-06KFJ7QJ9G05GBQ8WDQM2BCFFXP08AQAFJ7CHFAY7N7KQR1RH88M00
-06KFJ7QJ9G05HC8KFR0GZ4AYC4GBT3K9D9G3Q9JD3MFSCJBAY0RV80
-06KFJ7QJ9G05J78V0F8VEX2MJ4QHFJBCAQNDP3F2GFBKEKWZ9EZ240
-06KFJ7QJ9G05K3MSXQRH9F4G3X1KZWY7M0YN6QZJP9YVTXSCRA0DC0
-06KFJ7QJ9G05MGV5J3KFKR1FCBT3T0SR9XBP06FQS7HJZ4XGB6KX80
-06KFJ7QJ9G05NBYVRG7GW1QXY7CK5R6Q5RPYK9DBSV1KH4SCXY00C0
+06FB6VBCF80G0HZYGHBHEC3NZ8TGY0PZ6F6YR8THW28SHA3QANSCV9VX2C54EGSR1M
+06FB6VBCF80G0MJ2K6VM5NFHTFEM4KGP5588C8BW0D1QSQV0WPZY4T5G88JT47Q5HC
+06FB6VBCF80G0QTJZW65GE40SPEXBPER9RFZQZ49WGC2Y407NXHCCA49SB48MG5P30
+06FB6VBCF80G0TPT7GWXHXQBTGB4R9WDNW4N6GVA2X7KGPJ2GW0KJ8182AH1AHB5PC
+06FB6VBCF80G0V0D6137MM73659VF18B6N0SW2S89KVJM83NATAXFFZXBKGDSJS65M
+06FB6VBCF80G0XR2JB2H8203XGKE8E75ND90ZTKDEPVD9S70BR76SRGSM755YWS3R4
+06FB6VBCF80G0ZE7180J0QN0KPSXZ4F2RY4PQ8ACG13MDAW9J2EPBYWYD4V153PSDR
+06FB6VBCF80G10H71NF10VJQFEKG83HYJK713YNYV6C4C5CJQGS6ET9A0RZ2G76KE4
+06FB6VBCF80G12ETHBZQGP0SW9HEHY9R2P6KC1XV7D6W7EBXZT140NCS4SBZ21GYGC
+06FB6VBCF80G13PY5Q61CXVC8T6PF6TMRMHSG0GZJYJCWPQJQPDX9DNSK0E7H7JS7G
+06FB6VBCF80G148KMQKRGTZRHPZ6AYKADKM01WRYZC7KAKT8R9JVYNYJ4J8MNSK1QG
+06FB6VBCF80G16X0AD6NQXCMS9JV978PPP8AND9KK28WMESJB50S0F0XMC05MW03EC
 \end{lstlisting}
 
-The first 14 characters are identical across all 12 (the timestamp prefix); only the counter and random tail differ. The shared prefix demonstrates the time-clustering property that makes TesseraID friendly to B-tree indexes.
+The first 12 characters (\code{06FB6VBCF80G}) are identical across all 12: those 60 bits cover the 48-bit timestamp, the \code{0x01} variant byte, and the zero high nibble of the counter. Only the remaining counter bits and the random tail differ. The shared prefix demonstrates the time-clustering property that makes TesseraID friendly to B-tree indexes.
 
 \section{Glossary of Terms}
 \label{app:glossary}
@@ -114,7 +114,7 @@ The first 14 characters are identical across all 12 (the timestamp prefix); only
 
 \textbf{CSPRNG.} Cryptographically Secure Pseudo-Random Number Generator. The OS source TesseraID generators draw from: \code{getrandom(2)} on Linux, \code{arc4random\_buf(3)} on macOS/BSD, \code{BCryptGenRandom} on Windows.
 
-\textbf{Drift bound.} The maximum amount by which an HLC's logical time may exceed local physical time before generation is rejected. TesseraID default: 60{,}000 ms.
+\textbf{Drift bound.} The maximum amount by which an HLC's logical time may exceed local physical time before generation is rejected. TesseraID: 60{,}000 ms, the normative maximum and default; per-generator overrides may only tighten it (§\ref{sec:spec}).
 
 \textbf{Grover's algorithm.} A 1996 quantum search algorithm that reduces unstructured search from $O(N)$ to $O(\sqrt{N})$. Reduces second-preimage cost on an $n$-bit field from $2^n$ to $2^{n/2}$.
 
@@ -207,4 +207,4 @@ This document is built from LaTeX sources under \texttt{tessera-id/latex/} (\tex
 \item Randomness comes from the OS CSPRNG only: \texttt{getrandom(2)} / \texttt{getentropy(3)} / \texttt{BCryptGenRandom} / \texttt{os.urandom} / \texttt{SecureRandom} / \texttt{crypto.getRandomValues}. No userspace PRNG fallback.
 \end{itemize}
 
-\textbf{Conformance gate}: \texttt{tools/conformance/run.sh} is the branch-protection check on \texttt{main}. TesseraID, \tesserahash{}, and \tesseraseal{} all flow through the same harness; the latest cross-language run (2026-05-21) reports 0 failures across the v1.x alpha languages.
+\textbf{Conformance gate}: \texttt{tools/conformance/run.sh} is the branch-protection check on \texttt{main}. TesseraID, \tesserahash{}, and \tesseraseal{} all flow through the same harness; the latest cross-language run (2026-06-10) reports 0 failures across all eight languages.

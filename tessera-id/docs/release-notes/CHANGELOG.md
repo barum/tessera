@@ -2,6 +2,7 @@
 
 Reverse-chronological. One entry per PR (or per logical change shipped together).
 
+- 2026-06-10 — [TID-00021 — Whitepaper truthfulness: real Appendix C vectors, variant registry, drift/decode contracts, benchmark provenance (docs)](2026-06-10-tid-00021-whitepaper-truthfulness.md)
 - 2026-06-10 — [TID-00020 — C/C++/CPython ext: decode-time variant validation, drift clamp, typed errors (sec)](2026-06-10-tid-00020-c-cpp-ext-variant-and-taxonomy.md)
 - 2026-06-10 — [TID-00019 — Java contract alignment: unsynchronized generator, HLCDriftError, drift clamp (sec)](2026-06-10-tid-00019-java-contract-alignment.md)
 - 2026-06-10 — [TID-00018 — Go/Rust/TS: spec spin semantics + decode-time variant validation (sec)](2026-06-10-tid-00018-go-rust-ts-spin-decode.md)
