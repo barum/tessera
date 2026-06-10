@@ -14,7 +14,8 @@ import {
     encrypt, decrypt, generateKeypair, generateKeypairFromSeed,
     peekHeader, validate, validateMinTimestamp, envelopeSize,
     setNowMsForTesting, SenderContext,
-    UnknownVariant, UnknownSuite, InvalidLength, DecryptionError,
+    UnknownVariant, UnknownSuite, InvalidLength, DecryptionError, BadKeyError,
+    TesseraSealError,
     TESSERA_SEAL_VARIANT,
     SUITE_MLKEM1024_AESGCM, SUITE_MLKEM1024_CHACHA,
     HEADER_BYTES, MLKEM1024_CT_BYTES, MLKEM1024_SEED_BYTES, MLKEM1024_PK_BYTES,
@@ -146,6 +147,35 @@ test("envelope size matches", () => {
     assert.equal(env.length, envelopeSize(2, 2));
 });
 
+// --- Suite/key consistency (whitepaper §2/§9 BadKey; mirrors python
+//     TestSuiteKeyConsistency). Structural error, distinguishable from —
+//     and never collapsed into — DecryptionError.
+
+test("encrypt rejects mismatched pub suite", () => {
+    const { pub } = generateKeypair(SUITE_MLKEM1024_AESGCM);
+    // pub is tagged 0x01; requesting 0x02 must reject before any KEM work.
+    assert.throws(
+        () => encrypt(new TextEncoder().encode("x"), pub, SUITE_MLKEM1024_CHACHA),
+        BadKeyError
+    );
+});
+
+test("decrypt rejects mismatched priv suite", () => {
+    const { priv, pub } = generateKeypair(SUITE_MLKEM1024_CHACHA);
+    const env = encrypt(new TextEncoder().encode("x"), pub, SUITE_MLKEM1024_CHACHA);
+    // Re-tag the same raw key as 0x01; the envelope header is 0x02.
+    const privMismatch = { ...priv, suite: SUITE_MLKEM1024_AESGCM };
+    assert.throws(() => decrypt(env, privMismatch, new Uint8Array(0)), BadKeyError);
+});
+
+test("BadKeyError is distinguishable, not auth-class", () => {
+    // Must NOT be a DecryptionError subclass (no distinguishing-oracle risk:
+    // the check is on the public suite byte, not secret-correlated bytes).
+    const e = new BadKeyError("probe");
+    assert.ok(!(e instanceof DecryptionError));
+    assert.ok(e instanceof TesseraSealError);
+});
+
 // --- KAT consumption (cross-language byte-identity gate)
 
 test("KAT decrypt.json", () => {
@@ -186,8 +216,12 @@ test("KAT invalid.json", () => {
             assert.throws(() => peekHeader(env), Error, r.name);
         } else if (r.op === "decrypt_should_fail") {
             if (r.private_key_seed_hex) {
-                const { priv } = generateKeypairFromSeed(hex(r.private_key_seed_hex), SUITE_MLKEM1024_AESGCM);
-                assert.throws(() => decrypt(env, priv, hex(r.expected_ad_hex || "")), Error, r.name);
+                // Some records (bad_key_suite_mismatch) carry the suite the
+                // private key is tagged with; default is 0x01.
+                const keySuite = r.suite ?? SUITE_MLKEM1024_AESGCM;
+                const { priv } = generateKeypairFromSeed(hex(r.private_key_seed_hex), keySuite);
+                const expectedClass = r.error_kind === "BAD_KEY" ? BadKeyError : Error;
+                assert.throws(() => decrypt(env, priv, hex(r.expected_ad_hex || "")), expectedClass, r.name);
             } else {
                 // truncation cases: peek_header alone may not throw on header_only
                 // (it's a valid 16-byte all-zero header that triggers UnknownVariant).

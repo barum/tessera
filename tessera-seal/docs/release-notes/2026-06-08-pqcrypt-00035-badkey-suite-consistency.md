@@ -1,5 +1,7 @@
 # PQCK-00035 — BadKey suite/key consistency in the Python + C references
 
+> **Erratum (2026-06-10, TESS-00007):** commands below predate the rename — the skip variable is now `TESSERA_CONFORMANCE_SKIP` (was `PQTK_CONFORMANCE_SKIP`).
+
 **Date:** 2026-06-08
 **Scope:** `sec(...)` — security-relevant. Brings the Python (#2 authority) and C
 (#3 authority) references into conformance with the whitepaper's normative

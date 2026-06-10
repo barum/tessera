@@ -4,9 +4,11 @@ tessera_seal — command-line interface for the TesseraSeal v1.2 reference.
 
 Subcommands:
 
-    tessera-seal keygen --out FILE                 generate a fresh ML-KEM-1024 (or
-                                              hybrid) keypair and write a v1.1
-                                              keyfile.
+    tessera-seal keygen --out FILE                 generate a fresh ML-KEM-1024
+                                              keypair and write a v1.1 keyfile.
+                                              Suite 0x01 only; hybrid keyfiles
+                                              are planned for v1.4
+                                              (TSEAL-00030..34).
     tessera-seal pubkey --in FILE                  print the recipient URI from a
                                               v1.1 keyfile.
     tessera-seal encrypt --recipient URI           encrypt stdin (or --in FILE) to
@@ -25,8 +27,10 @@ parses the recipient URI directly (the public key is in cleartext).
 
 Examples:
 
-    # Generate a hybrid keypair
-    tessera-seal keygen --out alice.tseal-key --suite 0x06
+    # Generate a keypair (suite 0x01). Hybrid keyfiles (--suite 0x06) are
+    # planned for v1.4 (TSEAL-00030..34); until then keygen rejects any
+    # --suite other than 0x01 with a nonzero exit.
+    tessera-seal keygen --out alice.tseal-key
 
     # Print the recipient URI for a v1.1 keyfile
     tessera-seal pubkey --in alice.tseal-key
@@ -104,6 +108,20 @@ def _write_output(args, data: bytes) -> None:
 
 
 def cmd_keygen(args) -> int:
+    # The reference keyfile plugin's keygen path only emits suite 0x01
+    # (ML-KEM-1024 + AES-256-GCM) keypairs today — it has no --suite
+    # parameter and calls tessera_seal.generate_keypair() with the default
+    # suite. Honoring any other value here would silently hand the user a
+    # different key than the one they asked for (TSEAL-00039), so reject
+    # everything except an explicit 0x01.
+    suite = _parse_suite(args.suite)
+    if suite != tessera_seal.SUITE_MLKEM1024_AESGCM:
+        sys.stderr.write(
+            f"tessera-seal keygen: --suite {_suite_to_str(suite)} is not supported: "
+            "hybrid keyfiles land in v1.4 (TSEAL-00030..34); "
+            "keygen currently supports --suite 0x01 only\n"
+        )
+        return 2
     # Delegate to the reference plugin so the on-disk format stays the
     # single source of truth.
     cmd = [sys.executable, PLUGIN_PATH, "keygen", "--out", args.out]
@@ -298,7 +316,11 @@ def main(argv: Optional[list] = None) -> int:
 
     p_kg = sub.add_parser("keygen", help="generate a new keypair")
     p_kg.add_argument("--out", required=True, help="output keyfile path")
-    p_kg.add_argument("--suite", default="0x01", help="suite (0x01, 0x02, 0x06)")
+    p_kg.add_argument(
+        "--suite",
+        default="0x01",
+        help="key suite; only 0x01 is supported today (hybrid keyfiles land in v1.4, TSEAL-00030..34)",
+    )
     p_kg.set_defaults(func=cmd_keygen)
 
     p_pk = sub.add_parser("pubkey", help="print recipient URI for a keyfile")

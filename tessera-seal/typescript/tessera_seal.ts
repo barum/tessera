@@ -89,6 +89,23 @@ export class InvalidLength extends TesseraSealError {
     }
 }
 /**
+ * Suite/key consistency failure (whitepaper §2, §9 — BAD_KEY).
+ *
+ * Thrown when encrypt() is given a recipient public key whose suite tag
+ * does not match the requested suite, or when decrypt() is given a
+ * private key whose suite tag does not match the envelope header's suite.
+ * This is a **structural** error, caught before the authentication-class
+ * path. It is intentionally distinguishable from DecryptionError (no
+ * oracle merge): the check is on the public suite byte, not on
+ * secret-correlated bytes.
+ */
+export class BadKeyError extends TesseraSealError {
+    constructor(message: string) {
+        super(message);
+        this.name = "BadKeyError";
+    }
+}
+/**
  * Single class for every authentication-class failure: bad AEAD tag,
  * bad UtC commit tag, bad KEM ciphertext, AD mismatch, derived-nonce
  * mismatch. The decrypt path is constant-time across these.
@@ -343,6 +360,15 @@ export function encrypt(
     counter: number = 0
 ): Uint8Array {
     checkSuite(suite);
+    // Suite/key consistency (whitepaper §2, §9). Reject a recipient key whose
+    // suite tag does not match the requested suite — structural BadKey, before
+    // any KEM work. Defends the documented suite-confusion attack.
+    if (recipientPub.suite !== suite) {
+        throw new BadKeyError(
+            `recipient public key suite 0x${recipientPub.suite.toString(16).padStart(2, "0")} ` +
+            `!= requested suite 0x${suite.toString(16).padStart(2, "0")}`
+        );
+    }
     if (ad.length > MAX_AD_LEN) throw new InvalidLength("ad too large");
     if (pt.length > MAX_PLAINTEXT) throw new InvalidLength("pt too large");
     const ts = tsMs === null ? nowMs() : tsMs;
@@ -376,6 +402,16 @@ export function encrypt(
 export function decrypt(env: Uint8Array, priv: PrivateKey, expectedAd: Uint8Array): Uint8Array {
     if (env.length < HEADER_BYTES) throw new InvalidLength("short");
     const h = peekHeader(env);
+    // Suite/key consistency (whitepaper §2, §9). Reject a private key whose
+    // suite tag does not match the envelope header's suite — structural BadKey,
+    // before any KEM/AEAD work. Distinguishable-but-safe: the check is on the
+    // public suite byte, not on secret-correlated bytes.
+    if (priv.suite !== h.suite) {
+        throw new BadKeyError(
+            `private key suite 0x${priv.suite.toString(16).padStart(2, "0")} ` +
+            `!= envelope header suite 0x${h.suite.toString(16).padStart(2, "0")}`
+        );
+    }
     const need = HEADER_BYTES + h.kemCtLen + h.adLen + AEAD_NONCE_BYTES + AEAD_TAG_BYTES + COMMIT_BYTES;
     if (env.length < need) throw new InvalidLength("truncated");
     const aeadCtLen = env.length - need;

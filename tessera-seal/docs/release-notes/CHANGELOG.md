@@ -2,6 +2,10 @@
 
 Reverse-chronological. One entry per PR (or per logical change shipped together).
 
+- 2026-06-10 — [TSEAL-00039 — CLI keygen rejects unsupported --suite values (sec)](2026-06-10-tseal-00039-cli-suite-flag-reject.md)
+- 2026-06-10 — [TSEAL-00038 — BadKey suite/key consistency in Java (sec)](2026-06-10-tseal-00038-java-badkey.md)
+- 2026-06-10 — [TSEAL-00037 — BadKey suite/key consistency in TypeScript (sec)](2026-06-10-tseal-00037-typescript-badkey.md)
+- 2026-06-10 — [TSEAL-00036 — CPython ext: suite-aware decrypt fix + BadKey exception (sec)](2026-06-10-tseal-00036-cpython-suite-decrypt-fix.md)
 - 2026-06-08 — [PQCK-00035 — BadKey suite/key consistency in the Python + C references (sec)](2026-06-08-pqcrypt-00035-badkey-suite-consistency.md)
 - 2026-05-21 — [PQCK-00027..00029 — v1.3 PARTIAL (Rust + Go hybrid, AES-NI deferred)](2026-05-21-pqcrypt-v1.3-partial.md)
 - 2026-05-21 — [PQCK-00029 — Hybrid suite 0x06 in Go](2026-05-21-pqcrypt-00029-hybrid-go.md)

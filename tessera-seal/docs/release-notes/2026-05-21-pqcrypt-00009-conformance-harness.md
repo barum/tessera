@@ -1,5 +1,7 @@
 # PQCK-00009 — Conformance harness extension for PQCrypt
 
+> **Erratum (2026-06-10, TESS-00007):** commands below predate the rename — the skip variable is now `TESSERA_CONFORMANCE_SKIP` (was `PQTK_CONFORMANCE_SKIP`).
+
 **Date:** 2026-05-21
 **Ticket:** PQCK-00009
 **Type:** feat

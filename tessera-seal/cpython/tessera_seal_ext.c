@@ -16,7 +16,12 @@
  *   set_now_ms_for_testing(value)   # value=-1 to clear
  *
  * Sizes match tessera_seal.h. Errors raise TesseraSealError (sub-classed per
- * status code).
+ * status code: UnknownVariant, UnknownSuite, InvalidLength, DecryptionError,
+ * BadKey).
+ *
+ * Raw key bytes carry no suite tag in this binding, so decrypt() adopts the
+ * suite from the envelope header (structural peek) before calling the C
+ * library — see py_decrypt (TSEAL-00036).
  */
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
@@ -27,6 +32,7 @@ static PyObject *UnknownVariantError;
 static PyObject *UnknownSuiteError;
 static PyObject *InvalidLengthError;
 static PyObject *DecryptionError;
+static PyObject *BadKeyError;
 
 static int raise_status(int rc, const char *where) {
     PyObject *exc = TesseraSealError;
@@ -39,7 +45,7 @@ static int raise_status(int rc, const char *where) {
         case TESSERA_SEAL_E_DECRYPT_FAILED:   exc = DecryptionError; msg = "envelope failed authentication"; break;
         case TESSERA_SEAL_E_RNG:              msg = "CSPRNG failure"; break;
         case TESSERA_SEAL_E_BUF_TOO_SMALL:    msg = "output buffer too small"; break;
-        case TESSERA_SEAL_E_BAD_KEY:          msg = "bad key"; break;
+        case TESSERA_SEAL_E_BAD_KEY:          exc = BadKeyError; msg = "bad key (suite/key mismatch)"; break;
         default:                              msg = "unknown error"; break;
     }
     PyErr_Format(exc, "%s: %s (rc=%d)", where, msg, rc);
@@ -103,6 +109,11 @@ static PyObject *py_encrypt(PyObject *self, PyObject *args, PyObject *kwds) {
     }
 
     tessera_seal_pub_t pub;
+    /* Note: the binding takes raw pk bytes that carry no suite tag, so
+     * pub.suite is set from the requested suite — which makes the C
+     * library's pub->suite != suite consistency check vacuous through this
+     * binding. Suite validity itself (unknown suite byte) is still
+     * enforced by tessera_seal_encrypt(). */
     pub.suite = suite;
     memcpy(pub.pk, pk_buf.buf, TESSERA_SEAL_MLKEM1024_PK_BYTES);
 
@@ -156,7 +167,22 @@ static PyObject *py_decrypt(PyObject *self, PyObject *args, PyObject *kwds) {
         return NULL;
     }
     tessera_seal_priv_t priv;
+    /* The binding takes raw sk bytes that carry no suite tag, so adopt the
+     * envelope's suite from a structural header peek (TSEAL-00036). The
+     * same ML-KEM-1024 keypair is valid under any v1 suite (see
+     * tessera_seal_generate_keypair()), so this cannot weaken the C
+     * library's priv->suite != header.suite BadKey check — it only stops
+     * the previous hardcoded 0x01 from rejecting every legitimate
+     * suite-0x02 envelope. If the peek fails structurally (truncated,
+     * unknown variant/suite), keep the 0x01 default and let
+     * tessera_seal_decrypt() surface the structural error on its
+     * constant-time path. */
+    tessera_seal_header_t hdr = {0};
     priv.suite = TESSERA_SEAL_SUITE_MLKEM1024_AESGCM;
+    if (tessera_seal_peek_header((const uint8_t *) env_buf.buf,
+                                 (size_t) env_buf.len, &hdr) == TESSERA_SEAL_OK) {
+        priv.suite = hdr.suite;
+    }
     memcpy(priv.sk, sk_buf.buf, TESSERA_SEAL_MLKEM1024_SK_BYTES);
 
     /* Output capacity: envelope size minus the structural overhead. */
@@ -279,16 +305,19 @@ PyMODINIT_FUNC PyInit_tessera_seal_ext(void) {
     UnknownSuiteError = PyErr_NewException("tessera_seal_ext.UnknownSuite", TesseraSealError, NULL);
     InvalidLengthError = PyErr_NewException("tessera_seal_ext.InvalidLength", TesseraSealError, NULL);
     DecryptionError = PyErr_NewException("tessera_seal_ext.DecryptionError", TesseraSealError, NULL);
+    BadKeyError = PyErr_NewException("tessera_seal_ext.BadKey", TesseraSealError, NULL);
     Py_INCREF(TesseraSealError);
     Py_INCREF(UnknownVariantError);
     Py_INCREF(UnknownSuiteError);
     Py_INCREF(InvalidLengthError);
     Py_INCREF(DecryptionError);
+    Py_INCREF(BadKeyError);
     PyModule_AddObject(m, "TesseraSealError", TesseraSealError);
     PyModule_AddObject(m, "UnknownVariant", UnknownVariantError);
     PyModule_AddObject(m, "UnknownSuite", UnknownSuiteError);
     PyModule_AddObject(m, "InvalidLength", InvalidLengthError);
     PyModule_AddObject(m, "DecryptionError", DecryptionError);
+    PyModule_AddObject(m, "BadKey", BadKeyError);
 
     PyModule_AddIntConstant(m, "VARIANT_TESSERA_SEAL", TESSERA_SEAL_VARIANT);
     PyModule_AddIntConstant(m, "SUITE_MLKEM1024_AESGCM", TESSERA_SEAL_SUITE_MLKEM1024_AESGCM);

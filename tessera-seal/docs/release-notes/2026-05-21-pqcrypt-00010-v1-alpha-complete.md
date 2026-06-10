@@ -1,5 +1,7 @@
 # PQCK-00010 — PQCrypt v1 alpha COMPLETE
 
+> **Erratum (2026-06-10, TESS-00007):** commands below predate the rename — the skip variable is now `TESSERA_CONFORMANCE_SKIP` (was `PQTK_CONFORMANCE_SKIP`).
+
 **Date:** 2026-05-21
 **Ticket:** PQCK-00010
 **Type:** docs (umbrella + aggregate summary)

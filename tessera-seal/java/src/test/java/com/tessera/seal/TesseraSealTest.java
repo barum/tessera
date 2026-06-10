@@ -28,6 +28,7 @@ public class TesseraSealTest {
         testADBindingWrongAD();
         testVariantRejection();
         testSuiteRejection();
+        testSuiteKeyConsistency();
         testTamperDetection();
         testPeekHeader();
         testKATDecrypt();
@@ -119,6 +120,29 @@ public class TesseraSealTest {
             if (!threw) { System.out.println("FAIL suite_rejection 0x" + Integer.toHexString(s)); gFail++; return; }
         }
         expect(true, "suite_rejection (7 cases)");
+    }
+
+    static void testSuiteKeyConsistency() {
+        // encrypt() MUST reject when pub.suite != requested suite;
+        // decrypt() MUST reject when priv.suite != header.suite.
+        // Mismatch is BadKey-class (structural), not auth-class.
+        KeyPair kp = TesseraSeal.generateKeypair(TesseraSeal.SUITE_MLKEM1024_AESGCM);
+
+        // Same ML-KEM key bytes, mis-tagged as the ChaCha suite.
+        PublicKey mistagged = PublicKey.fromBytes(kp.pub.bytes, TesseraSeal.SUITE_MLKEM1024_CHACHA);
+        boolean encThrew = false;
+        try { TesseraSeal.encrypt("x".getBytes(), mistagged, TesseraSeal.SUITE_MLKEM1024_AESGCM, new byte[0], null, 0); }
+        catch (BadKey e) { encThrew = true; }
+        catch (Exception e) {}
+        expect(encThrew, "encrypt_pub_suite_mismatch_badkey");
+
+        // Envelope sealed under suite 0x02; private key tagged 0x01.
+        byte[] env = TesseraSeal.encrypt("y".getBytes(), mistagged, TesseraSeal.SUITE_MLKEM1024_CHACHA, new byte[0], null, 0);
+        boolean decThrew = false;
+        try { TesseraSeal.decrypt(env, kp.priv, new byte[0]); }
+        catch (BadKey e) { decThrew = true; }
+        catch (Exception e) {}
+        expect(decThrew, "decrypt_priv_suite_mismatch_badkey");
     }
 
     static void testTamperDetection() {

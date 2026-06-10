@@ -79,6 +79,19 @@ public final class TesseraSeal {
         public InvalidLength(String m) { super(m); }
     }
     /**
+     * Suite/key consistency failure (whitepaper sec02, sec09): the key's
+     * suite tag does not match the requested suite (encrypt) or the envelope
+     * header's suite (decrypt). Structural, BadKey-class — raised before any
+     * KEM/AEAD work and deliberately distinct from the auth-class
+     * {@link DecryptionError} (the check is on the public suite byte, not on
+     * secret-correlated bytes, so distinguishing it is safe). Mirrors Python
+     * {@code BadKey}, Go {@code ErrBadKey}, Rust {@code Error::BadKey}, C
+     * {@code TESSERA_SEAL_E_BAD_KEY}.
+     */
+    public static class BadKey extends TesseraSealError {
+        public BadKey(String m) { super(m); }
+    }
+    /**
      * Single class for every authentication-class failure. The decrypt path
      * is constant-time across these — see whitepaper sec09.
      */
@@ -581,6 +594,16 @@ public final class TesseraSeal {
     public static byte[] encrypt(byte[] pt, PublicKey recipient, byte suite, byte[] ad,
                                   Long tsMs, int counter) {
         checkSuite(suite);
+        if (recipient == null) throw new BadKey("recipient public key is null");
+        // Suite/key consistency (whitepaper sec02, sec09). Reject a recipient
+        // key whose suite tag does not match the requested suite — structural
+        // BadKey, before any KEM work. Defends the documented suite-confusion
+        // attack. Mirrors go/tessera_seal.go Encrypt and python _encrypt.
+        if (recipient.suite != suite) {
+            throw new BadKey(String.format(
+                "recipient public key suite 0x%02x != requested suite 0x%02x",
+                recipient.suite & 0xff, suite & 0xff));
+        }
         if (ad.length > MAX_AD_LEN) throw new InvalidLength("ad too large");
         if (pt.length > MAX_PLAINTEXT) throw new InvalidLength("pt too large");
         long ts = tsMs == null ? nowMs() : tsMs;
@@ -606,8 +629,20 @@ public final class TesseraSeal {
     }
 
     public static byte[] decrypt(byte[] env, PrivateKey priv, byte[] expectedAd) {
+        if (priv == null) throw new BadKey("private key is null");
         if (env.length < HEADER_BYTES) throw new InvalidLength("short");
         DecodedHeader h = peekHeader(env);
+        // Suite/key consistency (whitepaper sec02, sec09). Reject a private
+        // key whose suite tag does not match the envelope header's suite —
+        // structural BadKey, before any KEM/AEAD work. Distinguishable-but-
+        // safe: the check is on the public suite byte, not on secret-
+        // correlated bytes. Mirrors go/tessera_seal.go Decrypt and python
+        // decrypt.
+        if ((priv.suite & 0xff) != h.suite) {
+            throw new BadKey(String.format(
+                "private key suite 0x%02x != envelope header suite 0x%02x",
+                priv.suite & 0xff, h.suite));
+        }
         long need = (long) HEADER_BYTES + h.kemCtLen + h.adLen
             + AEAD_NONCE_BYTES + AEAD_TAG_BYTES + COMMIT_BYTES;
         if (env.length < need) throw new InvalidLength("truncated");
