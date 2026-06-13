@@ -433,8 +433,16 @@ def peek_header(envelope: bytes) -> DecodedHeader:
         )
     if h.suite not in _ALLOWED_SUITES:
         raise UnknownSuite(f"suite byte 0x{h.suite:02x} is not allocated")
-    if h.kem_ct_len > MAX_KEM_CT_LEN:
-        raise InvalidLength(f"kem_ct_len {h.kem_ct_len} exceeds {MAX_KEM_CT_LEN}")
+    # Pin KEM_CT_LEN to the suite-required KEM-ciphertext size (1568 for the
+    # pure ML-KEM-1024 suites 0x01/0x02; 1600 for hybrid 0x06). Accepting any
+    # other value would let a fixed-size KEM read run past the envelope buffer
+    # in length-unsafe ports (CWE-125, TSEAL-00049). The exact-size check
+    # subsumes the old <= MAX_KEM_CT_LEN bound.
+    _expected_ct = _ct_size_for(h.suite)
+    if h.kem_ct_len != _expected_ct:
+        raise InvalidLength(
+            f"kem_ct_len {h.kem_ct_len} != {_expected_ct} required for suite 0x{h.suite:02x}"
+        )
     if h.ad_len > MAX_AD_LEN:
         raise InvalidLength(f"ad_len {h.ad_len} exceeds {MAX_AD_LEN}")
     return h

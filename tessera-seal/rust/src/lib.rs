@@ -371,7 +371,11 @@ pub fn peek_header(env: &[u8]) -> Result<DecodedHeader, Error> {
     let h = unpack_header(&env[..HEADER_BYTES]);
     if h.variant != VARIANT_TESSERA_SEAL { return Err(Error::UnknownVariant(h.variant)); }
     check_suite(h.suite)?;
-    if h.kem_ct_len as usize > MAX_KEM_CT_LEN { return Err(Error::InvalidLength("kem_ct_len")); }
+    // Pin KEM_CT_LEN to the suite-required KEM-ciphertext size (1568 for the pure
+    // ML-KEM-1024 suites 0x01/0x02; 1600 for hybrid 0x06). Accepting any other
+    // value would let a fixed-size KEM read run past the envelope buffer in
+    // length-unsafe ports (CWE-125, TSEAL-00049). Subsumes the old > MAX bound.
+    if (h.kem_ct_len as usize) != kem_ct_size_for(h.suite) { return Err(Error::InvalidLength("kem_ct_len")); }
     if h.ad_len as usize > MAX_AD_LEN { return Err(Error::InvalidLength("ad_len")); }
     Ok(h)
 }

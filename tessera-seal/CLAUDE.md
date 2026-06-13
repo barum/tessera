@@ -33,7 +33,7 @@ These are checked by tests in every language. Breaking them in one implementatio
 - **Deterministic AEAD nonce.** Derived from `K_session` via HKDF-Expand; never random per envelope. Justified by the per-envelope-fresh `K_session`.
 - **Single error class for every authentication-class failure.** `DecryptionError` (`TESSERA_SEAL_E_DECRYPT_FAILED`) covers bad AEAD tag, bad commit tag, bad KEM ciphertext, AD mismatch. Structural errors (truncated input, unknown variant) may be distinguished safely.
 - **Constant-time AEAD + commit verification.** Both checks execute even on structural failures, using a synthetic key, to keep decrypt-path timing flat.
-- **`KEM_CT_LEN` ≤ 4096**, `AD_LEN` ≤ 65536, plaintext ≤ 2^32 bytes (4 GiB). v1 is not streaming.
+- **`KEM_CT_LEN` MUST equal the suite's KEM-ciphertext size** — 1568 for the pure ML-KEM-1024 suites `0x01`/`0x02`, 1600 for hybrid `0x06`. Decoders reject any other value (including the 4096-byte field maximum) with `INVALID_LEN` **in `peek_header`**, before decapsulation — `validate()`/`peek_ad()`/`decrypt()` all inherit it. Accepting a shorter declared length let a fixed-size ML-KEM read over-run the envelope buffer (CWE-125 heap over-read fixed in TSEAL-00049). The `MAX_KEM_CT_LEN = 4096` constant remains the structural field cap. `AD_LEN` ≤ 65536, plaintext ≤ 2^32 bytes (4 GiB). v1 is not streaming.
 - **TesseraID-as-AD canonical pattern.** When encrypting a record identified by a TesseraID, pass the 41-byte TesseraID as `associated_data`. Test vectors `conformance/vectors/ad_binding.json` exercise this.
 
 If a change is meant to alter any of the above, it is a spec change: update [latex/](latex/), regenerate `conformance/vectors/`, and align every language implementation.
@@ -63,7 +63,7 @@ When changing wire format / encoding / generator semantics:
 
 **Cross-language byte-identity** confirmed for suites `0x01`/`0x02` across all 8 implementations; hybrid `0x06` is currently a 3-way contract (Python ↔ Rust ↔ Go). Languages without hybrid MUST reject suite `0x06` as `UNKNOWN_SUITE` and skip `hybrid_*.json` KAT files per [`tools/conformance/run.sh:hybrid_supported()`](../tools/conformance/run.sh).
 
-Latest conformance (alpha quick loop, 2026-06-10, post TESS-00009 KAT expansion): **Python 296 / Rust 296 / Go 296 / C 287 PASS, 0 FAIL** across tessera-id + tessera-hash + tessera-seal. The full 8-language run is green (cpp/ts/java report 229 each, cpython 224 + 11 SKIP — tessera-id + tessera-hash only).
+Latest conformance (alpha quick loop, 2026-06-13, post TSEAL-00049 KEM_CT_LEN pin): **Python 297 / Rust 297 / Go 297 / C 288 PASS, 0 FAIL** across tessera-id + tessera-hash + tessera-seal. The full 8-language run is green (cpp/ts/java report 229 each, cpython 224 + 11 SKIP — tessera-id + tessera-hash only).
 
 ## Plugin protocol (PQCK-00008, keyfile v1.1)
 
@@ -81,7 +81,7 @@ Keyfile format **`.tseal-key-v1.1`** (v1.1 of PQCK-00018; the v1.0 `.tseal-key-v
 
 Hybrid suite `0x06` vectors (`hybrid_*.json`) are filtered by language via `hybrid_supported()` in `run.sh`. As of v1.3 (2026-05-21), hybrid-capable languages are: Python (PQCK-00021), Rust (PQCK-00028), Go (PQCK-00029). C/C++/TS/Java/CPython ext skip hybrid until their v1.4 ports.
 
-Latest pass: **Python 296 / Rust 296 / Go 296 / C 287 PASS, 0 FAIL** across all 3 projects (287 standard + 9 hybrid for the hybrid-capable languages).
+Latest pass: **Python 297 / Rust 297 / Go 297 / C 288 PASS, 0 FAIL** across all 3 projects (288 standard + 9 hybrid for the hybrid-capable languages).
 
 > Note: the wire-tag literals `"pqcrypt v1 header"`, `"pqcrypt v1 aead k"`, `"pqcrypt v1 aead n"`, `"pqcrypt v1 commit"`, `"pqcrypt v1 timing pad"`, and `"pqcrypt v1 hybrid combiner"` are **frozen v1 wire tags — not rebrandable names**. They are byte strings hashed into every envelope and into every conformance vector; they remain verbatim across the rename and are the only legitimate place the token `pqcrypt` survives in code.
 

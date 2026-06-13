@@ -55,7 +55,7 @@ bash tools/conformance/run.sh
 TESSERA_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh
 \end{lstlisting}
 
-Latest state (2026-06-10, Apple M4 Max, alpha quick loop, counts across all three projects --- \pqid{} + \pqhash{} + \pqcrypt{}):
+Latest state (2026-06-13, Apple M4 Max, alpha quick loop, counts across all three projects --- \pqid{} + \pqhash{} + \pqcrypt{}; +1 invalid record each since 2026-06-10 from the TSEAL-00049 \code{KEM\_CT\_LEN} pin):
 
 \begin{center}
 \small
@@ -63,10 +63,10 @@ Latest state (2026-06-10, Apple M4 Max, alpha quick loop, counts across all thre
 \toprule
 \textbf{Language} & \textbf{PASS} & \textbf{FAIL} & \textbf{Notes} \\
 \midrule
-Python   & 296 & 0 & 287 standard + 9 hybrid \\
-C        & 287 & 0 & hybrid skipped (v1.4 backlog, TSEAL-00030) \\
-Go       & 296 & 0 & 287 + 9 hybrid (TSEAL-00029) \\
-Rust     & 296 & 0 & 287 + 9 hybrid (TSEAL-00028) \\
+Python   & 297 & 0 & 288 standard + 9 hybrid \\
+C        & 288 & 0 & hybrid skipped (v1.4 backlog, TSEAL-00030) \\
+Go       & 297 & 0 & 288 + 9 hybrid (TSEAL-00029) \\
+Rust     & 297 & 0 & 288 + 9 hybrid (TSEAL-00028) \\
 \bottomrule
 \end{tabular}
 \end{center}

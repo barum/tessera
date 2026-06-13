@@ -2,6 +2,7 @@
 
 Reverse-chronological. One entry per PR (or per logical change shipped together).
 
+- 2026-06-13 — [TSEAL-00049 — Pin KEM_CT_LEN to the suite ciphertext size; fixes a HIGH C heap over-read (CWE-125) (sec)](2026-06-13-tseal-00049-kem-ct-len-pin.md)
 - 2026-06-10 — [TSEAL-00048 — HQC suite-byte 0x07 reservation, automated timing-histogram regression, second-source ML-KEM vector cross-check (sec)](2026-06-10-tseal-00048-hqc-timing-mlkemtest.md)
 - 2026-06-10 — [TSEAL-00047 — API polish: peek_ad in all 8 languages, SenderContext for C/C++/Java (feat)](2026-06-10-tseal-00047-api-polish.md)
 - 2026-06-10 — [TSEAL-00046 — Python packaging: pyproject, tessera-seal console script, py.typed (feat)](2026-06-10-tseal-00046-python-packaging-cli.md)

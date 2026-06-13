@@ -142,7 +142,15 @@ int tessera_seal_peek_header(const uint8_t *env, size_t env_len,
         h->suite != TESSERA_SEAL_SUITE_MLKEM1024_CHACHA) {
         return TESSERA_SEAL_E_UNKNOWN_SUITE;
     }
-    if (h->kem_ct_len > TESSERA_SEAL_MAX_KEM_CT_LEN) return TESSERA_SEAL_E_INVALID_LEN;
+    /* Pin KEM_CT_LEN to the suite-required ML-KEM-1024 ciphertext size (1568).
+     * Suites 0x01/0x02 are pure ML-KEM-1024; accepting a shorter declared length
+     * let tessera_seal_decrypt slice a KEM_CT region smaller than mlkem_decaps()'s
+     * fixed 1568-byte read -> heap out-of-bounds read (CWE-125, TSEAL-00049).
+     * validate()/peek_ad()/decrypt() all route through peek_header, so gating here
+     * closes every path. (Hybrid 0x06 -- 1600 B -- is rejected above as an unknown
+     * suite in C until the 0x06 port lands.) The exact-size check subsumes the old
+     * <= MAX_KEM_CT_LEN bound (1568 <= 4096). */
+    if (h->kem_ct_len != TESSERA_SEAL_MLKEM1024_CT_BYTES) return TESSERA_SEAL_E_INVALID_LEN;
     if (h->ad_len > TESSERA_SEAL_MAX_AD_LEN) return TESSERA_SEAL_E_INVALID_LEN;
     return TESSERA_SEAL_OK;
 }

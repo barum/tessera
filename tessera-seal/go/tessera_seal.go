@@ -438,8 +438,17 @@ func PeekHeader(env []byte) (DecodedHeader, error) {
 	if !suiteAllowed(h.Suite) {
 		return h, fmt.Errorf("%w: 0x%02x", ErrUnknownSuite, h.Suite)
 	}
-	if h.KEMCTLen > MaxKEMCTLen {
-		return h, fmt.Errorf("%w: kem_ct_len %d", ErrInvalidLength, h.KEMCTLen)
+	// Pin KEM_CT_LEN to the suite-required KEM-ciphertext size (1568 for the pure
+	// ML-KEM-1024 suites 0x01/0x02; 1600 for hybrid 0x06). Accepting any other
+	// value would let a fixed-size KEM read run past the envelope buffer in
+	// length-unsafe ports (CWE-125, TSEAL-00049). Subsumes the old > MaxKEMCTLen
+	// bound.
+	expectedKEMCT := MLKem1024CTBytes
+	if isHybrid(h.Suite) {
+		expectedKEMCT = HybridCTBytes
+	}
+	if int(h.KEMCTLen) != expectedKEMCT {
+		return h, fmt.Errorf("%w: kem_ct_len %d != %d for suite 0x%02x", ErrInvalidLength, h.KEMCTLen, expectedKEMCT, h.Suite)
 	}
 	if h.ADLen > MaxADLen {
 		return h, fmt.Errorf("%w: ad_len %d", ErrInvalidLength, h.ADLen)

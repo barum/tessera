@@ -139,17 +139,17 @@ bash tools/conformance/run.sh                           # all languages × all p
 TESSERA_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh   # TesseraSeal v1.x alpha quick loop
 ```
 
-As of 2026-06-10 (TESS-00007 harness enforcement — per-runner exit-code checks, PASS+FAIL+SKIP record-count
-reconciliation, explicit SKIP column — plus TESS-00009 KAT expansion: string-form unknown-variant records,
-HLC drift records, reserved-byte sweep 0x05/0x10/0x7f/0xfe, seal truncation/boundary/64KiB/max-AD records)
+As of 2026-06-13 (TESS-00007 harness enforcement — per-runner exit-code checks, PASS+FAIL+SKIP record-count
+reconciliation, explicit SKIP column — plus TESS-00009 KAT expansion and the TSEAL-00049 `KEM_CT_LEN` pin
+adding one `kem_ct_len_too_small_valid_header` invalid record to the seal vectors, +1 PASS per seal language)
 the alpha quick loop reports, **verified by local run**:
 
 ```
 language         PASS     FAIL     SKIP
-python            296        0        6
-c                 287        0        6       (no hybrid yet; TSEAL-00030 backlog)
-go                296        0        6
-rust              296        0        6
+python            297        0        6
+c                 288        0        6       (no hybrid yet; TSEAL-00030 backlog)
+go                297        0        6
+rust              297        0        6
 ```
 
 The full 8-language run is also green locally: `cpp / typescript / java` each report `229 0 6`
