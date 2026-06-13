@@ -90,7 +90,9 @@ jobs:
       # GNU `timeout` does not exist on macOS runners (exit 127). The harness
       # takes an iteration budget as argv[1], which bounds the runtime portably
       # (TP-009): 5M iterations measured ~1 s on an M-class laptop.
-      - name: TesseraID fuzz smoke (5M iterations)
+      # Honest naming (TP-101): this harness is a seeded random-input replay
+      # loop, not coverage-guided fuzzing (the Go native fuzz tier is).
+      - name: TesseraID randomized regression replay (5M iterations)
         env:
           CC: ${{ matrix.cc }}
         run: |

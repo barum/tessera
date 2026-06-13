@@ -222,6 +222,57 @@ def test_fast_exception_parity():
     print("✓ fast raises the same exception types as the canonical reference")
 
 
+def test_hlc_threads_global_uniqueness_and_monotonicity():
+    """HLC locking contract under threads (TP-098 / TESS-00015).
+
+    N threads share ONE HLCGenerator. The internal lock must guarantee:
+      - global uniqueness of every (l, c) pair across all threads, and
+      - per-thread strict monotonicity of the (l, c) sequence each thread
+        observes (the shared state never moves backward, so each thread's
+        own subsequence must be strictly increasing too).
+    """
+    import threading
+
+    n_threads = 8
+    per_thread = 5_000
+    gen = tessera_id.HLCGenerator()
+    results: list[list[tuple]] = [[] for _ in range(n_threads)]
+    errors: list[BaseException] = []
+    barrier = threading.Barrier(n_threads)
+
+    def worker(idx: int) -> None:
+        try:
+            barrier.wait()
+            mine = results[idx]
+            for _ in range(per_thread):
+                d = tessera_id.decode(gen.new())
+                mine.append((d.timestamp_ms, d.counter))
+        except BaseException as e:  # noqa: BLE001 — surface to main thread
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors, f"worker raised: {errors[0]!r}"
+
+    # Per-thread strict monotonicity of (l, c).
+    for idx, seq in enumerate(results):
+        assert len(seq) == per_thread
+        for i in range(1, len(seq)):
+            assert seq[i] > seq[i - 1], (
+                f"thread {idx} not monotonic at {i}: {seq[i-1]} -> {seq[i]}"
+            )
+
+    # Global uniqueness of (l, c) across every thread.
+    everything = [lc for seq in results for lc in seq]
+    assert len(set(everything)) == n_threads * per_thread, (
+        "duplicate (l, c) pair from a shared HLCGenerator under threads"
+    )
+    print(f"✓ HLC under threads: {n_threads}x{per_thread} globally unique, per-thread monotonic")
+
+
 def test_canonical_vs_fast_compatibility():
     """Both implementations produce wire-compatible output."""
     a = tessera_id.new()
@@ -247,5 +298,6 @@ if __name__ == "__main__":
     test_spin_clock_regression_counter_exhaust()
     test_decode_text_unknown_variant()
     test_fast_exception_parity()
+    test_hlc_threads_global_uniqueness_and_monotonicity()
     test_canonical_vs_fast_compatibility()
     print("\nAll tests passed.")

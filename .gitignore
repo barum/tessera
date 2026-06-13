@@ -46,11 +46,12 @@ tessera-hash/java/build/
 tessera-hash/java/build-common/
 tools/conformance/java/build/
 
-# Cargo lockfile (library — committing is optional; keep untracked for now)
-tessera-id/rust/Cargo.lock
-tessera-hash/rust/Cargo.lock
-tools/conformance/rust/Cargo.lock
-Cargo.lock
+# Cargo lockfiles are COMMITTED (TP-104, supply-chain reproducibility):
+# - root Cargo.lock is the one cargo actually consults for every workspace
+#   build (rust.yml gates on --locked against it);
+# - per-crate tessera-{id,hash,seal}/rust/Cargo.lock document standalone
+#   resolution for consumers who vendor a single crate out of the monorepo
+#   (cargo ignores nested member lockfiles inside the workspace).
 
 # Cargo target dirs (workspace target/ now lives at repo root)
 target/

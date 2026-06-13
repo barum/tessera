@@ -20,18 +20,33 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: cargo test (workspace)
-        run: cargo test --workspace --release
+      # --locked enforces the committed workspace Cargo.lock (TP-104):
+      # CI fails instead of silently re-resolving dependencies.
+      - name: cargo test (workspace, --locked)
+        run: cargo test --workspace --release --locked
       - name: Build and run conformance runner
         run: |
-          cargo build --release --bin conformance_runner
+          cargo build --release --locked --bin conformance_runner
           for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
             ./target/release/conformance_runner "$f"
           done
       # GNU `timeout` does not exist on macOS runners (exit 127). The harness
       # takes an iteration budget as argv[1], which bounds the runtime portably
       # (TP-009).
-      - name: TesseraID fuzz smoke (5M iterations)
+      # Honest naming (TP-101): this harness is a seeded random-input replay
+      # loop (fixed default seed 20260519; override via TESSERA_ID_FUZZ_SEED),
+      # not coverage-guided fuzzing (the Go native fuzz tier is).
+      - name: TesseraID randomized regression replay (5M iterations)
         run: |
-          cargo build --release --bin fuzz_decode
+          cargo build --release --locked --bin fuzz_decode
           ./target/release/fuzz_decode 5000000
+      # Coverage is informational — printed, not gated (TP-102). Linux/stable
+      # only: one datapoint is enough for a trend line, and cargo-llvm-cov
+      # rebuilds the workspace with instrumentation (expensive).
+      - name: Coverage (cargo-llvm-cov, informational)
+        if: matrix.toolchain == 'stable' && runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          rustup component add llvm-tools-preview
+          cargo install cargo-llvm-cov --locked
+          cargo llvm-cov --workspace --locked --summary-only

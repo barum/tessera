@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Python decoder fuzz harness.
+Python decoder randomized regression replay (NOT coverage-guided fuzzing).
+
+Honesty note (TP-101): this harness is a seeded random-input replay loop —
+it has no coverage feedback, no corpus, and no mutation engine. The repo's
+only coverage-guided tier is Go native fuzzing (tessera-id/go/fuzz_test.go).
+Do not describe this script as a fuzzer in docs or CI step names.
 
 Drives random bytes / random strings into tessera_id.decode,
 tessera_id.decode_b64, and tessera_id.decode_b32 for ITER iterations and
@@ -16,12 +21,22 @@ asserts:
 Usage:
     python3 fuzz_decode.py [ITERS]
     ITERS defaults to 200_000; CI sets it to 50_000 for a ~60s smoke.
+
+Seed selection (TP-101 — no constant replay):
+    TESSERA_FUZZ_SEED=<int>     explicit seed (reproduce a prior run)
+    TESSERA_ID_FUZZ_SEED=<int>  legacy alias, still honored
+    (neither set)               seeded from the current time — every run
+                                explores fresh inputs
+
+The chosen seed is always logged so any failing run can be reproduced with
+TESSERA_FUZZ_SEED=<logged value>.
 """
 from __future__ import annotations
 
 import os
 import random
 import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -115,12 +130,24 @@ def fuzz_valid_input(rng: random.Random) -> None:
     assert d.random == tail
 
 
-SEED = int(os.environ.get("TESSERA_ID_FUZZ_SEED", "20260519"))
+def _pick_seed() -> int:
+    """Env-pinned seed for reproduction; otherwise time-derived (TP-101 —
+    a 'fuzz' loop that replays one constant input stream forever is a
+    regression replay, not exploration)."""
+    for var in ("TESSERA_FUZZ_SEED", "TESSERA_ID_FUZZ_SEED"):
+        v = os.environ.get(var)
+        if v is not None:
+            return int(v)
+    return time.time_ns()
+
+
+SEED = _pick_seed()
 
 
 def main() -> int:
     rng = random.Random(SEED)
-    print(f"fuzz_decode: ITERS={ITERS} SEED={SEED}")
+    print(f"fuzz_decode (randomized regression replay): ITERS={ITERS} SEED={SEED}")
+    print(f"  reproduce with: TESSERA_FUZZ_SEED={SEED} python3 fuzz/fuzz_decode.py {ITERS}")
     for i in range(ITERS):
         fuzz_decode_binary(rng)
         fuzz_decode_b64(rng)

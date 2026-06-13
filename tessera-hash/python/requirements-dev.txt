@@ -1,0 +1,12 @@
+# Test-only dependencies for the TesseraHash Python reference (TP-095).
+# The reference implementation itself has ZERO runtime dependencies —
+# nothing here may be imported by tessera_hash.py.
+#
+#   python3 -m pip install -r requirements-dev.txt
+#   python3 -m pytest test_tessera_hash.py test_properties.py -v
+#
+# Property tests default to the derandomized "ci" Hypothesis profile;
+# run exploratory with: HYPOTHESIS_PROFILE=dev python3 -m pytest test_properties.py
+hypothesis>=6.100
+pytest>=8
+pytest-cov>=5

@@ -23,12 +23,18 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
           cache-dependency-path: "**/go.sum"
-      - name: TesseraID Go tests
+      # -race is the CI test command (TP-098); coverage is informational, no
+      # gate (TP-102). -covermode=atomic is required when combined with -race.
+      - name: TesseraID Go tests (race detector + coverage)
         working-directory: tessera-id/go
-        run: go test ./...
-      - name: TesseraHash Go tests
+        run: |
+          go test -race -covermode=atomic -coverprofile=cover.out ./...
+          go tool cover -func=cover.out
+      - name: TesseraHash Go tests (race detector + coverage)
         working-directory: tessera-hash/go
-        run: go test ./...
+        run: |
+          go test -race -covermode=atomic -coverprofile=cover.out ./...
+          go tool cover -func=cover.out
       - name: Build and run conformance runner
         run: |
           cd tools/conformance/go

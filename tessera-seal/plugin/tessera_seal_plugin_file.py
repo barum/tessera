@@ -51,6 +51,31 @@ This plugin supports three subcommands:
 
 The serve mode is the only one used by the TesseraSeal library itself. The
 keygen/pubkey modes are CLI convenience.
+
+Passphrase channels (TSEAL / TP-106):
+
+    Interactive getpass prompt   — the production path. Nothing persists.
+    TESSERA_SEAL_PASSPHRASE      — environment-variable path, intended for
+                                   CI/test automation ONLY. Leak surface of
+                                   an env-var passphrase:
+                                     - /proc/<pid>/environ is readable by any
+                                       same-UID process (and by root) for the
+                                       plugin's whole lifetime;
+                                     - environments are inherited by every
+                                       child process the plugin (or its
+                                       parent shell) spawns;
+                                     - crash dumps / core files capture the
+                                       full environment block;
+                                     - `export VAR=...` lines persist in
+                                       shell history, CI logs, and CI
+                                       provider env snapshots.
+                                   Outside CI the plugin emits a one-line
+                                   stderr warning when this path is used; set
+                                   TESSERA_SEAL_ALLOW_ENV_PASSPHRASE=1 to
+                                   acknowledge and suppress it. Production
+                                   deployments should prefer the interactive
+                                   prompt or an fd/agent-based channel (a
+                                   future plugin-protocol extension).
 """
 from __future__ import annotations
 
@@ -372,9 +397,34 @@ def _unwrap_sk(kf: KeyFile, passphrase: bytes) -> bytes:
 # ---------------------------------------------------------------------------
 
 
+def _env_passphrase_warning_needed(environ=None) -> bool:
+    """True when the TESSERA_SEAL_PASSPHRASE path is being used outside an
+    acknowledged context (TP-106). CI (the conventional variable set by
+    GitHub Actions & friends) and the explicit
+    TESSERA_SEAL_ALLOW_ENV_PASSPHRASE=1 opt-in both suppress the warning."""
+    env = os.environ if environ is None else environ
+    if env.get("TESSERA_SEAL_ALLOW_ENV_PASSPHRASE") == "1":
+        return False
+    if env.get("CI"):
+        return False
+    return True
+
+
 def _read_passphrase(confirm: bool = False) -> bytes:
     env = os.environ.get("TESSERA_SEAL_PASSPHRASE")
     if env is not None:
+        # Env-var passphrases are a CI/test convenience with a real leak
+        # surface (/proc/<pid>/environ, inherited child environments, crash
+        # dumps, shell history — see module docstring). Keep working, but
+        # say so once on stderr when used outside CI (TP-106).
+        if _env_passphrase_warning_needed():
+            sys.stderr.write(
+                "tessera-seal-plugin-file: WARNING: reading passphrase from "
+                "TESSERA_SEAL_PASSPHRASE (visible in /proc/<pid>/environ, child "
+                "processes, crash dumps); intended for CI/test only — set "
+                "TESSERA_SEAL_ALLOW_ENV_PASSPHRASE=1 to acknowledge, or use the "
+                "interactive prompt.\n"
+            )
         return env.encode("utf-8")
     p = getpass.getpass("passphrase: ")
     if confirm:

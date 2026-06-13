@@ -8,6 +8,7 @@ whitepaper, repo-wide doc/git hygiene. Per-project changes live in
 reference the former PQToolkit / PQID / PQHash / PQCrypt names are a historical
 ledger — kept verbatim; see TESS-00001 for the rename.)
 
+- 2026-06-10 — [TESS-00015 — Testing depth & supply chain: property-based tests, Go race detector, committed Cargo lockfiles, plugin env-passphrase hardening](2026-06-10-tess-00015-testing-depth.md)
 - 2026-06-10 — [TESS-00014 — Packaging metadata: crates/npm/Maven/pkg-config at 1.3.1, release workflow draft](2026-06-10-tess-00014-packaging.md)
 - 2026-06-10 — [TESS-00013 — Go module paths renamed to github.com/barum/tessera/* (fetchable)](2026-06-10-tess-00013-go-module-paths.md)
 - 2026-06-10 — [TESS-00012 — Docs & DX: working CLIs documented, tessera-hash README, examples, link sweep](2026-06-10-tess-00012-docs-dx.md)

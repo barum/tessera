@@ -22,19 +22,35 @@ jobs:
           cache: pip
           cache-dependency-path: tessera-seal/python/requirements.txt
       # tools/conformance/python/python_runner.py imports tessera_seal, which
-      # needs kyber-py + cryptography (TP-010, yml half).
-      - name: Install TesseraSeal Python deps (python_runner.py imports tessera_seal)
+      # needs kyber-py + cryptography (TP-010, yml half). Test-only deps
+      # (pytest, pytest-cov, hypothesis) come from requirements-dev.txt
+      # (TP-095/TP-102) — they never touch the runtime requirement files.
+      - name: Install TesseraSeal Python deps + test-only deps
         run: |
           python3 -m pip install --upgrade pip setuptools
           pip install -r tessera-seal/python/requirements.txt
-      - name: Run TesseraID Python tests
+          pip install -r tessera-id/python/requirements-dev.txt \
+                      -r tessera-hash/python/requirements-dev.txt \
+                      -r tessera-seal/python/requirements-dev.txt
+      # Unit + property tests with coverage (TP-095, TP-102). Coverage is
+      # informational — printed, not gated. Property tests run the
+      # derandomized "ci" Hypothesis profile (fixed example sequence, no
+      # flakes); run exploratory locally with HYPOTHESIS_PROFILE=dev.
+      - name: TesseraID Python tests (unit + property, coverage)
         run: |
           cd tessera-id/python
-          python3 test_tessera_id.py
-      - name: Run TesseraHash Python tests
+          python3 -m pytest test_tessera_id.py test_properties.py -v \
+            --cov=tessera_id --cov=tessera_id_fast --cov-report=term-missing
+      - name: TesseraHash Python tests (unit + property, coverage)
         run: |
           cd tessera-hash/python
-          python3 test_tessera_hash.py
+          python3 -m pytest test_tessera_hash.py test_properties.py -v \
+            --cov=tessera_hash --cov-report=term-missing
+      - name: TesseraSeal Python tests (unit + property, coverage)
+        run: |
+          cd tessera-seal/python
+          python3 -m pytest test_tessera_seal.py test_properties.py -v \
+            --cov=tessera_seal --cov-report=term-missing
       - name: Run Python conformance runner against all vectors
         run: |
           for f in tessera-id/conformance/vectors/*.json tessera-hash/conformance/vectors/*.json; do
@@ -44,7 +60,11 @@ jobs:
       # takes an iteration budget as argv[1], which bounds the runtime portably
       # (TP-009). 200k is the harness default smoke budget (~2 s on an M-class
       # laptop; the old 1M budget was being wall-clock-killed at 60 s anyway).
-      - name: TesseraID fuzz smoke (200k iterations)
+      # Honest naming (TP-101): this harness is a seeded random-input replay
+      # loop, not coverage-guided fuzzing (the Go native fuzz tier is). In CI
+      # it seeds from time and logs the seed; reproduce any failure with
+      # TESSERA_FUZZ_SEED=<logged seed>.
+      - name: TesseraID randomized regression replay (200k iterations)
         run: |
           cd tessera-id/python
           python3 fuzz/fuzz_decode.py 200000

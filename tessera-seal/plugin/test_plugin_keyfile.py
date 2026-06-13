@@ -13,6 +13,8 @@ Covers (TSEAL-00040 / TP-038, and TP-100 delivered early):
   - KDF-block tamper / forged-params rejection
   - frame protocol: roundtrip, clean EOF, truncated/oversized frames
   - recipient URI encode/parse
+  - env-passphrase channel hardening (TP-106): warning outside CI,
+    TESSERA_SEAL_ALLOW_ENV_PASSPHRASE=1 / CI suppression, prompt fallback
 
 Run:  cd tessera-seal/plugin && python3 -m pytest test_plugin_keyfile.py -v
 """
@@ -418,3 +420,54 @@ def test_parse_recipient_rejects_missing_separator():
 def test_parse_recipient_rejects_bad_plugin_name():
     with pytest.raises(protocol.ProtocolError):
         protocol.parse_recipient("tseal1bad_name!1AAAA")
+
+
+# ---------------------------------------------------------------------------
+# Env-passphrase channel hardening (TP-106)
+# ---------------------------------------------------------------------------
+
+
+def test_env_passphrase_still_works_and_warns_outside_ci(monkeypatch, capsys):
+    """TESSERA_SEAL_PASSPHRASE keeps working, but outside CI (and without the
+    explicit acknowledgment) a one-line stderr warning names the leak surface."""
+    monkeypatch.setenv("TESSERA_SEAL_PASSPHRASE", PASS.decode())
+    monkeypatch.delenv("TESSERA_SEAL_ALLOW_ENV_PASSPHRASE", raising=False)
+    monkeypatch.delenv("CI", raising=False)
+    assert plugin._read_passphrase() == PASS
+    err = capsys.readouterr().err
+    assert "WARNING" in err
+    assert "TESSERA_SEAL_PASSPHRASE" in err
+    assert err.count("\n") == 1  # one-line warning, not a wall of text
+
+
+def test_env_passphrase_warning_suppressed_by_explicit_ack(monkeypatch, capsys):
+    monkeypatch.setenv("TESSERA_SEAL_PASSPHRASE", PASS.decode())
+    monkeypatch.setenv("TESSERA_SEAL_ALLOW_ENV_PASSPHRASE", "1")
+    monkeypatch.delenv("CI", raising=False)
+    assert plugin._read_passphrase() == PASS
+    assert capsys.readouterr().err == ""
+
+
+def test_env_passphrase_warning_suppressed_in_ci(monkeypatch, capsys):
+    monkeypatch.setenv("TESSERA_SEAL_PASSPHRASE", PASS.decode())
+    monkeypatch.delenv("TESSERA_SEAL_ALLOW_ENV_PASSPHRASE", raising=False)
+    monkeypatch.setenv("CI", "true")
+    assert plugin._read_passphrase() == PASS
+    assert capsys.readouterr().err == ""
+
+
+def test_env_passphrase_ack_must_be_exactly_1(monkeypatch, capsys):
+    """Only the documented value '1' acknowledges; anything else still warns."""
+    monkeypatch.setenv("TESSERA_SEAL_PASSPHRASE", PASS.decode())
+    monkeypatch.setenv("TESSERA_SEAL_ALLOW_ENV_PASSPHRASE", "yes")
+    monkeypatch.delenv("CI", raising=False)
+    assert plugin._read_passphrase() == PASS
+    assert "WARNING" in capsys.readouterr().err
+
+
+def test_no_env_passphrase_falls_through_to_prompt(monkeypatch):
+    """Without TESSERA_SEAL_PASSPHRASE the interactive getpass path is used
+    (and never warns)."""
+    monkeypatch.delenv("TESSERA_SEAL_PASSPHRASE", raising=False)
+    monkeypatch.setattr(plugin.getpass, "getpass", lambda prompt: PASS.decode())
+    assert plugin._read_passphrase() == PASS
