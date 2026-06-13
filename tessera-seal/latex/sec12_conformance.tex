@@ -33,9 +33,9 @@ Vectors are consumed by the same harness used by \pqid{} and \pqhash{}: \texttt{
 \texttt{tools/conformance/run.sh} filters \texttt{hybrid\_*.json} vector files per language via \texttt{hybrid\_supported()}:
 
 \begin{lstlisting}[language=bash]
-# Hybrid (suite 0x06) shipped in Python (TSEAL-00021), Rust (TSEAL-00028), and
-# Go (TSEAL-00029). C/C++/TypeScript/Java/CPython ext remain on the v1.4 hybrid
-# backlog (TSEAL-00030) and reject 0x06 as UNKNOWN_SUITE for now.
+# Hybrid (suite 0x06) shipped in Python (TSEAL-00021), Rust (TSEAL-00028),
+# Go (TSEAL-00029), and C (TSEAL-00030). C++/TypeScript/Java/CPython ext have no
+# tessera-seal runner yet and reject 0x06 as UNKNOWN_SUITE for now.
 hybrid_supported() {
     case "$1" in
         python) return 0 ;;
@@ -55,7 +55,7 @@ bash tools/conformance/run.sh
 TESSERA_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh
 \end{lstlisting}
 
-Latest state (2026-06-13, Apple M4 Max, alpha quick loop, counts across all three projects --- \pqid{} + \pqhash{} + \pqcrypt{}; +1 invalid record each since 2026-06-10 from the TSEAL-00049 \code{KEM\_CT\_LEN} pin):
+Latest state (2026-06-13, Apple M4 Max, alpha quick loop, counts across all three projects --- \pqid{} + \pqhash{} + \pqcrypt{}; +1 invalid record each since 2026-06-10 from the TSEAL-00049 \code{KEM\_CT\_LEN} pin, and C up to 297 with the TSEAL-00030 hybrid port consuming the 9 \texttt{hybrid\_*.json} records):
 
 \begin{center}
 \small
@@ -64,7 +64,7 @@ Latest state (2026-06-13, Apple M4 Max, alpha quick loop, counts across all thre
 \textbf{Language} & \textbf{PASS} & \textbf{FAIL} & \textbf{Notes} \\
 \midrule
 Python   & 297 & 0 & 288 standard + 9 hybrid \\
-C        & 288 & 0 & hybrid skipped (v1.4 backlog, TSEAL-00030) \\
+C        & 297 & 0 & 288 + 9 hybrid (TSEAL-00030) \\
 Go       & 297 & 0 & 288 + 9 hybrid (TSEAL-00029) \\
 Rust     & 297 & 0 & 288 + 9 hybrid (TSEAL-00028) \\
 \bottomrule

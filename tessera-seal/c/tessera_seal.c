@@ -139,18 +139,22 @@ int tessera_seal_peek_header(const uint8_t *env, size_t env_len,
     unpack_header(env, h);
     if (h->variant != TESSERA_SEAL_VARIANT) return TESSERA_SEAL_E_UNKNOWN_VARIANT;
     if (h->suite != TESSERA_SEAL_SUITE_MLKEM1024_AESGCM &&
-        h->suite != TESSERA_SEAL_SUITE_MLKEM1024_CHACHA) {
+        h->suite != TESSERA_SEAL_SUITE_MLKEM1024_CHACHA &&
+        h->suite != TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM) {
         return TESSERA_SEAL_E_UNKNOWN_SUITE;
     }
-    /* Pin KEM_CT_LEN to the suite-required ML-KEM-1024 ciphertext size (1568).
-     * Suites 0x01/0x02 are pure ML-KEM-1024; accepting a shorter declared length
-     * let tessera_seal_decrypt slice a KEM_CT region smaller than mlkem_decaps()'s
-     * fixed 1568-byte read -> heap out-of-bounds read (CWE-125, TSEAL-00049).
-     * validate()/peek_ad()/decrypt() all route through peek_header, so gating here
-     * closes every path. (Hybrid 0x06 -- 1600 B -- is rejected above as an unknown
-     * suite in C until the 0x06 port lands.) The exact-size check subsumes the old
-     * <= MAX_KEM_CT_LEN bound (1568 <= 4096). */
-    if (h->kem_ct_len != TESSERA_SEAL_MLKEM1024_CT_BYTES) return TESSERA_SEAL_E_INVALID_LEN;
+    /* Pin KEM_CT_LEN to the suite-required KEM-ciphertext size: 1568 for the
+     * pure ML-KEM-1024 suites 0x01/0x02, 1600 for hybrid 0x06 (ml_kem_ct 1568
+     * || x25519_eph_pk 32). Accepting a shorter declared length let
+     * tessera_seal_decrypt slice a KEM_CT region smaller than the fixed
+     * decaps read -> heap out-of-bounds read (CWE-125, TSEAL-00049).
+     * validate()/peek_ad()/decrypt() all route through peek_header, so gating
+     * here closes every path. The exact-size check subsumes the old
+     * <= MAX_KEM_CT_LEN bound (1568/1600 <= 4096). */
+    uint16_t expected_ct = (h->suite == TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM)
+                         ? (uint16_t)TESSERA_SEAL_HYBRID_CT_BYTES
+                         : (uint16_t)TESSERA_SEAL_MLKEM1024_CT_BYTES;
+    if (h->kem_ct_len != expected_ct) return TESSERA_SEAL_E_INVALID_LEN;
     if (h->ad_len > TESSERA_SEAL_MAX_AD_LEN) return TESSERA_SEAL_E_INVALID_LEN;
     return TESSERA_SEAL_OK;
 }
@@ -348,12 +352,108 @@ done:
 }
 
 /* ---------------------------------------------------------------------------
+ * X25519 via OpenSSL EVP (suite 0x06 hybrid half, TSEAL-00030)
+ *
+ * Same pinned source as ML-KEM (OpenSSL 3.5+ EVP). The token "Curve25519" /
+ * "ECDH" never appears in the public surface — only the wire name X25519
+ * (RFC 7748). Raw-key APIs (no DER) keep the 32-byte scalar/point encoding
+ * byte-identical to the Python/Go/Rust ports.
+ * ------------------------------------------------------------------------- */
+
+/* Derive the X25519 public point for a given 32-byte scalar. */
+static int x25519_scalar_to_pub(const uint8_t scalar[TESSERA_SEAL_X25519_SK_BYTES],
+                                uint8_t pub_out[TESSERA_SEAL_X25519_PK_BYTES]) {
+    EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_X25519, NULL,
+                                                  scalar, TESSERA_SEAL_X25519_SK_BYTES);
+    if (!pkey) return -1;
+    size_t pub_len = TESSERA_SEAL_X25519_PK_BYTES;
+    int rc = EVP_PKEY_get_raw_public_key(pkey, pub_out, &pub_len);
+    EVP_PKEY_free(pkey);
+    return (rc == 1 && pub_len == TESSERA_SEAL_X25519_PK_BYTES) ? 0 : -1;
+}
+
+/* X25519 Diffie-Hellman: ss = scalar * peer_point (32 bytes, RFC 7748). */
+static int x25519_dh(const uint8_t scalar[TESSERA_SEAL_X25519_SK_BYTES],
+                     const uint8_t peer_pub[TESSERA_SEAL_X25519_PK_BYTES],
+                     uint8_t ss_out[TESSERA_SEAL_X25519_SS_BYTES]) {
+    EVP_PKEY *priv = NULL, *peer = NULL;
+    EVP_PKEY_CTX *ctx = NULL;
+    int rc = -1;
+    size_t ss_len = TESSERA_SEAL_X25519_SS_BYTES;
+
+    priv = EVP_PKEY_new_raw_private_key(EVP_PKEY_X25519, NULL,
+                                        scalar, TESSERA_SEAL_X25519_SK_BYTES);
+    if (!priv) goto done;
+    peer = EVP_PKEY_new_raw_public_key(EVP_PKEY_X25519, NULL,
+                                       peer_pub, TESSERA_SEAL_X25519_PK_BYTES);
+    if (!peer) goto done;
+    ctx = EVP_PKEY_CTX_new(priv, NULL);
+    if (!ctx) goto done;
+    if (EVP_PKEY_derive_init(ctx) <= 0) goto done;
+    if (EVP_PKEY_derive_set_peer(ctx, peer) <= 0) goto done;
+    if (EVP_PKEY_derive(ctx, ss_out, &ss_len) <= 0) goto done;
+    if (ss_len != TESSERA_SEAL_X25519_SS_BYTES) goto done;
+    rc = 0;
+done:
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(peer);
+    EVP_PKEY_free(priv);
+    return rc;
+}
+
+/* ---------------------------------------------------------------------------
+ * Hybrid combiner (suite 0x06) — frozen v1 wire tag, fixed byte order.
+ *
+ *   K_session = SHAKE-256("pqcrypt v1 hybrid combiner"
+ *                         || ss_mlkem || x_ss || ml_kem_ct || x_eph_pk, 32)
+ *
+ * Order and label match python/tessera_seal._hybrid_combine byte-for-byte.
+ * Flipping the order or renaming the label is a polyglot KAT break.
+ * ------------------------------------------------------------------------- */
+
+static const uint8_t HYBRID_COMBINER_LABEL[] =
+    "pqcrypt v1 hybrid combiner";  /* 26 B; frozen v1 wire tag — not a rebrandable name */
+
+static int hybrid_combine(const uint8_t ss_mlkem[TESSERA_SEAL_MLKEM1024_SS_BYTES],
+                          const uint8_t x_ss[TESSERA_SEAL_X25519_SS_BYTES],
+                          const uint8_t ml_kem_ct[TESSERA_SEAL_MLKEM1024_CT_BYTES],
+                          const uint8_t x_eph_pk[TESSERA_SEAL_X25519_PK_BYTES],
+                          uint8_t k_session[TESSERA_SEAL_MLKEM1024_SS_BYTES]) {
+    size_t total = LBL_LEN(HYBRID_COMBINER_LABEL)
+                 + TESSERA_SEAL_MLKEM1024_SS_BYTES
+                 + TESSERA_SEAL_X25519_SS_BYTES
+                 + TESSERA_SEAL_MLKEM1024_CT_BYTES
+                 + TESSERA_SEAL_X25519_PK_BYTES;
+    uint8_t *buf = (uint8_t *)malloc(total);
+    if (!buf) return -1;
+    size_t off = 0;
+    memcpy(buf + off, HYBRID_COMBINER_LABEL, LBL_LEN(HYBRID_COMBINER_LABEL));
+    off += LBL_LEN(HYBRID_COMBINER_LABEL);
+    memcpy(buf + off, ss_mlkem, TESSERA_SEAL_MLKEM1024_SS_BYTES);
+    off += TESSERA_SEAL_MLKEM1024_SS_BYTES;
+    memcpy(buf + off, x_ss, TESSERA_SEAL_X25519_SS_BYTES);
+    off += TESSERA_SEAL_X25519_SS_BYTES;
+    memcpy(buf + off, ml_kem_ct, TESSERA_SEAL_MLKEM1024_CT_BYTES);
+    off += TESSERA_SEAL_MLKEM1024_CT_BYTES;
+    memcpy(buf + off, x_eph_pk, TESSERA_SEAL_X25519_PK_BYTES);
+    off += TESSERA_SEAL_X25519_PK_BYTES;
+    int rc = shake256(buf, off, k_session, TESSERA_SEAL_MLKEM1024_SS_BYTES);
+    /* buf carries the ML-KEM shared secret + X25519 shared secret — secrets.
+     * Wipe before freeing. */
+    OPENSSL_cleanse(buf, total);
+    free(buf);
+    return rc;
+}
+
+/* ---------------------------------------------------------------------------
  * AEAD via OpenSSL EVP
  * ------------------------------------------------------------------------- */
 
 static const EVP_CIPHER *aead_cipher(uint8_t suite) {
     switch (suite) {
         case TESSERA_SEAL_SUITE_MLKEM1024_AESGCM:
+        case TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM:
+            /* Hybrid 0x06 shares the AES-256-GCM AEAD with 0x01. */
             return EVP_aes_256_gcm();
         case TESSERA_SEAL_SUITE_MLKEM1024_CHACHA:
             return EVP_chacha20_poly1305();
@@ -814,6 +914,410 @@ int tessera_seal_decrypt(const uint8_t *env, size_t env_len,
      * python/_synthetic_decrypt_keys. NOTE: key derivation only; no
      * synthetic AEAD verify call happens here. Whitepaper §9.2's stronger
      * wording is reconciled to this implemented behavior (TP-031). */
+    uint8_t syn_k[32], syn_nonce[TESSERA_SEAL_AEAD_NONCE_BYTES], syn_commit_key[32];
+    (void)derive_synthetic_keys(header_bytes, syn_k, syn_nonce, syn_commit_key);
+    OPENSSL_cleanse(syn_k, sizeof(syn_k));
+    OPENSSL_cleanse(syn_commit_key, sizeof(syn_commit_key));
+    return TESSERA_SEAL_E_DECRYPT_FAILED;
+}
+
+/* ===========================================================================
+ * Hybrid suite 0x06 (X25519 + ML-KEM-1024 + AES-256-GCM + UtC), TSEAL-00030.
+ *
+ * Mirrors the non-hybrid encrypt/decrypt above; the only differences are:
+ *   - KEM_CT on the wire is ml_kem_ct (1568) || x25519_eph_pk (32) = 1600 B.
+ *   - The AEAD/commit/nonce schedule is keyed by the SHAKE-256 hybrid-combiner
+ *     session secret (hybrid_combine), not the raw ML-KEM shared secret.
+ * Everything else (header pack, derive_session_keys, AEAD, UtC, synthetic-key
+ * timing pad, constant-time checks) reuses the exact same helpers as 0x01.
+ * =========================================================================== */
+
+size_t tessera_seal_encrypt_hybrid_output_size(size_t pt_len, size_t ad_len) {
+    return (size_t)TESSERA_SEAL_HEADER_BYTES
+         + (size_t)TESSERA_SEAL_HYBRID_CT_BYTES
+         + ad_len
+         + (size_t)TESSERA_SEAL_AEAD_NONCE_BYTES
+         + pt_len
+         + (size_t)TESSERA_SEAL_AEAD_TAG_BYTES
+         + (size_t)TESSERA_SEAL_COMMIT_BYTES;
+}
+
+int tessera_seal_generate_keypair_hybrid(tessera_seal_priv_hybrid_t *priv,
+                                         tessera_seal_pub_hybrid_t  *pub) {
+    if (!priv || !pub) return TESSERA_SEAL_E_INTERNAL;
+
+    /* ML-KEM-1024 half (OS CSPRNG inside OpenSSL keygen). */
+    uint8_t ml_pk[TESSERA_SEAL_MLKEM1024_PK_BYTES];
+    uint8_t ml_sk[TESSERA_SEAL_MLKEM1024_SK_BYTES];
+    if (mlkem_keygen(ml_pk, ml_sk) != 0) return TESSERA_SEAL_E_RNG;
+
+    /* X25519 half: fresh 32-byte scalar from the OS CSPRNG (same source as
+     * the rest of the C reference — OpenSSL RAND_bytes / getrandom). */
+    uint8_t x_scalar[TESSERA_SEAL_X25519_SK_BYTES];
+    if (RAND_bytes(x_scalar, sizeof(x_scalar)) != 1) {
+        OPENSSL_cleanse(ml_sk, sizeof(ml_sk));
+        return TESSERA_SEAL_E_RNG;
+    }
+    uint8_t x_pub[TESSERA_SEAL_X25519_PK_BYTES];
+    if (x25519_scalar_to_pub(x_scalar, x_pub) != 0) {
+        OPENSSL_cleanse(ml_sk, sizeof(ml_sk));
+        OPENSSL_cleanse(x_scalar, sizeof(x_scalar));
+        return TESSERA_SEAL_E_INTERNAL;
+    }
+
+    pub->suite = TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM;
+    memcpy(pub->pk, ml_pk, TESSERA_SEAL_MLKEM1024_PK_BYTES);
+    memcpy(pub->pk + TESSERA_SEAL_MLKEM1024_PK_BYTES, x_pub, TESSERA_SEAL_X25519_PK_BYTES);
+
+    priv->suite = TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM;
+    memcpy(priv->sk, ml_sk, TESSERA_SEAL_MLKEM1024_SK_BYTES);
+    memcpy(priv->sk + TESSERA_SEAL_MLKEM1024_SK_BYTES, x_scalar, TESSERA_SEAL_X25519_SK_BYTES);
+
+    OPENSSL_cleanse(ml_sk, sizeof(ml_sk));
+    OPENSSL_cleanse(x_scalar, sizeof(x_scalar));
+    return TESSERA_SEAL_OK;
+}
+
+int tessera_seal_generate_keypair_hybrid_from_seed(
+        const uint8_t seed[TESSERA_SEAL_HYBRID_SEED_BYTES],
+        tessera_seal_priv_hybrid_t *priv,
+        tessera_seal_pub_hybrid_t  *pub) {
+    if (!seed || !priv || !pub) return TESSERA_SEAL_E_INTERNAL;
+
+    /* seed = ML-KEM seed (d || z, 64 B) || X25519 scalar (32 B). Rebuild the
+     * ML-KEM keypair from its 64-byte seed via OpenSSL, then derive the X25519
+     * public point from the scalar. Matches Python/Go/Rust seed ordering. */
+    const uint8_t *ml_seed = seed;
+    const uint8_t *x_scalar = seed + TESSERA_SEAL_MLKEM1024_SEED_BYTES;
+
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(NULL, "ML-KEM-1024", NULL);
+    EVP_PKEY *pkey = NULL;
+    int rc = TESSERA_SEAL_E_INTERNAL;
+    if (!ctx) return TESSERA_SEAL_E_INTERNAL;
+    if (EVP_PKEY_fromdata_init(ctx) <= 0) goto ml_done;
+    {
+        OSSL_PARAM params[] = {
+            OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_ML_KEM_SEED,
+                                    (void *)ml_seed, TESSERA_SEAL_MLKEM1024_SEED_BYTES),
+            OSSL_PARAM_END
+        };
+        if (EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_KEYPAIR, params) <= 0) {
+            rc = TESSERA_SEAL_E_BAD_KEY;
+            goto ml_done;
+        }
+    }
+    {
+        size_t ml_pk_len = TESSERA_SEAL_MLKEM1024_PK_BYTES;
+        size_t ml_sk_len = TESSERA_SEAL_MLKEM1024_SK_BYTES;
+        uint8_t ml_pk[TESSERA_SEAL_MLKEM1024_PK_BYTES];
+        uint8_t ml_sk[TESSERA_SEAL_MLKEM1024_SK_BYTES];
+        if (EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_PUB_KEY,
+                                            ml_pk, ml_pk_len, &ml_pk_len) != 1
+            || ml_pk_len != TESSERA_SEAL_MLKEM1024_PK_BYTES) goto ml_done;
+        if (EVP_PKEY_get_octet_string_param(pkey, OSSL_PKEY_PARAM_PRIV_KEY,
+                                            ml_sk, ml_sk_len, &ml_sk_len) != 1
+            || ml_sk_len != TESSERA_SEAL_MLKEM1024_SK_BYTES) {
+            OPENSSL_cleanse(ml_sk, sizeof(ml_sk));
+            goto ml_done;
+        }
+        uint8_t x_pub[TESSERA_SEAL_X25519_PK_BYTES];
+        if (x25519_scalar_to_pub(x_scalar, x_pub) != 0) {
+            rc = TESSERA_SEAL_E_BAD_KEY;
+            OPENSSL_cleanse(ml_sk, sizeof(ml_sk));
+            goto ml_done;
+        }
+        pub->suite = TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM;
+        memcpy(pub->pk, ml_pk, TESSERA_SEAL_MLKEM1024_PK_BYTES);
+        memcpy(pub->pk + TESSERA_SEAL_MLKEM1024_PK_BYTES, x_pub, TESSERA_SEAL_X25519_PK_BYTES);
+        priv->suite = TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM;
+        memcpy(priv->sk, ml_sk, TESSERA_SEAL_MLKEM1024_SK_BYTES);
+        memcpy(priv->sk + TESSERA_SEAL_MLKEM1024_SK_BYTES, x_scalar, TESSERA_SEAL_X25519_SK_BYTES);
+        OPENSSL_cleanse(ml_sk, sizeof(ml_sk));
+        rc = TESSERA_SEAL_OK;
+    }
+ml_done:
+    EVP_PKEY_free(pkey);
+    EVP_PKEY_CTX_free(ctx);
+    return rc;
+}
+
+void tessera_seal_zeroize_priv_hybrid(tessera_seal_priv_hybrid_t *priv) {
+    if (!priv) return;
+    OPENSSL_cleanse(priv->sk, sizeof(priv->sk));
+    priv->suite = 0;
+}
+
+int tessera_seal_encrypt_hybrid(const uint8_t *pt, size_t pt_len,
+                           const tessera_seal_pub_hybrid_t *pub,
+                           const uint8_t *ad, size_t ad_len,
+                           uint64_t ts_ms, uint16_t counter,
+                           uint8_t *out, size_t out_cap, size_t *out_len) {
+    if (!out_len) return TESSERA_SEAL_E_INTERNAL;
+    if (!pub) return TESSERA_SEAL_E_BAD_KEY;
+    /* Suite/key consistency: the recipient key MUST be tagged 0x06. */
+    if (pub->suite != TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM)
+        return TESSERA_SEAL_E_BAD_KEY;
+    if (ad_len > TESSERA_SEAL_MAX_AD_LEN) return TESSERA_SEAL_E_INVALID_LEN;
+    if (pt_len > TESSERA_SEAL_MAX_PLAINTEXT) return TESSERA_SEAL_E_INVALID_LEN;
+    if (!pt && pt_len > 0) return TESSERA_SEAL_E_INTERNAL;
+    if (!ad && ad_len > 0) return TESSERA_SEAL_E_INTERNAL;
+
+    size_t need = tessera_seal_encrypt_hybrid_output_size(pt_len, ad_len);
+    *out_len = need;
+    if (out_cap < need) return TESSERA_SEAL_E_BUF_TOO_SMALL;
+    if (!out) return TESSERA_SEAL_E_INTERNAL;
+
+    if (ts_ms == UINT64_MAX) ts_ms = now_ms();
+    if (ts_ms >= (1ULL << 48)) return TESSERA_SEAL_E_INVALID_LEN;
+
+    const uint8_t suite = TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM;
+    const uint8_t *ml_recipient_pk = pub->pk;
+    const uint8_t *x_recipient_pk  = pub->pk + TESSERA_SEAL_MLKEM1024_PK_BYTES;
+
+    /* 1. Pack header (KEM_CT_LEN = 1600). */
+    uint8_t header[TESSERA_SEAL_HEADER_BYTES];
+    pack_header(header, ts_ms, TESSERA_SEAL_VARIANT, suite, counter,
+                (uint16_t)TESSERA_SEAL_HYBRID_CT_BYTES, (uint32_t)ad_len);
+
+    /* 2. ML-KEM-1024 Encaps -> (ss_mlkem, ml_kem_ct). */
+    EVP_PKEY *pk_pkey = mlkem_load_pub(ml_recipient_pk);
+    if (!pk_pkey) return TESSERA_SEAL_E_BAD_KEY;
+    uint8_t ml_kem_ct[TESSERA_SEAL_MLKEM1024_CT_BYTES];
+    uint8_t ss_mlkem[TESSERA_SEAL_MLKEM1024_SS_BYTES];
+    int rc = mlkem_encaps(pk_pkey, ml_kem_ct, ss_mlkem);
+    EVP_PKEY_free(pk_pkey);
+    if (rc != 0) return TESSERA_SEAL_E_RNG;
+
+    /* 3. Fresh X25519 ephemeral (OS CSPRNG) -> eph_pub; DH against recipient. */
+    uint8_t eph_scalar[TESSERA_SEAL_X25519_SK_BYTES];
+    if (RAND_bytes(eph_scalar, sizeof(eph_scalar)) != 1) {
+        OPENSSL_cleanse(ss_mlkem, sizeof(ss_mlkem));
+        return TESSERA_SEAL_E_RNG;
+    }
+    uint8_t eph_pub[TESSERA_SEAL_X25519_PK_BYTES];
+    uint8_t x_ss[TESSERA_SEAL_X25519_SS_BYTES];
+    if (x25519_scalar_to_pub(eph_scalar, eph_pub) != 0
+        || x25519_dh(eph_scalar, x_recipient_pk, x_ss) != 0) {
+        OPENSSL_cleanse(eph_scalar, sizeof(eph_scalar));
+        OPENSSL_cleanse(ss_mlkem, sizeof(ss_mlkem));
+        OPENSSL_cleanse(x_ss, sizeof(x_ss));
+        return TESSERA_SEAL_E_BAD_KEY;  /* malformed recipient X25519 point */
+    }
+    OPENSSL_cleanse(eph_scalar, sizeof(eph_scalar));
+
+    /* 4. ss_session = combiner(ss_mlkem, x_ss, ml_kem_ct, eph_pub). */
+    uint8_t ss_session[TESSERA_SEAL_MLKEM1024_SS_BYTES];
+    if (hybrid_combine(ss_mlkem, x_ss, ml_kem_ct, eph_pub, ss_session) != 0) {
+        OPENSSL_cleanse(ss_mlkem, sizeof(ss_mlkem));
+        OPENSSL_cleanse(x_ss, sizeof(x_ss));
+        return TESSERA_SEAL_E_INTERNAL;
+    }
+    OPENSSL_cleanse(ss_mlkem, sizeof(ss_mlkem));
+    OPENSSL_cleanse(x_ss, sizeof(x_ss));
+
+    /* 5. KEM_CT = ml_kem_ct || eph_pub (1600 B). */
+    uint8_t kem_ct[TESSERA_SEAL_HYBRID_CT_BYTES];
+    memcpy(kem_ct, ml_kem_ct, TESSERA_SEAL_MLKEM1024_CT_BYTES);
+    memcpy(kem_ct + TESSERA_SEAL_MLKEM1024_CT_BYTES, eph_pub, TESSERA_SEAL_X25519_PK_BYTES);
+
+    /* 6. Derive K_aead, NONCE, K_commit from ss_session. */
+    uint8_t k_aead[32], nonce[TESSERA_SEAL_AEAD_NONCE_BYTES], k_commit[32];
+    if (derive_session_keys(header, ss_session, k_aead, nonce, k_commit) != 0) {
+        OPENSSL_cleanse(ss_session, sizeof(ss_session));
+        return TESSERA_SEAL_E_INTERNAL;
+    }
+    OPENSSL_cleanse(ss_session, sizeof(ss_session));
+
+    /* 7. Lay out wire bytes: header || kem_ct || ad || nonce || ct || tag || commit. */
+    size_t p = 0;
+    memcpy(out + p, header, TESSERA_SEAL_HEADER_BYTES); p += TESSERA_SEAL_HEADER_BYTES;
+    memcpy(out + p, kem_ct, TESSERA_SEAL_HYBRID_CT_BYTES); p += TESSERA_SEAL_HYBRID_CT_BYTES;
+    if (ad_len > 0) { memcpy(out + p, ad, ad_len); }
+    p += ad_len;
+    memcpy(out + p, nonce, TESSERA_SEAL_AEAD_NONCE_BYTES); p += TESSERA_SEAL_AEAD_NONCE_BYTES;
+
+    /* 8. AAD = header || kem_ct || ad. */
+    size_t aad_len = TESSERA_SEAL_HEADER_BYTES + TESSERA_SEAL_HYBRID_CT_BYTES + ad_len;
+    uint8_t aad_stack[16384];
+    uint8_t *aad_buf = aad_stack;
+    uint8_t *aad_heap = NULL;
+    if (aad_len > sizeof(aad_stack)) {
+        aad_heap = (uint8_t *)malloc(aad_len);
+        if (!aad_heap) {
+            OPENSSL_cleanse(k_aead, sizeof(k_aead));
+            OPENSSL_cleanse(k_commit, sizeof(k_commit));
+            return TESSERA_SEAL_E_INTERNAL;
+        }
+        aad_buf = aad_heap;
+    }
+    memcpy(aad_buf, header, TESSERA_SEAL_HEADER_BYTES);
+    memcpy(aad_buf + TESSERA_SEAL_HEADER_BYTES, kem_ct, TESSERA_SEAL_HYBRID_CT_BYTES);
+    if (ad_len > 0) {
+        memcpy(aad_buf + TESSERA_SEAL_HEADER_BYTES + TESSERA_SEAL_HYBRID_CT_BYTES, ad, ad_len);
+    }
+
+    /* 9. AEAD (AES-256-GCM for 0x06). */
+    uint8_t *ct_out  = out + p;
+    uint8_t *tag_out = out + p + pt_len;
+    uint8_t *commit_out = out + p + pt_len + TESSERA_SEAL_AEAD_TAG_BYTES;
+    if (aead_encrypt(suite, k_aead, nonce, aad_buf, aad_len,
+                     pt, pt_len, ct_out, tag_out) != 0) {
+        OPENSSL_cleanse(k_aead, sizeof(k_aead));
+        OPENSSL_cleanse(k_commit, sizeof(k_commit));
+        if (aad_heap) free(aad_heap);
+        return TESSERA_SEAL_E_INTERNAL;
+    }
+    if (aad_heap) free(aad_heap);
+
+    /* 10. UtC commit. */
+    if (utc_commit(k_commit, header,
+                   kem_ct, TESSERA_SEAL_HYBRID_CT_BYTES,
+                   ad, ad_len,
+                   ct_out, pt_len,
+                   commit_out) != 0) {
+        OPENSSL_cleanse(k_aead, sizeof(k_aead));
+        OPENSSL_cleanse(k_commit, sizeof(k_commit));
+        return TESSERA_SEAL_E_INTERNAL;
+    }
+    OPENSSL_cleanse(k_aead, sizeof(k_aead));
+    OPENSSL_cleanse(k_commit, sizeof(k_commit));
+    return TESSERA_SEAL_OK;
+}
+
+int tessera_seal_decrypt_hybrid(const uint8_t *env, size_t env_len,
+                           const tessera_seal_priv_hybrid_t *priv,
+                           const uint8_t *expected_ad, size_t expected_ad_len,
+                           uint8_t *out, size_t out_cap, size_t *out_len) {
+    if (!env || !priv || !out_len) return TESSERA_SEAL_E_INTERNAL;
+    if (env_len < TESSERA_SEAL_HEADER_BYTES) return TESSERA_SEAL_E_INVALID_LEN;
+
+    /* 1. Header parse + structural validation (peek_header pins 1600 for 0x06). */
+    tessera_seal_header_t h;
+    int rc = tessera_seal_peek_header(env, env_len, &h);
+    if (rc != TESSERA_SEAL_OK) return rc;
+
+    /* Suite/key consistency: hybrid priv decrypts only 0x06 headers. */
+    if (priv->suite != h.suite) return TESSERA_SEAL_E_BAD_KEY;
+    if (h.suite != TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM)
+        return TESSERA_SEAL_E_BAD_KEY;
+
+    size_t fixed = (size_t)TESSERA_SEAL_HEADER_BYTES
+                 + (size_t)h.kem_ct_len
+                 + (size_t)h.ad_len
+                 + (size_t)TESSERA_SEAL_AEAD_NONCE_BYTES
+                 + (size_t)TESSERA_SEAL_AEAD_TAG_BYTES
+                 + (size_t)TESSERA_SEAL_COMMIT_BYTES;
+    if (env_len < fixed) return TESSERA_SEAL_E_INVALID_LEN;
+    size_t aead_ct_len = env_len - fixed;
+
+    *out_len = aead_ct_len;
+    if (out_cap < aead_ct_len) return TESSERA_SEAL_E_BUF_TOO_SMALL;
+
+    /* 2. Slice. h.kem_ct_len == 1600 (peek_header guaranteed). */
+    const uint8_t *header_bytes = env;
+    const uint8_t *kem_ct       = env + TESSERA_SEAL_HEADER_BYTES;
+    const uint8_t *ml_kem_ct    = kem_ct;
+    const uint8_t *x_eph_pk     = kem_ct + TESSERA_SEAL_MLKEM1024_CT_BYTES;
+    const uint8_t *ad           = kem_ct + h.kem_ct_len;
+    const uint8_t *nonce_wire   = ad + h.ad_len;
+    const uint8_t *aead_ct      = nonce_wire + TESSERA_SEAL_AEAD_NONCE_BYTES;
+    const uint8_t *aead_tag     = aead_ct + aead_ct_len;
+    const uint8_t *commit_wire  = aead_tag + TESSERA_SEAL_AEAD_TAG_BYTES;
+
+    const uint8_t *ml_recipient_sk = priv->sk;
+    const uint8_t *x_recipient_sk  = priv->sk + TESSERA_SEAL_MLKEM1024_SK_BYTES;
+
+    /* 3. ML-KEM Decaps (FO transform implicit-rejects bad ct -> pseudorandom
+     *    ss). Then X25519 DH against the wire ephemeral. Both feed the
+     *    combiner; the AEAD + commit checks catch any mismatch downstream. */
+    EVP_PKEY *sk_pkey = mlkem_load_priv(ml_recipient_sk);
+    int ss_ok = 1;
+    uint8_t ss_mlkem[TESSERA_SEAL_MLKEM1024_SS_BYTES];
+    if (!sk_pkey || mlkem_decaps(sk_pkey, ml_kem_ct, ss_mlkem) != 0) {
+        ss_ok = 0;
+        memset(ss_mlkem, 0, sizeof(ss_mlkem));
+    }
+    if (sk_pkey) EVP_PKEY_free(sk_pkey);
+
+    uint8_t x_ss[TESSERA_SEAL_X25519_SS_BYTES];
+    if (x25519_dh(x_recipient_sk, x_eph_pk, x_ss) != 0) {
+        /* Malformed X25519 ephemeral on the wire: keep the schedule running
+         * with a deterministic-but-wrong x_ss so timing stays flat; the
+         * combiner output then diverges and AEAD/commit reject. */
+        ss_ok = 0;
+        memset(x_ss, 0, sizeof(x_ss));
+    }
+
+    /* 4. ss_session = combiner(ss_mlkem, x_ss, ml_kem_ct, x_eph_pk). */
+    uint8_t ss_session[TESSERA_SEAL_MLKEM1024_SS_BYTES];
+    int combine_ok = (hybrid_combine(ss_mlkem, x_ss, ml_kem_ct, x_eph_pk, ss_session) == 0);
+    OPENSSL_cleanse(ss_mlkem, sizeof(ss_mlkem));
+    OPENSSL_cleanse(x_ss, sizeof(x_ss));
+
+    /* 5. Derive keys from ss_session. */
+    uint8_t k_aead[32], derived_nonce[TESSERA_SEAL_AEAD_NONCE_BYTES], k_commit[32];
+    int kdf_ok = combine_ok
+        && (derive_session_keys(header_bytes, ss_session, k_aead, derived_nonce, k_commit) == 0);
+    OPENSSL_cleanse(ss_session, sizeof(ss_session));
+
+    /* 6. Verify wire nonce matches the deterministic derivation. */
+    int nonce_match = ct_eq(nonce_wire, derived_nonce, TESSERA_SEAL_AEAD_NONCE_BYTES);
+
+    /* 7. AD length + content. */
+    int ad_len_match = (h.ad_len == expected_ad_len) ? 1 : 0;
+    int ad_match = ad_len_match
+        ? ct_eq(ad, expected_ad, h.ad_len)
+        : 0;
+    if (!ad_len_match) {
+        ct_eq(ad, ad, h.ad_len);
+    }
+
+    /* 8. UtC commit verification. */
+    uint8_t expected_commit[TESSERA_SEAL_COMMIT_BYTES];
+    int commit_compute_ok = (utc_commit(k_commit, header_bytes,
+                                        kem_ct, h.kem_ct_len,
+                                        ad, h.ad_len,
+                                        aead_ct, aead_ct_len,
+                                        expected_commit) == 0);
+    int commit_match = commit_compute_ok
+        ? ct_eq(commit_wire, expected_commit, TESSERA_SEAL_COMMIT_BYTES)
+        : 0;
+
+    /* 9. AEAD decrypt with AAD = header || kem_ct || ad. */
+    size_t aad_len = TESSERA_SEAL_HEADER_BYTES + h.kem_ct_len + h.ad_len;
+    uint8_t aad_stack[16384];
+    uint8_t *aad_buf = aad_stack;
+    uint8_t *aad_heap = NULL;
+    if (aad_len > sizeof(aad_stack)) {
+        aad_heap = (uint8_t *)malloc(aad_len);
+        if (!aad_heap) {
+            OPENSSL_cleanse(k_aead, sizeof(k_aead));
+            OPENSSL_cleanse(k_commit, sizeof(k_commit));
+            return TESSERA_SEAL_E_INTERNAL;
+        }
+        aad_buf = aad_heap;
+    }
+    memcpy(aad_buf, header_bytes, TESSERA_SEAL_HEADER_BYTES);
+    memcpy(aad_buf + TESSERA_SEAL_HEADER_BYTES, kem_ct, h.kem_ct_len);
+    if (h.ad_len > 0) memcpy(aad_buf + TESSERA_SEAL_HEADER_BYTES + h.kem_ct_len, ad, h.ad_len);
+
+    int aead_ok = (aead_decrypt(h.suite, k_aead, nonce_wire,
+                                aad_buf, aad_len,
+                                aead_ct, aead_ct_len, aead_tag,
+                                out) == 0);
+    if (aad_heap) free(aad_heap);
+
+    OPENSSL_cleanse(k_aead, sizeof(k_aead));
+    OPENSSL_cleanse(k_commit, sizeof(k_commit));
+
+    /* 10. Combined success requires every check. */
+    if (ss_ok && kdf_ok && nonce_match && ad_match && commit_match && aead_ok) {
+        return TESSERA_SEAL_OK;
+    }
+
+    OPENSSL_cleanse(out, aead_ct_len);
+    *out_len = 0;
+
     uint8_t syn_k[32], syn_nonce[TESSERA_SEAL_AEAD_NONCE_BYTES], syn_commit_key[32];
     (void)derive_synthetic_keys(header_bytes, syn_k, syn_nonce, syn_commit_key);
     OPENSSL_cleanse(syn_k, sizeof(syn_k));

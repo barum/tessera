@@ -22,6 +22,6 @@ Suites \code{0x01}/\code{0x02} carry the unambiguous post-quantum confidentialit
 \item \textbf{Binds \pqid{} as AD} by convention. Envelope rebinding fails closed (\cref{sec:ad-binding}).
 \item \textbf{Plugin protocol ships in v1.} Key-on-disk lives in the plugin, not the core spec. Reference \texttt{tessera-seal-plugin-file} uses \texttt{.tseal-key-v1.1} (Argon2id \citep{rfc9106} + AES-256-GCM key wrap with embedded public key).
 \item \textbf{Inherits monorepo discipline.} Spec-first LaTeX (this document); Python is the readable reference; C pins the canonical ABI; cross-language KAT vectors gate CI.
-\item \textbf{Polyglot status (v1.3, 2026-05-21):} Python, C, Go, Rust ship suites \code{0x01}/\code{0x02}; Python, Rust, Go ship hybrid \code{0x06}; C++, TypeScript, Java, CPython ext v1.1 wrappers ship suites \code{0x01}/\code{0x02} and add hybrid in v1.4 (\cref{sec:conformance}, Appendix F).
+\item \textbf{Polyglot status (2026-06-13):} Python, C, Go, Rust ship suites \code{0x01}/\code{0x02}; Python, Rust, Go, and C (TSEAL-00030) ship hybrid \code{0x06} as a 4-way byte-identical KAT contract; C++, TypeScript, Java, CPython ext v1.1 wrappers ship suites \code{0x01}/\code{0x02} and add hybrid once they gain tessera-seal runners (\cref{sec:conformance}, Appendix F).
 \end{itemize}
 \end{calloutinfo}

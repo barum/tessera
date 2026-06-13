@@ -169,14 +169,15 @@ expected_count() {
 
 # Languages with hybrid (suite 0x06) support. Vectors matching hybrid_*.json
 # are only fed to these languages; others would FAIL with UNKNOWN_SUITE.
-# Hybrid (suite 0x06) shipped in Python (TSEAL-00021), Rust (TSEAL-00028), and
-# Go (TSEAL-00029). C/C++/TypeScript/Java/CPython ext remain on the v1.4 hybrid
-# backlog (TSEAL-00030) and reject 0x06 as UNKNOWN_SUITE for now.
+# Hybrid (suite 0x06) shipped in Python (TSEAL-00021), Rust (TSEAL-00028),
+# Go (TSEAL-00029), and C (TSEAL-00030). C++/TypeScript/Java/CPython ext remain
+# on the v1.4 hybrid backlog and reject 0x06 as UNKNOWN_SUITE for now.
 hybrid_supported() {
     case "$1" in
         python) return 0 ;;
         rust)   return 0 ;;
         go)     return 0 ;;
+        c)      return 0 ;;
         *)      return 1 ;;
     esac
 }

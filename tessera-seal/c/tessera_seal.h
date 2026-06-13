@@ -26,9 +26,11 @@
  * Suites (offset 7):
  *   0x01  ML-KEM-1024 + AES-256-GCM + UtC commit  (v1 mandatory)
  *   0x02  ML-KEM-1024 + ChaCha20-Poly1305 + UtC   (v1 optional)
- *   0x06  X25519 + ML-KEM-1024 + AES-256-GCM + UtC (v1.2 hybrid; allocated
- *         spec-wide but REJECTED by this C reference until its hybrid port
- *         lands — TSEAL-00030)
+ *   0x06  X25519 + ML-KEM-1024 + AES-256-GCM + UtC (v1.2 hybrid, TSEAL-00030).
+ *         Carried via the dedicated hybrid struct + entry points below
+ *         (tessera_seal_*_hybrid); the non-hybrid tessera_seal_encrypt /
+ *         tessera_seal_decrypt path still rejects 0x06 (their priv/pub structs
+ *         only carry 0x01/0x02 keys).
  *   else  reject (UNKNOWN_SUITE)
  *
  * Implementation note: this reference is built on OpenSSL 3.5+ for
@@ -79,10 +81,13 @@ extern "C" {
 #define TESSERA_SEAL_X25519_SS_BYTES           32
 
 /* Hybrid (suite 0x06) sizes: pk = ML-KEM pk || X25519 pk; sk = ML-KEM sk
- * || X25519 sk; KEM ciphertext = ML-KEM ct || X25519 ephemeral pk. */
+ * || X25519 sk; KEM ciphertext = ML-KEM ct || X25519 ephemeral pk; seed =
+ * ML-KEM seed (d || z) || X25519 scalar. */
 #define TESSERA_SEAL_HYBRID_PK_BYTES           (TESSERA_SEAL_MLKEM1024_PK_BYTES + TESSERA_SEAL_X25519_PK_BYTES)
 #define TESSERA_SEAL_HYBRID_SK_BYTES           (TESSERA_SEAL_MLKEM1024_SK_BYTES + TESSERA_SEAL_X25519_SK_BYTES)
 #define TESSERA_SEAL_HYBRID_CT_BYTES           (TESSERA_SEAL_MLKEM1024_CT_BYTES + TESSERA_SEAL_X25519_PK_BYTES)
+#define TESSERA_SEAL_MLKEM1024_SEED_BYTES      64    /* FIPS 203 seed (d || z) */
+#define TESSERA_SEAL_HYBRID_SEED_BYTES         (TESSERA_SEAL_MLKEM1024_SEED_BYTES + TESSERA_SEAL_X25519_SK_BYTES)
 
 /* AEAD field sizes. */
 #define TESSERA_SEAL_AEAD_NONCE_BYTES          12
@@ -135,15 +140,33 @@ typedef struct {
     uint8_t sk[TESSERA_SEAL_MLKEM1024_SK_BYTES];
 } tessera_seal_priv_t;
 
-/* Note: tessera_seal_pub_t and tessera_seal_priv_t hold non-hybrid (suite 0x01/0x02)
- * keys only. The hybrid suite 0x06 keys (1600 B pk, 3200 B sk) require a
- * larger struct and are not exposed by the C ABI — full hybrid C support
- * is backlog (TSEAL-00030, targeting v1.4). Until then this C reference
- * rejects suite 0x06 at the earliest decode point: `tessera_seal_peek_header()`
- * itself returns TESSERA_SEAL_E_UNKNOWN_SUITE for any suite byte other than
- * 0x01/0x02 (so validate()/decrypt(), which call it, reject 0x06 too).
- * Hybrid envelopes therefore cannot be inspected with this header's API;
- * use the Python/Go/Rust ports for suite 0x06 until TSEAL-00030 lands. */
+/* Note: tessera_seal_pub_t and tessera_seal_priv_t hold non-hybrid (suite
+ * 0x01/0x02) keys only — their byte layout is the v1.0/v1.1 ABI and MUST NOT
+ * change. Hybrid suite 0x06 keys (1600 B pk, 3200 B sk) use the SEPARATE
+ * tessera_seal_pub_hybrid_t / tessera_seal_priv_hybrid_t structs below and
+ * the dedicated tessera_seal_*_hybrid entry points (TSEAL-00030); the
+ * non-hybrid encrypt/decrypt path still rejects 0x06 because its structs
+ * cannot carry the X25519 half. tessera_seal_peek_header() ACCEPTS 0x06 as a
+ * known suite (pinning KEM_CT_LEN to the 1600 B hybrid size) so hybrid
+ * envelopes can be inspected and routed. */
+
+/* ----- Hybrid (suite 0x06) key handles -----
+ *
+ * Separate from the non-hybrid structs above so the v1.0/v1.1 ABI of
+ * tessera_seal_pub_t / tessera_seal_priv_t stays byte-for-byte unchanged.
+ *
+ *   pk = ML-KEM-1024 pk (1568) || X25519 pk (32)        = 1600 B
+ *   sk = ML-KEM-1024 sk (3168) || X25519 scalar (32)    = 3200 B
+ */
+typedef struct {
+    uint8_t suite;  /* always TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM */
+    uint8_t pk[TESSERA_SEAL_HYBRID_PK_BYTES];
+} tessera_seal_pub_hybrid_t;
+
+typedef struct {
+    uint8_t suite;  /* always TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM */
+    uint8_t sk[TESSERA_SEAL_HYBRID_SK_BYTES];
+} tessera_seal_priv_hybrid_t;
 
 /* ----- Decoded header -----
  *
@@ -321,6 +344,72 @@ int tessera_seal_validate_min_timestamp(const uint8_t *env, size_t env_len,
  * before letting a `tessera_seal_priv_t` go out of scope.
  */
 void tessera_seal_zeroize_priv(tessera_seal_priv_t *priv);
+
+/* ===========================================================================
+ * Hybrid suite 0x06 API (X25519 + ML-KEM-1024 + AES-256-GCM + UtC, TSEAL-00030)
+ *
+ * Mirrors the non-hybrid signatures but operates on the hybrid key structs.
+ * The wire form is identical to suite 0x01 EXCEPT the KEM_CT field is
+ * KEM_CT = ml_kem_ct (1568) || x25519_ephemeral_pk (32) = 1600 B, and the
+ * AEAD/commit/nonce schedule is keyed by the SHAKE-256 hybrid-combiner output
+ * (the per-envelope session secret) instead of the raw ML-KEM shared secret.
+ * Every other invariant (key-committing UtC tag, single DECRYPT_FAILED for
+ * auth-class failures, constant-time decrypt, OS CSPRNG for the ephemeral,
+ * suite/key consistency) is preserved.
+ * =========================================================================== */
+
+/* ----- Generate hybrid keypair -----
+ *
+ * Fills `priv`/`pub` with a fresh ML-KEM-1024 + X25519 hybrid keypair under
+ * suite 0x06. Both halves use the OS CSPRNG. Returns TESSERA_SEAL_OK,
+ * TESSERA_SEAL_E_RNG on CSPRNG failure, or TESSERA_SEAL_E_INTERNAL.
+ */
+int tessera_seal_generate_keypair_hybrid(tessera_seal_priv_hybrid_t *priv,
+                                         tessera_seal_pub_hybrid_t  *pub);
+
+/* ----- Generate hybrid keypair from a 96-byte seed -----
+ *
+ * Deterministically reconstructs the keypair from
+ *   seed = ML-KEM-1024 seed (d || z, 64 B) || X25519 scalar (32 B)
+ * matching the Python/Go/Rust seed ordering. Returns TESSERA_SEAL_OK,
+ * TESSERA_SEAL_E_BAD_KEY on a malformed seed, or TESSERA_SEAL_E_INTERNAL.
+ */
+int tessera_seal_generate_keypair_hybrid_from_seed(
+        const uint8_t seed[TESSERA_SEAL_HYBRID_SEED_BYTES],
+        tessera_seal_priv_hybrid_t *priv,
+        tessera_seal_pub_hybrid_t  *pub);
+
+/* ----- Hybrid encrypt -----
+ *
+ * Same contract as tessera_seal_encrypt() but for suite 0x06 with the hybrid
+ * recipient public key. `suite` is implicitly 0x06; `pub->suite` MUST be 0x06
+ * (else TESSERA_SEAL_E_BAD_KEY). Output is 32 B larger than a non-hybrid
+ * envelope for the same pt_len/ad_len (the X25519 ephemeral in KEM_CT).
+ */
+int tessera_seal_encrypt_hybrid(const uint8_t *pt, size_t pt_len,
+                           const tessera_seal_pub_hybrid_t *pub,
+                           const uint8_t *ad, size_t ad_len,
+                           uint64_t ts_ms, uint16_t counter,
+                           uint8_t *out, size_t out_cap, size_t *out_len);
+
+/* Exact envelope size tessera_seal_encrypt_hybrid() would write. */
+size_t tessera_seal_encrypt_hybrid_output_size(size_t pt_len, size_t ad_len);
+
+/* ----- Hybrid decrypt -----
+ *
+ * Same contract as tessera_seal_decrypt() for suite 0x06. Rejects a header
+ * whose suite != 0x06 with TESSERA_SEAL_E_BAD_KEY (priv->suite is 0x06).
+ * Every auth-class failure (bad AEAD tag, bad commit, bad ML-KEM ct, mangled
+ * X25519 ephemeral, AD mismatch) returns the SAME TESSERA_SEAL_E_DECRYPT_FAILED
+ * in constant time.
+ */
+int tessera_seal_decrypt_hybrid(const uint8_t *env, size_t env_len,
+                           const tessera_seal_priv_hybrid_t *priv,
+                           const uint8_t *expected_ad, size_t expected_ad_len,
+                           uint8_t *out, size_t out_cap, size_t *out_len);
+
+/* ----- Hybrid key zeroization ----- */
+void tessera_seal_zeroize_priv_hybrid(tessera_seal_priv_hybrid_t *priv);
 
 /* ----- Test-only clock override -----
  *

@@ -53,7 +53,7 @@ When changing wire format / encoding / generator semantics:
 | Language     | Suites `0x01`/`0x02`              | Hybrid `0x06`              | ML-KEM-1024 source         | X25519 source (hybrid)      | Notes |
 |--------------|-----------------------------------|----------------------------|----------------------------|------------------------------|-------|
 | Python       | ✓ (PQCK-00003, v1.0)              | ✓ (PQCK-00021, v1.2)       | `kyber-py >= 1.0`          | `cryptography` (X25519)      | Readable canonical reference; 65 tests pass (incl. BadKey suite/key consistency) |
-| C            | ✓ (PQCK-00005, v1.0)              | — backlog (PQCK-00030)     | **OpenSSL 3.5+ `EVP_PKEY` ML-KEM** (encapsulate/decapsulate) | (planned: OpenSSL `EVP_PKEY_X25519`) | Pins canonical ABI; 21 tests pass (incl. BadKey suite/key consistency) |
+| C            | ✓ (PQCK-00005, v1.0)              | ✓ (TSEAL-00030, v1.4)      | **OpenSSL 3.5+ `EVP_PKEY` ML-KEM** (encapsulate/decapsulate) | **OpenSSL 3.5+ `EVP_PKEY_X25519`** | Pins canonical ABI; 41 tests pass (incl. hybrid + BadKey); hybrid in 9 KAT records (separate `*_hybrid_t` structs preserve the v1.0/v1.1 ABI) |
 | Go           | ✓ (PQCK-00006, v1.0)              | ✓ (PQCK-00029, v1.3)       | stdlib `crypto/mlkem` (1.26+) | stdlib `crypto/ecdh`         | No external deps; hybrid included in 9 KAT records |
 | Rust         | ✓ (PQCK-00007, v1.0)              | ✓ (PQCK-00028, v1.3)       | RustCrypto `ml-kem = "0.3"`    | `x25519-dalek = "2"`         | `#![forbid(unsafe_code)]`; 21 tests pass under parallel runner |
 | C++          | ✓ (v1.1 wrapper)                  | — backlog (PQCK-00031)     | wraps C lib                | (planned: via C lib)         | Header-only wrapper of the C library |
@@ -61,9 +61,9 @@ When changing wire format / encoding / generator semantics:
 | Java         | ✓ (v1.1)                          | — backlog (PQCK-00033)     | SunJCE JEP 452             | (planned: SunJCE `XDH`)      | No BouncyCastle; needs JDK 24+ |
 | CPython ext  | ✓ (v1.1)                          | — backlog (PQCK-00034)     | wraps C reference (`cpython/tessera_seal_ext.c` → `../c/tessera_seal.c`) | (planned: via C lib) | `tessera_seal_fast.py` mirror is a planned v1.1 optimization, not yet written |
 
-**Cross-language byte-identity** confirmed for suites `0x01`/`0x02` across all 8 implementations; hybrid `0x06` is currently a 3-way contract (Python ↔ Rust ↔ Go). Languages without hybrid MUST reject suite `0x06` as `UNKNOWN_SUITE` and skip `hybrid_*.json` KAT files per [`tools/conformance/run.sh:hybrid_supported()`](../tools/conformance/run.sh).
+**Cross-language byte-identity** confirmed for suites `0x01`/`0x02` across all 8 implementations; hybrid `0x06` is now a **4-way KAT contract** (Python ↔ Rust ↔ Go ↔ C, TSEAL-00030). C++/TypeScript/Java/CPython ext still reject suite `0x06` as `UNKNOWN_SUITE` and skip `hybrid_*.json` KAT files per [`tools/conformance/run.sh:hybrid_supported()`](../tools/conformance/run.sh) (they have no tessera-seal runner at all yet).
 
-Latest conformance (alpha quick loop, 2026-06-13, post TSEAL-00049 KEM_CT_LEN pin): **Python 297 / Rust 297 / Go 297 / C 288 PASS, 0 FAIL** across tessera-id + tessera-hash + tessera-seal. The full 8-language run is green (cpp/ts/java report 229 each, cpython 224 + 11 SKIP — tessera-id + tessera-hash only).
+Latest conformance (alpha quick loop, 2026-06-13, post TSEAL-00049 KEM_CT_LEN pin + TSEAL-00030 C hybrid): **Python 297 / Rust 297 / Go 297 / C 297 PASS, 0 FAIL** across tessera-id + tessera-hash + tessera-seal. The full 8-language run is green (cpp/ts/java report 229 each, cpython 224 + 11 SKIP — tessera-id + tessera-hash only).
 
 ## Plugin protocol (PQCK-00008, keyfile v1.1)
 
@@ -79,9 +79,9 @@ Keyfile format **`.tseal-key-v1.1`** (v1.1 of PQCK-00018; the v1.0 `.tseal-key-v
 
 `tools/conformance/run.sh` includes `tessera-seal/conformance/vectors/`. Dedicated per-language tessera-seal runners exist **only** for Python, C, Go, Rust at `tools/conformance/{python,c,go,rust}/`. C++/TypeScript/Java/CPython ext have **no** tessera-seal runner, so the harness **skips** the TesseraSeal vector directory for them entirely — those four languages implement tessera-id/tessera-hash only for now. There is no Python-runner fallback for TesseraSeal.
 
-Hybrid suite `0x06` vectors (`hybrid_*.json`) are filtered by language via `hybrid_supported()` in `run.sh`. As of v1.3 (2026-05-21), hybrid-capable languages are: Python (PQCK-00021), Rust (PQCK-00028), Go (PQCK-00029). C/C++/TS/Java/CPython ext skip hybrid until their v1.4 ports.
+Hybrid suite `0x06` vectors (`hybrid_*.json`) are filtered by language via `hybrid_supported()` in `run.sh`. Hybrid-capable languages are: Python (PQCK-00021), Rust (PQCK-00028), Go (PQCK-00029), C (TSEAL-00030, 2026-06-13). C++/TS/Java/CPython ext skip hybrid (and all seal vectors) until they gain tessera-seal runners.
 
-Latest pass: **Python 297 / Rust 297 / Go 297 / C 288 PASS, 0 FAIL** across all 3 projects (288 standard + 9 hybrid for the hybrid-capable languages).
+Latest pass: **Python 297 / Rust 297 / Go 297 / C 297 PASS, 0 FAIL** across all 3 projects (288 standard + 9 hybrid for the four hybrid-capable languages).
 
 > Note: the wire-tag literals `"pqcrypt v1 header"`, `"pqcrypt v1 aead k"`, `"pqcrypt v1 aead n"`, `"pqcrypt v1 commit"`, `"pqcrypt v1 timing pad"`, and `"pqcrypt v1 hybrid combiner"` are **frozen v1 wire tags — not rebrandable names**. They are byte strings hashed into every envelope and into every conformance vector; they remain verbatim across the rename and are the only legitimate place the token `pqcrypt` survives in code.
 

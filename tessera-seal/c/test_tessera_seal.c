@@ -301,28 +301,24 @@ done:
     tessera_seal_zeroize_priv(&priv);
 }
 
-static void test_suite_0x06_hybrid_rejected(void) {
-    /* TSEAL-00044 (TP-030): the C port has no hybrid support yet
-     * (TSEAL-00030 backlog). The normative contract (whitepaper sec03 /
-     * tessera-seal/CLAUDE.md "Polyglot hybrid coverage gate") is that
-     * non-hybrid languages MUST reject suite 0x06 as UNKNOWN_SUITE —
-     * never BAD_KEY, never the auth-class DECRYPT_FAILED. In the C port,
-     * tessera_seal_peek_header() owns suite validation (it rejects every
-     * suite it does not implement), and tessera_seal_decrypt() runs
-     * peek_header before its priv->suite BAD_KEY check, so both layers
-     * must report UNKNOWN_SUITE here.
+static void test_nonhybrid_path_rejects_0x06(void) {
+    /* TSEAL-00030: with hybrid support landed, suite 0x06 is now a KNOWN
+     * suite — tessera_seal_peek_header() ACCEPTS it (pinning KEM_CT_LEN to the
+     * 1600 B hybrid size). The NON-hybrid tessera_seal_decrypt() path still
+     * rejects a 0x06 envelope, but as a structural BAD_KEY (its tessera_seal_priv_t
+     * carries a 0x01/0x02 key; priv->suite != header.suite 0x06), never the
+     * auth-class DECRYPT_FAILED. This is the suite/key-consistency rule.
      *
      * The 16 header bytes below are copied verbatim from the first record
      * (hybrid_empty) of ../conformance/vectors/hybrid_decrypt.json:
      * ts=1700000000000, variant=0x04, suite=0x06, ctr=10, kem_ct_len=1600,
      * ad_len=0. The body is zero-padded to the declared structural size
-     * (1600 KEM_CT + 12 nonce + 0 AEAD_CT + 16 tag + 32 commit = 1676 B
-     * total), so the only thing wrong with this envelope is the suite. */
-    const char *name = "suite_0x06_hybrid_rejected";
+     * (1600 KEM_CT + 12 nonce + 0 AEAD_CT + 16 tag + 32 commit = 1676 B). */
+    const char *name = "nonhybrid_path_rejects_0x06";
     static const uint8_t hybrid_header[TESSERA_SEAL_HEADER_BYTES] = {
         0x01, 0x8b, 0xcf, 0xe5, 0x68, 0x00, /* TS = 1700000000000 */
         0x04,                               /* VAR  = TesseraSeal */
-        0x06,                               /* SUITE = hybrid (unsupported) */
+        0x06,                               /* SUITE = hybrid */
         0x00, 0x0a,                         /* CTR = 10 */
         0x06, 0x40,                         /* KEM_CT_LEN = 1600 */
         0x00, 0x00, 0x00, 0x00              /* AD_LEN = 0 */
@@ -333,20 +329,21 @@ static void test_suite_0x06_hybrid_rejected(void) {
     tessera_seal_pub_t  pub  = {0};
     memcpy(env, hybrid_header, sizeof(hybrid_header));
 
-    /* Structural layer: peek_header rejects the unimplemented suite. */
+    /* Structural layer: peek_header now ACCEPTS 0x06 (known suite, 1600 B). */
     tessera_seal_header_t h;
-    ASSERT_RC(tessera_seal_peek_header(env, sizeof(env), &h),
-              TESSERA_SEAL_E_UNKNOWN_SUITE, name);
+    ASSERT_OK(tessera_seal_peek_header(env, sizeof(env), &h), name);
+    ASSERT_EQ(h.suite, TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM, name);
+    ASSERT_EQ(h.kem_ct_len, TESSERA_SEAL_HYBRID_CT_BYTES, name);
 
-    /* Decrypt layer: MUST be UNKNOWN_SUITE, not BAD_KEY (priv is tagged
-     * 0x01 here, so a wrong implementation that skipped suite validation
-     * would surface BAD_KEY) and not DECRYPT_FAILED. */
+    /* Non-hybrid decrypt with a 0x01 key: BAD_KEY (suite/key mismatch),
+     * before any KEM/AEAD work. Never UNKNOWN_SUITE, never DECRYPT_FAILED. */
     ASSERT_OK(tessera_seal_generate_keypair(TESSERA_SEAL_SUITE_MLKEM1024_AESGCM, &priv, &pub), name);
     uint8_t out[64]; size_t out_len = sizeof(out);
     ASSERT_RC(tessera_seal_decrypt(env, sizeof(env), &priv, NULL, 0, out, sizeof(out), &out_len),
-              TESSERA_SEAL_E_UNKNOWN_SUITE, name);
+              TESSERA_SEAL_E_BAD_KEY, name);
 
-    /* Same MUST for a well-formed non-hybrid envelope re-tagged 0x06. */
+    /* A non-hybrid envelope re-tagged 0x06 has the wrong KEM_CT_LEN (1568, not
+     * 1600), so peek_header — and thus decrypt — rejects it with INVALID_LEN. */
     uint8_t env2[2048]; size_t env2_len = sizeof(env2);
     ASSERT_OK(tessera_seal_encrypt((const uint8_t *)"x", 1, &pub, TESSERA_SEAL_SUITE_MLKEM1024_AESGCM,
                               NULL, 0, UINT64_MAX, 0,
@@ -354,7 +351,7 @@ static void test_suite_0x06_hybrid_rejected(void) {
     env2[TESSERA_SEAL_SUITE_OFFSET] = 0x06;
     out_len = sizeof(out);
     ASSERT_RC(tessera_seal_decrypt(env2, env2_len, &priv, NULL, 0, out, sizeof(out), &out_len),
-              TESSERA_SEAL_E_UNKNOWN_SUITE, name);
+              TESSERA_SEAL_E_INVALID_LEN, name);
     PASS(name);
 done:
     tessera_seal_zeroize_priv(&priv);
@@ -424,7 +421,14 @@ static void test_peek_ad(void) {
     ASSERT_RC(tessera_seal_peek_ad(bad, env_len, &got_ad, &got_ad_len),
               TESSERA_SEAL_E_UNKNOWN_VARIANT, name);
     memcpy(bad, env, env_len);
-    bad[TESSERA_SEAL_SUITE_OFFSET] = 0x06;  /* hybrid: no C support yet */
+    bad[TESSERA_SEAL_SUITE_OFFSET] = 0x06;  /* hybrid: known suite, but this
+        non-hybrid envelope carries KEM_CT_LEN=1568, not the 1600 a 0x06
+        envelope requires, so peek_header (via peek_ad) rejects INVALID_LEN. */
+    ASSERT_RC(tessera_seal_peek_ad(bad, env_len, &got_ad, &got_ad_len),
+              TESSERA_SEAL_E_INVALID_LEN, name);
+    /* Also reject a genuinely unimplemented suite byte (0x05) as UNKNOWN_SUITE. */
+    memcpy(bad, env, env_len);
+    bad[TESSERA_SEAL_SUITE_OFFSET] = 0x05;
     ASSERT_RC(tessera_seal_peek_ad(bad, env_len, &got_ad, &got_ad_len),
               TESSERA_SEAL_E_UNKNOWN_SUITE, name);
     PASS(name);
@@ -484,6 +488,241 @@ static void test_sender_ctx(void) {
     PASS(name);
 done:
     tessera_seal_set_now_ms_for_testing(UINT64_MAX);
+}
+
+/* ---------------------------------------------------------------------------
+ * Hybrid suite 0x06 tests (TSEAL-00030). Mirror the Rust/Go hybrid set:
+ * roundtrip, envelope size, wire KEM_CT_LEN==1600, AD binding, X25519-half
+ * tamper -> DECRYPT_FAILED, from-seed determinism, KAT consumption.
+ * ------------------------------------------------------------------------- */
+
+static void test_hybrid_roundtrip(void) {
+    const char *name = "hybrid_roundtrip";
+    tessera_seal_priv_hybrid_t priv;
+    tessera_seal_pub_hybrid_t  pub;
+    ASSERT_OK(tessera_seal_generate_keypair_hybrid(&priv, &pub), name);
+    ASSERT_EQ(priv.suite, TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM, name);
+    ASSERT_EQ(pub.suite, TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM, name);
+
+    const uint8_t pt[] = "hybrid payload from C";
+    size_t pt_len = sizeof(pt) - 1;
+    uint8_t env[4096]; size_t env_len = sizeof(env);
+    ASSERT_OK(tessera_seal_encrypt_hybrid(pt, pt_len, &pub, NULL, 0, UINT64_MAX, 0,
+                                     env, sizeof(env), &env_len), name);
+
+    uint8_t out[1024]; size_t out_len = sizeof(out);
+    ASSERT_OK(tessera_seal_decrypt_hybrid(env, env_len, &priv, NULL, 0,
+                                     out, sizeof(out), &out_len), name);
+    ASSERT_EQ(out_len, pt_len, name);
+    ASSERT_BYTES_EQ(out, pt, pt_len, name);
+    PASS(name);
+done:
+    tessera_seal_zeroize_priv_hybrid(&priv);
+}
+
+static void test_hybrid_envelope_size_and_kem_ct_len(void) {
+    const char *name = "hybrid_envelope_size_and_kem_ct_len";
+    tessera_seal_priv_hybrid_t priv;
+    tessera_seal_pub_hybrid_t  pub;
+    ASSERT_OK(tessera_seal_generate_keypair_hybrid(&priv, &pub), name);
+
+    const uint8_t pt[] = "size check";
+    size_t pt_len = sizeof(pt) - 1;
+    uint8_t ad[41]; for (int i = 0; i < 41; i++) ad[i] = (uint8_t)i;
+    uint8_t env[4096]; size_t env_len = sizeof(env);
+    ASSERT_OK(tessera_seal_encrypt_hybrid(pt, pt_len, &pub, ad, sizeof(ad), UINT64_MAX, 0,
+                                     env, sizeof(env), &env_len), name);
+
+    /* Envelope size matches the predicate (hybrid is 32 B larger in KEM_CT). */
+    ASSERT_EQ(env_len, tessera_seal_encrypt_hybrid_output_size(pt_len, sizeof(ad)), name);
+    /* Wire KEM_CT_LEN field (big-endian at offset 10) == 1600. */
+    uint16_t wire_kem_ct_len = (uint16_t)((env[TESSERA_SEAL_KEM_CT_LEN_OFFSET] << 8)
+                                          | env[TESSERA_SEAL_KEM_CT_LEN_OFFSET + 1]);
+    ASSERT_EQ(wire_kem_ct_len, TESSERA_SEAL_HYBRID_CT_BYTES, name);
+    /* peek_header agrees. */
+    tessera_seal_header_t h;
+    ASSERT_OK(tessera_seal_peek_header(env, env_len, &h), name);
+    ASSERT_EQ(h.suite, TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM, name);
+    ASSERT_EQ(h.kem_ct_len, TESSERA_SEAL_HYBRID_CT_BYTES, name);
+    PASS(name);
+done:
+    tessera_seal_zeroize_priv_hybrid(&priv);
+}
+
+static void test_hybrid_ad_binding(void) {
+    const char *name = "hybrid_ad_binding";
+    tessera_seal_priv_hybrid_t priv;
+    tessera_seal_pub_hybrid_t  pub;
+    ASSERT_OK(tessera_seal_generate_keypair_hybrid(&priv, &pub), name);
+
+    uint8_t ad[41]; for (int i = 0; i < 41; i++) ad[i] = (uint8_t)(0x80 + i);
+    uint8_t wrong_ad[41]; memcpy(wrong_ad, ad, sizeof(ad)); wrong_ad[7] ^= 0x01;
+    const uint8_t pt[] = "bound to AD";
+    size_t pt_len = sizeof(pt) - 1;
+    uint8_t env[4096]; size_t env_len = sizeof(env);
+    ASSERT_OK(tessera_seal_encrypt_hybrid(pt, pt_len, &pub, ad, sizeof(ad), UINT64_MAX, 0,
+                                     env, sizeof(env), &env_len), name);
+
+    /* Positive: matching AD decrypts. */
+    uint8_t out[1024]; size_t out_len = sizeof(out);
+    ASSERT_OK(tessera_seal_decrypt_hybrid(env, env_len, &priv, ad, sizeof(ad),
+                                     out, sizeof(out), &out_len), name);
+    ASSERT_BYTES_EQ(out, pt, pt_len, name);
+
+    /* Negative: any AD bit-flip -> single auth-class DECRYPT_FAILED. */
+    out_len = sizeof(out);
+    ASSERT_RC(tessera_seal_decrypt_hybrid(env, env_len, &priv, wrong_ad, sizeof(wrong_ad),
+                                     out, sizeof(out), &out_len),
+              TESSERA_SEAL_E_DECRYPT_FAILED, name);
+    PASS(name);
+done:
+    tessera_seal_zeroize_priv_hybrid(&priv);
+}
+
+static void test_hybrid_x25519_tamper(void) {
+    /* Flip a byte in the trailing 32 B of KEM_CT (the X25519 ephemeral pk).
+     * The combiner output diverges -> AEAD + commit reject as the single
+     * auth-class DECRYPT_FAILED. This is the hybrid-specific failure mode. */
+    const char *name = "hybrid_x25519_tamper";
+    tessera_seal_priv_hybrid_t priv;
+    tessera_seal_pub_hybrid_t  pub;
+    ASSERT_OK(tessera_seal_generate_keypair_hybrid(&priv, &pub), name);
+
+    const uint8_t pt[] = "tamper me";
+    size_t pt_len = sizeof(pt) - 1;
+    uint8_t env[4096]; size_t env_len = sizeof(env);
+    ASSERT_OK(tessera_seal_encrypt_hybrid(pt, pt_len, &pub, NULL, 0, UINT64_MAX, 0,
+                                     env, sizeof(env), &env_len), name);
+
+    /* KEM_CT spans [HEADER .. HEADER+1600); the X25519 ephemeral pk is the
+     * last 32 bytes of that region. Flip a bit there. */
+    size_t x_eph_off = TESSERA_SEAL_HEADER_BYTES
+                     + TESSERA_SEAL_MLKEM1024_CT_BYTES + 5;
+    env[x_eph_off] ^= 0x40;
+
+    uint8_t out[1024]; size_t out_len = sizeof(out);
+    ASSERT_RC(tessera_seal_decrypt_hybrid(env, env_len, &priv, NULL, 0,
+                                     out, sizeof(out), &out_len),
+              TESSERA_SEAL_E_DECRYPT_FAILED, name);
+    PASS(name);
+done:
+    tessera_seal_zeroize_priv_hybrid(&priv);
+}
+
+static void test_hybrid_from_seed_determinism(void) {
+    /* 96-byte seed (ML-KEM seed 64 || X25519 scalar 32) reconstructs a stable
+     * keypair, and the seed-derived key round-trips an envelope. */
+    const char *name = "hybrid_from_seed_determinism";
+    uint8_t seed[TESSERA_SEAL_HYBRID_SEED_BYTES];
+    for (size_t i = 0; i < sizeof(seed); i++) seed[i] = (uint8_t)(i * 3 + 11);
+
+    tessera_seal_priv_hybrid_t p1, p2;
+    tessera_seal_pub_hybrid_t  q1, q2;
+    ASSERT_OK(tessera_seal_generate_keypair_hybrid_from_seed(seed, &p1, &q1), name);
+    ASSERT_OK(tessera_seal_generate_keypair_hybrid_from_seed(seed, &p2, &q2), name);
+    ASSERT_BYTES_EQ(q1.pk, q2.pk, sizeof(q1.pk), name);
+    ASSERT_BYTES_EQ(p1.sk, p2.sk, sizeof(p1.sk), name);
+
+    const uint8_t pt[] = "seed roundtrip";
+    size_t pt_len = sizeof(pt) - 1;
+    uint8_t env[4096]; size_t env_len = sizeof(env);
+    ASSERT_OK(tessera_seal_encrypt_hybrid(pt, pt_len, &q1, NULL, 0, UINT64_MAX, 0,
+                                     env, sizeof(env), &env_len), name);
+    uint8_t out[1024]; size_t out_len = sizeof(out);
+    ASSERT_OK(tessera_seal_decrypt_hybrid(env, env_len, &p1, NULL, 0,
+                                     out, sizeof(out), &out_len), name);
+    ASSERT_BYTES_EQ(out, pt, pt_len, name);
+    PASS(name);
+done:
+    tessera_seal_zeroize_priv_hybrid(&p1);
+    tessera_seal_zeroize_priv_hybrid(&p2);
+}
+
+/* KAT consumption: decrypt every record of hybrid_decrypt.json byte-identical
+ * to the Python-generated expected plaintext. This is the cross-language
+ * byte-identity gate for suite 0x06. */
+static void test_kat_hybrid_decrypt(void) {
+    const char *name = "kat_hybrid_decrypt_json";
+    const char *path = "../conformance/vectors/hybrid_decrypt.json";
+    size_t buf_len = 0;
+    char *buf = read_file(path, &buf_len);
+    if (!buf) {
+        fprintf(stderr, "FAIL %s: cannot read %s\n", name, path);
+        g_fail++;
+        return;
+    }
+    size_t pos = 0;
+    int records = 0;
+    while (pos < buf_len) {
+        const char *name_p, *priv_hex_p, *env_hex_p, *ad_hex_p, *pt_hex_p;
+        size_t name_l, priv_hex_l, env_hex_l, ad_hex_l, pt_hex_l;
+        if (find_str_field(buf, buf_len, "name", &pos, &name_p, &name_l) != 0) break;
+        if (find_str_field(buf, buf_len, "private_key_hex", &pos, &priv_hex_p, &priv_hex_l) != 0) break;
+        if (find_str_field(buf, buf_len, "envelope_hex", &pos, &env_hex_p, &env_hex_l) != 0) break;
+        if (find_str_field(buf, buf_len, "expected_ad_hex", &pos, &ad_hex_p, &ad_hex_l) != 0) break;
+        if (find_str_field(buf, buf_len, "expected_plaintext_hex", &pos, &pt_hex_p, &pt_hex_l) != 0) break;
+
+        char rec_name[128];
+        size_t copy = name_l < sizeof(rec_name) - 1 ? name_l : sizeof(rec_name) - 1;
+        memcpy(rec_name, name_p, copy);
+        rec_name[copy] = '\0';
+
+        tessera_seal_priv_hybrid_t priv = {0};
+        priv.suite = TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM;
+        size_t sk_len = sizeof(priv.sk);
+        if (hex_decode(priv_hex_p, priv_hex_l, priv.sk, &sk_len) != 0
+            || sk_len != TESSERA_SEAL_HYBRID_SK_BYTES) {
+            fprintf(stderr, "FAIL kat-h:%s: bad private key hex (%zu)\n", rec_name, sk_len);
+            g_fail++; continue;
+        }
+        size_t env_cap = env_hex_l / 2 + 1;
+        size_t pt_cap  = pt_hex_l / 2 + 1;
+        uint8_t *env = malloc(env_cap);
+        uint8_t *ad  = malloc(ad_hex_l / 2 + 1);
+        uint8_t *expected_pt = malloc(pt_cap);
+        uint8_t *out = malloc(pt_cap);
+        if (!env || !ad || !expected_pt || !out) {
+            fprintf(stderr, "FAIL kat-h:%s: oom\n", rec_name); g_fail++;
+            free(env); free(ad); free(expected_pt); free(out); continue;
+        }
+        size_t env_len = env_cap;
+        size_t ad_len = ad_hex_l / 2 + 1;
+        size_t expected_pt_len = pt_cap;
+        if (hex_decode(env_hex_p, env_hex_l, env, &env_len) != 0) {
+            fprintf(stderr, "FAIL kat-h:%s: bad env hex\n", rec_name); g_fail++;
+            free(env); free(ad); free(expected_pt); free(out); continue;
+        }
+        if (ad_hex_l == 0) ad_len = 0;
+        else if (hex_decode(ad_hex_p, ad_hex_l, ad, &ad_len) != 0) {
+            fprintf(stderr, "FAIL kat-h:%s: bad ad hex\n", rec_name); g_fail++;
+            free(env); free(ad); free(expected_pt); free(out); continue;
+        }
+        if (pt_hex_l == 0) expected_pt_len = 0;
+        else if (hex_decode(pt_hex_p, pt_hex_l, expected_pt, &expected_pt_len) != 0) {
+            fprintf(stderr, "FAIL kat-h:%s: bad pt hex\n", rec_name); g_fail++;
+            free(env); free(ad); free(expected_pt); free(out); continue;
+        }
+
+        size_t out_len = pt_cap;
+        int rc = tessera_seal_decrypt_hybrid(env, env_len, &priv,
+                                        ad_len ? ad : NULL, ad_len,
+                                        out, pt_cap, &out_len);
+        if (rc != TESSERA_SEAL_OK) {
+            fprintf(stderr, "FAIL kat-h:%s: decrypt rc=%d\n", rec_name, rc); g_fail++;
+        } else if (out_len != expected_pt_len ||
+                   memcmp(out, expected_pt, expected_pt_len) != 0) {
+            fprintf(stderr, "FAIL kat-h:%s: plaintext mismatch (got %zu, want %zu)\n",
+                    rec_name, out_len, expected_pt_len); g_fail++;
+        } else {
+            printf("PASS kat-h:%s\n", rec_name); g_pass++; records++;
+        }
+        free(env); free(ad); free(expected_pt); free(out);
+    }
+    free(buf);
+    if (records == 0) {
+        fprintf(stderr, "FAIL %s: no records consumed\n", name);
+        g_fail++;
+    }
 }
 
 /* ---------------------------------------------------------------------------
@@ -783,10 +1022,16 @@ int main(void) {
     test_unknown_variant();
     test_unknown_suite();
     test_bad_key_suite_mismatch();
-    test_suite_0x06_hybrid_rejected();
+    test_nonhybrid_path_rejects_0x06();
     test_peek_header();
     test_peek_ad();
     test_sender_ctx();
+    test_hybrid_roundtrip();
+    test_hybrid_envelope_size_and_kem_ct_len();
+    test_hybrid_ad_binding();
+    test_hybrid_x25519_tamper();
+    test_hybrid_from_seed_determinism();
+    test_kat_hybrid_decrypt();
     test_kat_decrypt();
     test_kat_ad_binding();
     test_kat_peek_ad();

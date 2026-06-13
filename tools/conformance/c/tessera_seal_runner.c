@@ -259,10 +259,17 @@ static int handle_decrypt(const char *obj_start, const char *obj_end, int should
     long long rec_suite_ll = TESSERA_SEAL_SUITE_MLKEM1024_AESGCM;
     (void)extract_long(obj_start, obj_end, "suite", &rec_suite_ll);
     uint8_t rec_suite = (uint8_t)rec_suite_ll;
-    /* Optional: private_key_hex */
-    static uint8_t sk[TESSERA_SEAL_MLKEM1024_SK_BYTES];
+    int is_hybrid = (rec_suite == TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    /* Optional: private_key_hex. Non-hybrid keys are 3168 B (ML-KEM-1024 sk);
+     * hybrid (suite 0x06) keys are 3200 B (ML-KEM-1024 sk || X25519 scalar). */
+    static uint8_t sk[TESSERA_SEAL_HYBRID_SK_BYTES];
     size_t sk_len = 0;
     int have_sk = (extract_hex(obj_start, obj_end, "private_key_hex", sk, sizeof(sk), &sk_len) == 0);
+    if (have_sk) {
+        size_t want = is_hybrid ? TESSERA_SEAL_HYBRID_SK_BYTES
+                                : TESSERA_SEAL_MLKEM1024_SK_BYTES;
+        if (sk_len != want) have_sk = 0;
+    }
     /* envelope_hex / expected_ad_hex / expected_plaintext_hex are heap-
      * allocated: the TESS-00009 boundary KATs carry 64 KiB plaintexts and
      * MAX_AD_LEN (65536 B) associated data. */
@@ -290,9 +297,6 @@ static int handle_decrypt(const char *obj_start, const char *obj_end, int should
             printf("FAIL %s: no expected_plaintext_hex\n", name); g_fail++;
             free(env); free(ad); return -1;
         }
-        tessera_seal_priv_t priv = {0};
-        priv.suite = rec_suite;
-        memcpy(priv.sk, sk, TESSERA_SEAL_MLKEM1024_SK_BYTES);
         /* Plaintext is always strictly smaller than its envelope. */
         size_t out_cap = env_len > 0 ? env_len : 1;
         uint8_t *out = malloc(out_cap);
@@ -301,7 +305,18 @@ static int handle_decrypt(const char *obj_start, const char *obj_end, int should
             free(env); free(ad); free(expected); return -1;
         }
         size_t out_len = out_cap;
-        int rc = tessera_seal_decrypt(env, env_len, &priv, ad_len ? ad : NULL, ad_len, out, out_cap, &out_len);
+        int rc;
+        if (is_hybrid) {
+            tessera_seal_priv_hybrid_t priv = {0};
+            priv.suite = rec_suite;
+            memcpy(priv.sk, sk, TESSERA_SEAL_HYBRID_SK_BYTES);
+            rc = tessera_seal_decrypt_hybrid(env, env_len, &priv, ad_len ? ad : NULL, ad_len, out, out_cap, &out_len);
+        } else {
+            tessera_seal_priv_t priv = {0};
+            priv.suite = rec_suite;
+            memcpy(priv.sk, sk, TESSERA_SEAL_MLKEM1024_SK_BYTES);
+            rc = tessera_seal_decrypt(env, env_len, &priv, ad_len ? ad : NULL, ad_len, out, out_cap, &out_len);
+        }
         if (rc != TESSERA_SEAL_OK) {
             printf("FAIL %s: decrypt rc=%d\n", name, rc); g_fail++;
         } else if (out_len != expected_len || memcmp(out, expected, expected_len) != 0) {
@@ -313,9 +328,6 @@ static int handle_decrypt(const char *obj_start, const char *obj_end, int should
         free(expected);
     } else {
         if (have_sk) {
-            tessera_seal_priv_t priv = {0};
-            priv.suite = rec_suite;
-            memcpy(priv.sk, sk, TESSERA_SEAL_MLKEM1024_SK_BYTES);
             size_t out_cap = env_len > 0 ? env_len : 1;
             uint8_t *out = malloc(out_cap);
             if (!out) {
@@ -323,7 +335,18 @@ static int handle_decrypt(const char *obj_start, const char *obj_end, int should
                 free(env); free(ad); return -1;
             }
             size_t out_len = out_cap;
-            int rc = tessera_seal_decrypt(env, env_len, &priv, ad_len ? ad : NULL, ad_len, out, out_cap, &out_len);
+            int rc;
+            if (is_hybrid) {
+                tessera_seal_priv_hybrid_t priv = {0};
+                priv.suite = rec_suite;
+                memcpy(priv.sk, sk, TESSERA_SEAL_HYBRID_SK_BYTES);
+                rc = tessera_seal_decrypt_hybrid(env, env_len, &priv, ad_len ? ad : NULL, ad_len, out, out_cap, &out_len);
+            } else {
+                tessera_seal_priv_t priv = {0};
+                priv.suite = rec_suite;
+                memcpy(priv.sk, sk, TESSERA_SEAL_MLKEM1024_SK_BYTES);
+                rc = tessera_seal_decrypt(env, env_len, &priv, ad_len ? ad : NULL, ad_len, out, out_cap, &out_len);
+            }
             if (rc == TESSERA_SEAL_OK) {
                 printf("FAIL %s: expected failure, got OK\n", name); g_fail++;
             } else {
