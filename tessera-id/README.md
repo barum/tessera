@@ -7,6 +7,10 @@ For the project overview, see the [root README](../README.md). For the full
 specification, rationale, security analysis, and benchmark methodology, see
 [../TesseraID_Whitepaper.pdf](../TesseraID_Whitepaper.pdf).
 
+**Positioning** — when to choose TesseraID over UUIDv7/ULID/KSUID, the honest 41-vs-16-byte
+cost arithmetic, and when *not* to use it: [docs/positioning.md](docs/positioning.md)
+(non-normative; HLC interop mappings in [docs/hlc-interop.md](docs/hlc-interop.md)).
+
 ## Wire format (41 bytes)
 
 ```

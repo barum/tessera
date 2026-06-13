@@ -62,6 +62,10 @@ Full normative spec: [latex/sec03_wire_format.tex](latex/sec03_wire_format.tex).
 
 - [latex/TesseraSeal_Whitepaper.pdf](latex/TesseraSeal_Whitepaper.pdf) — normative spec (built from LaTeX).
 - [CLAUDE.md](CLAUDE.md) — project invariants for contributors.
+- [docs/policy-profiles.md](docs/policy-profiles.md) — CNSA 2.0 vs EU-hybrid suite selection by regulator (non-normative).
+- [docs/fips-deployment.md](docs/fips-deployment.md) — FIPS 140-3 validation posture per language (non-normative).
+- [docs/hpke-pq-comparison.md](docs/hpke-pq-comparison.md) — TesseraSeal vs draft-ietf-hpke-pq, one page (non-normative).
+- [docs/xwing-divergence.md](docs/xwing-divergence.md) — why suite `0x06` is not X-Wing (non-normative).
 - [docs/side-channel-disclaimer.md](docs/side-channel-disclaimer.md) — what v1 mitigates, what it does not.
 - [docs/chunking-recipe.md](docs/chunking-recipe.md) — safe envelope-per-chunk pattern for large files (v1 is single-shot; the CLI buffers whole files).
 - [docs/security-audit-v1.2.md](docs/security-audit-v1.2.md) — internal pre-external-audit threat-model walk-through.

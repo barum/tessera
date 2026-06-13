@@ -8,6 +8,7 @@ whitepaper, repo-wide doc/git hygiene. Per-project changes live in
 reference the former PQToolkit / PQID / PQHash / PQCrypt names are a historical
 ledger — kept verbatim; see TESS-00001 for the rename.)
 
+- 2026-06-10 — [TESS-00018 — Strategic docs: policy profiles, FIPS posture, HPKE/X-Wing decision records, HLC interop, capability-ID positioning](2026-06-10-tess-00018-strategic-docs.md)
 - 2026-06-10 — [TESS-00017 — Repo hygiene: gitignore, PDF dedupe, .mailmap identity, commit-msg hook, orphan dirs, branches](2026-06-10-tess-00017-hygiene.md)
 - 2026-06-10 — [TESS-00016 — Structured + differential fuzzing for decode surfaces (surfaced a HIGH C seal OOB-read finding; fixed in TSEAL-00049)](2026-06-10-tess-00016-fuzzing.md)
 - 2026-06-10 — [TESS-00015 — Testing depth & supply chain: property-based tests, Go race detector, committed Cargo lockfiles, plugin env-passphrase hardening](2026-06-10-tess-00015-testing-depth.md)
