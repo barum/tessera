@@ -12,13 +12,14 @@ import { join } from "node:path";
 
 import {
     encrypt, decrypt, generateKeypair, generateKeypairFromSeed,
-    peekAd, peekHeader, validate, validateMinTimestamp, envelopeSize,
+    peekAd, peekHeader, validate, validateMinTimestamp, envelopeSize, envelopeSizeForSuite,
     setNowMsForTesting, SenderContext,
     UnknownVariant, UnknownSuite, InvalidLength, DecryptionError, BadKeyError,
     TesseraSealError,
     TESSERA_SEAL_VARIANT,
-    SUITE_MLKEM1024_AESGCM, SUITE_MLKEM1024_CHACHA,
+    SUITE_MLKEM1024_AESGCM, SUITE_MLKEM1024_CHACHA, SUITE_HYBRID_X25519_MLKEM1024_AESGCM,
     HEADER_BYTES, MLKEM1024_CT_BYTES, MLKEM1024_SEED_BYTES, MLKEM1024_PK_BYTES,
+    HYBRID_CT_BYTES, HYBRID_PK_BYTES, HYBRID_SEED_BYTES,
     AEAD_NONCE_BYTES, AEAD_TAG_BYTES, COMMIT_BYTES,
 } from "./tessera_seal.js";
 
@@ -94,42 +95,123 @@ test("suite rejection", () => {
     }
 });
 
-test("suite 0x06 (hybrid) rejected as UnknownSuite", () => {
-    // TSEAL-00044 (TP-030): the TypeScript port has no hybrid support yet
-    // (TSEAL-00032 backlog). The normative contract is that non-hybrid
-    // languages MUST reject suite 0x06 as UnknownSuite — never BadKeyError,
-    // never the auth-class DecryptionError. In this port peekHeader() owns
-    // suite validation and decrypt() runs it before the priv.suite BadKey
-    // check, so both layers must throw UnknownSuite here.
-    //
-    // Header bytes are copied verbatim from the first record (hybrid_empty)
-    // of ../conformance/vectors/hybrid_decrypt.json: ts=1700000000000,
-    // variant=0x04, suite=0x06, ctr=10, kemCtLen=1600, adLen=0. The body is
-    // zero-padded to the declared structural size (1600 KEM_CT + 12 nonce +
-    // 16 tag + 32 commit = 1676 B total), so the only thing wrong with this
-    // envelope is the suite.
-    const env = new Uint8Array(16 + 1600 + 12 + 16 + 32);
-    env.set(hex("018bcfe568000406000a064000000000"), 0);
+// --- Hybrid suite 0x06 (X25519 + ML-KEM-1024 + AES-256-GCM + UtC), TSEAL-00032.
+//     Mirrors the Rust/Go/Python hybrid test set. The TypeScript port gained
+//     hybrid support in TSEAL-00032, so suite 0x06 is now ACCEPTED (no longer
+//     rejected as UnknownSuite).
 
-    // Structural layer: peekHeader rejects the unimplemented suite.
-    assert.throws(() => peekHeader(env), UnknownSuite);
+test("hybrid roundtrip", () => {
+    const { priv, pub } = generateKeypair(SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    const pt = new TextEncoder().encode("hybrid X25519+ML-KEM-1024 envelope");
+    const env = encrypt(pt, pub, SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    const got = decrypt(env, priv, new Uint8Array(0));
+    assert.deepEqual(got, pt);
+});
 
-    // Decrypt layer: MUST be UnknownSuite — explicitly not BadKeyError
-    // (priv is tagged 0x01, so an implementation that skipped suite
-    // validation would surface BadKeyError) and not DecryptionError.
-    const { priv, pub } = generateKeypair();
+test("hybrid roundtrip with AD", () => {
+    const { priv, pub } = generateKeypair(SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    const ad = new Uint8Array(41).map((_, i) => i);
+    const pt = new TextEncoder().encode("hybrid with AD");
+    const env = encrypt(pt, pub, SUITE_HYBRID_X25519_MLKEM1024_AESGCM, ad);
+    assert.deepEqual(decrypt(env, priv, ad), pt);
+});
+
+test("hybrid key + KEM_CT sizes", () => {
+    const { priv, pub } = generateKeypair(SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    assert.equal(pub.bytes.length, HYBRID_PK_BYTES, "hybrid pub key 1600 B");
+    assert.equal(pub.bytes.length, 1600);
+    assert.equal(priv.seed.length, HYBRID_SEED_BYTES, "hybrid seed 96 B");
+    assert.equal(priv.seed.length, 96);
+    const env = encrypt(new TextEncoder().encode("x"), pub, SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    const h = peekHeader(env);
+    assert.equal(h.suite, SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    assert.equal(h.kemCtLen, HYBRID_CT_BYTES, "wire KEM_CT_LEN must be 1600");
+    assert.equal(h.kemCtLen, 1600);
+    assert.equal(env.length, envelopeSizeForSuite(SUITE_HYBRID_X25519_MLKEM1024_AESGCM, 1, 0));
+});
+
+test("hybrid AD-binding negative", () => {
+    const { priv, pub } = generateKeypair(SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    const ad = new Uint8Array(41).fill(0xab);
+    const env = encrypt(new TextEncoder().encode("x"), pub, SUITE_HYBRID_X25519_MLKEM1024_AESGCM, ad);
+    const wrong = new Uint8Array(ad);
+    wrong[0] ^= 1;
+    assert.throws(() => decrypt(env, priv, wrong), DecryptionError);
+});
+
+test("hybrid X25519-half tamper -> DecryptionError", () => {
+    // Flip a byte in the trailing X25519 ephemeral pubkey portion of KEM_CT;
+    // the combiner diverges and the AEAD/commit verify fails uniformly.
+    const { priv, pub } = generateKeypair(SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    const env = encrypt(new TextEncoder().encode("x"), pub, SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    const xByteOffset = HEADER_BYTES + MLKEM1024_CT_BYTES; // first byte of x_eph_pk
+    env[xByteOffset] ^= 1;
+    assert.throws(() => decrypt(env, priv, new Uint8Array(0)), DecryptionError);
+});
+
+test("hybrid suite/key consistency (BadKey)", () => {
+    // encrypt: pub tagged 0x06, requesting 0x01 -> BadKey before any KEM work.
+    const { pub: hybridPub } = generateKeypair(SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
     assert.throws(
-        () => decrypt(env, priv, new Uint8Array(0)),
-        (e: unknown) =>
-            e instanceof UnknownSuite &&
-            !(e instanceof BadKeyError) &&
-            !(e instanceof DecryptionError)
+        () => encrypt(new TextEncoder().encode("x"), hybridPub, SUITE_MLKEM1024_AESGCM),
+        BadKeyError
     );
+    // decrypt: hybrid envelope, priv re-tagged 0x01 -> BadKey (not auth-class).
+    const { priv, pub } = generateKeypair(SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    const env = encrypt(new TextEncoder().encode("x"), pub, SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    const privMismatch = { ...priv, suite: SUITE_MLKEM1024_AESGCM };
+    assert.throws(() => decrypt(env, privMismatch, new Uint8Array(0)), BadKeyError);
+});
 
-    // A well-formed 0x01 envelope re-tagged 0x06 must also be UnknownSuite.
-    const env2 = encrypt(new TextEncoder().encode("x"), pub);
-    env2[7] = 0x06;
-    assert.throws(() => decrypt(env2, priv, new Uint8Array(0)), UnknownSuite);
+// THE byte-identity oracle: the frozen hybrid_decrypt.json envelopes were
+// generated by the Python reference. This TS port is correct iff it decrypts
+// those exact envelopes to the recorded plaintexts. This proves cross-language
+// (Python <-> TS) hybrid correctness even without a conformance runner.
+test("KAT hybrid_decrypt.json (byte-identity oracle)", () => {
+    const recs = loadVectors("hybrid_decrypt.json");
+    assert.ok(recs.length > 0, "no hybrid_decrypt records");
+    for (const r of recs) {
+        const seed = hex(r.private_key_seed_hex);
+        assert.equal(seed.length, 96, `${r.name}: hybrid seed must be 96 B`);
+        const { priv, pub } = generateKeypairFromSeed(seed, SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+        // The derived public key must match the recorded one byte-for-byte
+        // (confirms our X25519 getPublicKey + ML-KEM keygen are aligned).
+        assert.deepEqual(pub.bytes, hex(r.public_key_hex), `${r.name}: pub key`);
+        const env = hex(r.envelope_hex);
+        const ad = hex(r.expected_ad_hex);
+        const got = decrypt(env, priv, ad);
+        assert.deepEqual(got, hex(r.expected_plaintext_hex), `${r.name}: plaintext`);
+    }
+});
+
+test("KAT hybrid_ad_binding.json", () => {
+    const recs = loadVectors("hybrid_ad_binding.json");
+    assert.ok(recs.length > 0);
+    for (const r of recs) {
+        const seed = hex(r.private_key_seed_hex);
+        const { priv } = generateKeypairFromSeed(seed, SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+        const env = hex(r.envelope_hex);
+        const ad = hex(r.expected_ad_hex);
+        if (r.op === "decrypt") {
+            assert.deepEqual(decrypt(env, priv, ad), hex(r.expected_plaintext_hex), r.name);
+        } else {
+            assert.throws(() => decrypt(env, priv, ad), Error, r.name);
+        }
+    }
+});
+
+test("KAT hybrid_peek_header.json", () => {
+    const recs = loadVectors("hybrid_peek_header.json");
+    assert.ok(recs.length > 0);
+    for (const r of recs) {
+        const h = peekHeader(hex(r.header_hex));
+        assert.equal(h.timestampMs, r.expected.timestamp_ms, r.name);
+        assert.equal(h.variant, r.expected.variant, r.name);
+        assert.equal(h.suite, r.expected.suite, r.name);
+        assert.equal(h.counter, r.expected.counter, r.name);
+        assert.equal(h.kemCtLen, r.expected.kem_ct_len, r.name);
+        assert.equal(h.adLen, r.expected.ad_len, r.name);
+    }
 });
 
 test("tamper detection", () => {

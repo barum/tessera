@@ -33,11 +33,20 @@ namespace tessera_seal {
 inline constexpr std::uint8_t kVariant = TESSERA_SEAL_VARIANT;
 inline constexpr std::uint8_t kSuiteMLKEM1024AESGCM = TESSERA_SEAL_SUITE_MLKEM1024_AESGCM;
 inline constexpr std::uint8_t kSuiteMLKEM1024ChaCha = TESSERA_SEAL_SUITE_MLKEM1024_CHACHA;
+// Hybrid suite 0x06: X25519 + ML-KEM-1024 + AES-256-GCM + UtC (TSEAL-00031).
+inline constexpr std::uint8_t kSuiteHybridX25519MLKEM1024AESGCM =
+    TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM;
 inline constexpr std::size_t  kHeaderBytes        = TESSERA_SEAL_HEADER_BYTES;
 inline constexpr std::size_t  kMLKem1024PKBytes   = TESSERA_SEAL_MLKEM1024_PK_BYTES;
 inline constexpr std::size_t  kMLKem1024SKBytes   = TESSERA_SEAL_MLKEM1024_SK_BYTES;
 inline constexpr std::size_t  kMLKem1024CTBytes   = TESSERA_SEAL_MLKEM1024_CT_BYTES;
 inline constexpr std::size_t  kMLKem1024SSBytes   = TESSERA_SEAL_MLKEM1024_SS_BYTES;
+inline constexpr std::size_t  kX25519PKBytes      = TESSERA_SEAL_X25519_PK_BYTES;
+inline constexpr std::size_t  kX25519SKBytes      = TESSERA_SEAL_X25519_SK_BYTES;
+inline constexpr std::size_t  kHybridPKBytes      = TESSERA_SEAL_HYBRID_PK_BYTES;
+inline constexpr std::size_t  kHybridSKBytes      = TESSERA_SEAL_HYBRID_SK_BYTES;
+inline constexpr std::size_t  kHybridCTBytes      = TESSERA_SEAL_HYBRID_CT_BYTES;
+inline constexpr std::size_t  kHybridSeedBytes    = TESSERA_SEAL_HYBRID_SEED_BYTES;
 inline constexpr std::size_t  kAEADNonceBytes     = TESSERA_SEAL_AEAD_NONCE_BYTES;
 inline constexpr std::size_t  kAEADTagBytes       = TESSERA_SEAL_AEAD_TAG_BYTES;
 inline constexpr std::size_t  kCommitBytes        = TESSERA_SEAL_COMMIT_BYTES;
@@ -175,6 +184,83 @@ private:
     tessera_seal_priv_t inner_{};
 };
 
+// ---------------------------------------------------------------------------
+// Hybrid keys (suite 0x06, RAII) — TSEAL-00031
+// ---------------------------------------------------------------------------
+//
+// Separate types from the non-hybrid PublicKey/PrivateKey so the non-hybrid
+// API stays byte-for-byte unchanged. These wrap the dedicated
+// tessera_seal_pub_hybrid_t / tessera_seal_priv_hybrid_t C structs (1600 B pk,
+// 3200 B sk = ML-KEM-1024 half || X25519 half). Always tagged suite 0x06.
+
+class HybridPublicKey {
+public:
+    HybridPublicKey() = default;
+    explicit HybridPublicKey(const tessera_seal_pub_hybrid_t& src) : inner_(src) {}
+
+    [[nodiscard]] const tessera_seal_pub_hybrid_t* c_ptr() const noexcept { return &inner_; }
+    [[nodiscard]] tessera_seal_pub_hybrid_t* c_ptr() noexcept { return &inner_; }
+    [[nodiscard]] std::uint8_t suite() const noexcept { return inner_.suite; }
+
+    [[nodiscard]] std::vector<std::uint8_t> to_bytes() const {
+        return std::vector<std::uint8_t>(inner_.pk, inner_.pk + kHybridPKBytes);
+    }
+
+    static HybridPublicKey from_bytes(const std::vector<std::uint8_t>& pk) {
+        if (pk.size() != kHybridPKBytes) {
+            throw Error(TESSERA_SEAL_E_BAD_KEY,
+                        "tessera_seal: hybrid public key must be 1600 bytes");
+        }
+        HybridPublicKey out;
+        out.inner_.suite = kSuiteHybridX25519MLKEM1024AESGCM;
+        std::memcpy(out.inner_.pk, pk.data(), kHybridPKBytes);
+        return out;
+    }
+
+private:
+    tessera_seal_pub_hybrid_t inner_{};
+};
+
+// Hybrid private key — zeroizes on destruction.
+class HybridPrivateKey {
+public:
+    HybridPrivateKey() = default;
+    explicit HybridPrivateKey(const tessera_seal_priv_hybrid_t& src) : inner_(src) {}
+
+    HybridPrivateKey(const HybridPrivateKey&) = delete;
+    HybridPrivateKey& operator=(const HybridPrivateKey&) = delete;
+    HybridPrivateKey(HybridPrivateKey&& other) noexcept : inner_(other.inner_) {
+        std::memset(&other.inner_, 0, sizeof(other.inner_));
+    }
+    HybridPrivateKey& operator=(HybridPrivateKey&& other) noexcept {
+        if (this != &other) {
+            tessera_seal_zeroize_priv_hybrid(&inner_);
+            inner_ = other.inner_;
+            std::memset(&other.inner_, 0, sizeof(other.inner_));
+        }
+        return *this;
+    }
+    ~HybridPrivateKey() { tessera_seal_zeroize_priv_hybrid(&inner_); }
+
+    [[nodiscard]] const tessera_seal_priv_hybrid_t* c_ptr() const noexcept { return &inner_; }
+    [[nodiscard]] tessera_seal_priv_hybrid_t* c_ptr() noexcept { return &inner_; }
+    [[nodiscard]] std::uint8_t suite() const noexcept { return inner_.suite; }
+
+    static HybridPrivateKey from_bytes(const std::vector<std::uint8_t>& sk) {
+        if (sk.size() != kHybridSKBytes) {
+            throw Error(TESSERA_SEAL_E_BAD_KEY,
+                        "tessera_seal: hybrid private key must be 3200 bytes");
+        }
+        HybridPrivateKey out;
+        out.inner_.suite = kSuiteHybridX25519MLKEM1024AESGCM;
+        std::memcpy(out.inner_.sk, sk.data(), kHybridSKBytes);
+        return out;
+    }
+
+private:
+    tessera_seal_priv_hybrid_t inner_{};
+};
+
 struct DecodedHeader {
     std::uint64_t timestamp_ms{};
     std::uint8_t  variant{};
@@ -235,6 +321,86 @@ inline std::vector<std::uint8_t> decrypt(
     detail::throw_for_code(rc, "decrypt");
     out.resize(actual);
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// Hybrid operations (suite 0x06, TSEAL-00031)
+// ---------------------------------------------------------------------------
+//
+// Mirror the non-hybrid surface but route to the C hybrid entry points
+// (tessera_seal_*_hybrid). Suite is implicitly 0x06. Suite/key mismatch maps
+// to the BadKey-class Error (TESSERA_SEAL_E_BAD_KEY); every auth-class failure
+// (bad AEAD tag, bad commit, mangled ML-KEM ct, tampered X25519 ephemeral, AD
+// mismatch) maps to the single DecryptionError. Both halves use the OS CSPRNG
+// (the X25519 ephemeral is fresh per envelope, so K_session stays fresh and the
+// deterministic HKDF nonce remains safe).
+
+inline std::pair<HybridPrivateKey, HybridPublicKey> generate_keypair_hybrid() {
+    HybridPrivateKey priv;
+    HybridPublicKey pub;
+    int rc = tessera_seal_generate_keypair_hybrid(priv.c_ptr(), pub.c_ptr());
+    detail::throw_for_code(rc, "generate_keypair_hybrid");
+    return {std::move(priv), std::move(pub)};
+}
+
+// Deterministically reconstruct a hybrid keypair from a 96-byte seed
+// (ML-KEM-1024 seed d||z, 64 B || X25519 scalar, 32 B). Matches the
+// Python/Go/Rust/C seed ordering — used by the conformance vectors.
+inline std::pair<HybridPrivateKey, HybridPublicKey>
+generate_keypair_hybrid_from_seed(const std::vector<std::uint8_t>& seed) {
+    if (seed.size() != kHybridSeedBytes) {
+        throw Error(TESSERA_SEAL_E_BAD_KEY,
+                    "tessera_seal: hybrid seed must be 96 bytes");
+    }
+    HybridPrivateKey priv;
+    HybridPublicKey pub;
+    int rc = tessera_seal_generate_keypair_hybrid_from_seed(
+        seed.data(), priv.c_ptr(), pub.c_ptr());
+    detail::throw_for_code(rc, "generate_keypair_hybrid_from_seed");
+    return {std::move(priv), std::move(pub)};
+}
+
+inline std::vector<std::uint8_t> encrypt_hybrid(
+    const std::vector<std::uint8_t>& pt,
+    const HybridPublicKey& pub,
+    const std::vector<std::uint8_t>& ad = {},
+    std::uint64_t ts_ms = UINT64_MAX,
+    std::uint16_t counter = 0)
+{
+    std::size_t need = tessera_seal_encrypt_hybrid_output_size(pt.size(), ad.size());
+    std::vector<std::uint8_t> out(need);
+    std::size_t actual = need;
+    int rc = tessera_seal_encrypt_hybrid(
+        pt.empty() ? nullptr : pt.data(), pt.size(),
+        pub.c_ptr(),
+        ad.empty() ? nullptr : ad.data(), ad.size(),
+        ts_ms, counter,
+        out.data(), out.size(), &actual);
+    detail::throw_for_code(rc, "encrypt_hybrid");
+    out.resize(actual);
+    return out;
+}
+
+inline std::vector<std::uint8_t> decrypt_hybrid(
+    const std::vector<std::uint8_t>& env,
+    const HybridPrivateKey& priv,
+    const std::vector<std::uint8_t>& expected_ad)
+{
+    std::size_t cap = env.size();
+    std::vector<std::uint8_t> out(cap > 0 ? cap : 1);
+    std::size_t actual = out.size();
+    int rc = tessera_seal_decrypt_hybrid(
+        env.data(), env.size(),
+        priv.c_ptr(),
+        expected_ad.empty() ? nullptr : expected_ad.data(), expected_ad.size(),
+        out.data(), out.size(), &actual);
+    detail::throw_for_code(rc, "decrypt_hybrid");
+    out.resize(actual);
+    return out;
+}
+
+inline std::size_t envelope_size_hybrid(std::size_t pt_len, std::size_t ad_len) noexcept {
+    return tessera_seal_encrypt_hybrid_output_size(pt_len, ad_len);
 }
 
 inline DecodedHeader peek_header(const std::vector<std::uint8_t>& env) {

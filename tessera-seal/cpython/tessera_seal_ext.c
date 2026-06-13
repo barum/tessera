@@ -8,6 +8,8 @@
  *
  * Functions exposed:
  *   generate_keypair(suite=0x01) -> (sk_bytes, pk_bytes)
+ *   generate_keypair_hybrid() -> (sk_bytes, pk_bytes)            # suite 0x06
+ *   generate_keypair_hybrid_from_seed(seed96) -> (sk_bytes, pk_bytes)
  *   encrypt(pt, pk_bytes, suite=0x01, ad=b"", ts_ms=None, counter=0) -> envelope
  *   decrypt(envelope, sk_bytes, expected_ad=b"") -> plaintext
  *   peek_header(envelope) -> dict
@@ -23,6 +25,13 @@
  * Raw key bytes carry no suite tag in this binding, so decrypt() adopts the
  * suite from the envelope header (structural peek) before calling the C
  * library — see py_decrypt (TSEAL-00036).
+ *
+ * Hybrid suite 0x06 (TSEAL-00034): the same encrypt()/decrypt() entry points
+ * route to the C library's tessera_seal_*_hybrid functions when the recipient
+ * key (encrypt) or the envelope header (decrypt) is the 1600-byte hybrid pk /
+ * 0x06 header. The 0x06 KEM_CT on the wire is 1600 B (ml_kem_ct 1568 ||
+ * x25519_eph_pk 32). Hybrid private keys are 3200 B, hybrid public keys 1600 B;
+ * suite is inferred from key length on encrypt and from the header on decrypt.
  */
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
@@ -71,6 +80,51 @@ static PyObject *py_generate_keypair(PyObject *self, PyObject *args, PyObject *k
     return PyTuple_Pack(2, sk, pk);
 }
 
+/* generate_keypair_hybrid() -> (sk_bytes, pk_bytes)  (suite 0x06)
+ *
+ * sk = ML-KEM-1024 sk (3168) || X25519 scalar (32)   = 3200 B
+ * pk = ML-KEM-1024 pk (1568) || X25519 pk (32)        = 1600 B
+ * Both halves use the OS CSPRNG (no userspace PRNG). */
+static PyObject *py_generate_keypair_hybrid(PyObject *self, PyObject *args) {
+    (void)self; (void)args;
+    tessera_seal_priv_hybrid_t priv = {0};
+    tessera_seal_pub_hybrid_t  pub = {0};
+    int rc = tessera_seal_generate_keypair_hybrid(&priv, &pub);
+    if (rc != TESSERA_SEAL_OK) { raise_status(rc, "generate_keypair_hybrid"); return NULL; }
+    PyObject *sk = PyBytes_FromStringAndSize((const char *)priv.sk, TESSERA_SEAL_HYBRID_SK_BYTES);
+    PyObject *pk = PyBytes_FromStringAndSize((const char *)pub.pk, TESSERA_SEAL_HYBRID_PK_BYTES);
+    tessera_seal_zeroize_priv_hybrid(&priv);
+    if (!sk || !pk) { Py_XDECREF(sk); Py_XDECREF(pk); return NULL; }
+    return PyTuple_Pack(2, sk, pk);
+}
+
+/* generate_keypair_hybrid_from_seed(seed) -> (sk_bytes, pk_bytes)
+ *
+ * seed = ML-KEM-1024 seed (d || z, 64 B) || X25519 scalar (32 B) = 96 B,
+ * matching the Python/Go/Rust ordering. */
+static PyObject *py_generate_keypair_hybrid_from_seed(PyObject *self, PyObject *arg) {
+    (void)self;
+    Py_buffer seed_buf;
+    if (PyObject_GetBuffer(arg, &seed_buf, PyBUF_SIMPLE) != 0) return NULL;
+    if (seed_buf.len != TESSERA_SEAL_HYBRID_SEED_BYTES) {
+        PyBuffer_Release(&seed_buf);
+        PyErr_Format(TesseraSealError, "hybrid seed must be %d bytes",
+                     (int)TESSERA_SEAL_HYBRID_SEED_BYTES);
+        return NULL;
+    }
+    tessera_seal_priv_hybrid_t priv = {0};
+    tessera_seal_pub_hybrid_t  pub = {0};
+    int rc = tessera_seal_generate_keypair_hybrid_from_seed(
+        (const uint8_t *)seed_buf.buf, &priv, &pub);
+    PyBuffer_Release(&seed_buf);
+    if (rc != TESSERA_SEAL_OK) { raise_status(rc, "generate_keypair_hybrid_from_seed"); return NULL; }
+    PyObject *sk = PyBytes_FromStringAndSize((const char *)priv.sk, TESSERA_SEAL_HYBRID_SK_BYTES);
+    PyObject *pk = PyBytes_FromStringAndSize((const char *)pub.pk, TESSERA_SEAL_HYBRID_PK_BYTES);
+    tessera_seal_zeroize_priv_hybrid(&priv);
+    if (!sk || !pk) { Py_XDECREF(sk); Py_XDECREF(pk); return NULL; }
+    return PyTuple_Pack(2, sk, pk);
+}
+
 /* encrypt(pt, pk_bytes, suite=0x01, ad=b"", ts_ms=None, counter=0) -> envelope */
 static PyObject *py_encrypt(PyObject *self, PyObject *args, PyObject *kwds) {
     (void)self;
@@ -91,11 +145,19 @@ static PyObject *py_encrypt(PyObject *self, PyObject *args, PyObject *kwds) {
     }
     ad_given = ad_buf.buf != NULL;
 
-    if (pk_buf.len != TESSERA_SEAL_MLKEM1024_PK_BYTES) {
+    /* Hybrid suite 0x06 routes through tessera_seal_encrypt_hybrid with a
+     * 1600-byte recipient pk (ml_kem_pk 1568 || x25519_pk 32). The suite is
+     * implied by the hybrid key length, but we also require the caller to
+     * request 0x06 explicitly so a 1600-byte pk passed under a non-hybrid
+     * suite is a hard error rather than a silent reinterpretation. */
+    int is_hybrid = (suite == TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
+    size_t want_pk = is_hybrid ? (size_t) TESSERA_SEAL_HYBRID_PK_BYTES
+                               : (size_t) TESSERA_SEAL_MLKEM1024_PK_BYTES;
+    if ((size_t) pk_buf.len != want_pk) {
         PyBuffer_Release(&pt_buf);
         PyBuffer_Release(&pk_buf);
         if (ad_given) PyBuffer_Release(&ad_buf);
-        PyErr_SetString(TesseraSealError, "pk must be 1568 bytes");
+        PyErr_Format(TesseraSealError, "pk must be %zu bytes", want_pk);
         return NULL;
     }
     uint64_t ts_ms = UINT64_MAX;
@@ -109,16 +171,9 @@ static PyObject *py_encrypt(PyObject *self, PyObject *args, PyObject *kwds) {
         }
     }
 
-    tessera_seal_pub_t pub;
-    /* Note: the binding takes raw pk bytes that carry no suite tag, so
-     * pub.suite is set from the requested suite — which makes the C
-     * library's pub->suite != suite consistency check vacuous through this
-     * binding. Suite validity itself (unknown suite byte) is still
-     * enforced by tessera_seal_encrypt(). */
-    pub.suite = suite;
-    memcpy(pub.pk, pk_buf.buf, TESSERA_SEAL_MLKEM1024_PK_BYTES);
-
-    size_t out_cap = tessera_seal_encrypt_output_size((size_t) pt_buf.len, (size_t) (ad_given ? ad_buf.len : 0));
+    size_t out_cap = is_hybrid
+        ? tessera_seal_encrypt_hybrid_output_size((size_t) pt_buf.len, (size_t) (ad_given ? ad_buf.len : 0))
+        : tessera_seal_encrypt_output_size((size_t) pt_buf.len, (size_t) (ad_given ? ad_buf.len : 0));
     PyObject *out_obj = PyBytes_FromStringAndSize(NULL, (Py_ssize_t) out_cap);
     if (!out_obj) {
         PyBuffer_Release(&pt_buf);
@@ -127,13 +182,35 @@ static PyObject *py_encrypt(PyObject *self, PyObject *args, PyObject *kwds) {
         return NULL;
     }
     size_t out_len = out_cap;
-    int rc = tessera_seal_encrypt(
-        (const uint8_t *) pt_buf.buf, (size_t) pt_buf.len,
-        &pub, suite,
-        ad_given ? (const uint8_t *) ad_buf.buf : NULL,
-        ad_given ? (size_t) ad_buf.len : 0,
-        ts_ms, counter,
-        (uint8_t *) PyBytes_AS_STRING(out_obj), out_cap, &out_len);
+    int rc;
+    if (is_hybrid) {
+        tessera_seal_pub_hybrid_t pub;
+        pub.suite = TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM;
+        memcpy(pub.pk, pk_buf.buf, TESSERA_SEAL_HYBRID_PK_BYTES);
+        rc = tessera_seal_encrypt_hybrid(
+            (const uint8_t *) pt_buf.buf, (size_t) pt_buf.len,
+            &pub,
+            ad_given ? (const uint8_t *) ad_buf.buf : NULL,
+            ad_given ? (size_t) ad_buf.len : 0,
+            ts_ms, counter,
+            (uint8_t *) PyBytes_AS_STRING(out_obj), out_cap, &out_len);
+    } else {
+        tessera_seal_pub_t pub;
+        /* Note: the binding takes raw pk bytes that carry no suite tag, so
+         * pub.suite is set from the requested suite — which makes the C
+         * library's pub->suite != suite consistency check vacuous through this
+         * binding. Suite validity itself (unknown suite byte) is still
+         * enforced by tessera_seal_encrypt(). */
+        pub.suite = suite;
+        memcpy(pub.pk, pk_buf.buf, TESSERA_SEAL_MLKEM1024_PK_BYTES);
+        rc = tessera_seal_encrypt(
+            (const uint8_t *) pt_buf.buf, (size_t) pt_buf.len,
+            &pub, suite,
+            ad_given ? (const uint8_t *) ad_buf.buf : NULL,
+            ad_given ? (size_t) ad_buf.len : 0,
+            ts_ms, counter,
+            (uint8_t *) PyBytes_AS_STRING(out_obj), out_cap, &out_len);
+    }
     PyBuffer_Release(&pt_buf);
     PyBuffer_Release(&pk_buf);
     if (ad_given) PyBuffer_Release(&ad_buf);
@@ -160,50 +237,69 @@ static PyObject *py_decrypt(PyObject *self, PyObject *args, PyObject *kwds) {
                                      &env_buf, &sk_buf, &ad_buf)) return NULL;
     ad_given = ad_buf.buf != NULL;
 
-    if (sk_buf.len != TESSERA_SEAL_MLKEM1024_SK_BYTES) {
+    /* The binding takes raw sk bytes that carry no suite tag, so adopt the
+     * envelope's suite from a structural header peek (TSEAL-00036 / hybrid
+     * TSEAL-00034). The same ML-KEM-1024 keypair is valid under any non-hybrid
+     * v1 suite (see tessera_seal_generate_keypair()), so this cannot weaken the
+     * C library's priv->suite != header.suite BadKey check — it only stops the
+     * previous hardcoded 0x01 from rejecting every legitimate suite-0x02
+     * envelope. For a hybrid 0x06 header we route to tessera_seal_decrypt_hybrid
+     * with the 3200-byte hybrid private key. If the peek fails structurally
+     * (truncated, unknown variant/suite), keep the non-hybrid 0x01 default and
+     * let tessera_seal_decrypt() surface the structural error on its
+     * constant-time path. */
+    tessera_seal_header_t hdr = {0};
+    uint8_t peeked_suite = TESSERA_SEAL_SUITE_MLKEM1024_AESGCM;
+    int peeked = (tessera_seal_peek_header((const uint8_t *) env_buf.buf,
+                                           (size_t) env_buf.len, &hdr) == TESSERA_SEAL_OK);
+    if (peeked) peeked_suite = hdr.suite;
+    int is_hybrid = peeked
+        && peeked_suite == TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM;
+
+    size_t want_sk = is_hybrid ? (size_t) TESSERA_SEAL_HYBRID_SK_BYTES
+                               : (size_t) TESSERA_SEAL_MLKEM1024_SK_BYTES;
+    if ((size_t) sk_buf.len != want_sk) {
         PyBuffer_Release(&env_buf);
         PyBuffer_Release(&sk_buf);
         if (ad_given) PyBuffer_Release(&ad_buf);
-        PyErr_SetString(TesseraSealError, "sk must be 3168 bytes");
+        PyErr_Format(TesseraSealError, "sk must be %zu bytes", want_sk);
         return NULL;
     }
-    tessera_seal_priv_t priv;
-    /* The binding takes raw sk bytes that carry no suite tag, so adopt the
-     * envelope's suite from a structural header peek (TSEAL-00036). The
-     * same ML-KEM-1024 keypair is valid under any v1 suite (see
-     * tessera_seal_generate_keypair()), so this cannot weaken the C
-     * library's priv->suite != header.suite BadKey check — it only stops
-     * the previous hardcoded 0x01 from rejecting every legitimate
-     * suite-0x02 envelope. If the peek fails structurally (truncated,
-     * unknown variant/suite), keep the 0x01 default and let
-     * tessera_seal_decrypt() surface the structural error on its
-     * constant-time path. */
-    tessera_seal_header_t hdr = {0};
-    priv.suite = TESSERA_SEAL_SUITE_MLKEM1024_AESGCM;
-    if (tessera_seal_peek_header((const uint8_t *) env_buf.buf,
-                                 (size_t) env_buf.len, &hdr) == TESSERA_SEAL_OK) {
-        priv.suite = hdr.suite;
-    }
-    memcpy(priv.sk, sk_buf.buf, TESSERA_SEAL_MLKEM1024_SK_BYTES);
 
     /* Output capacity: envelope size minus the structural overhead. */
     size_t cap = (size_t) env_buf.len;
     PyObject *out_obj = PyBytes_FromStringAndSize(NULL, (Py_ssize_t) cap);
     if (!out_obj) {
-        tessera_seal_zeroize_priv(&priv);
         PyBuffer_Release(&env_buf);
         PyBuffer_Release(&sk_buf);
         if (ad_given) PyBuffer_Release(&ad_buf);
         return NULL;
     }
     size_t out_len = cap;
-    int rc = tessera_seal_decrypt(
-        (const uint8_t *) env_buf.buf, (size_t) env_buf.len,
-        &priv,
-        ad_given ? (const uint8_t *) ad_buf.buf : NULL,
-        ad_given ? (size_t) ad_buf.len : 0,
-        (uint8_t *) PyBytes_AS_STRING(out_obj), cap, &out_len);
-    tessera_seal_zeroize_priv(&priv);
+    int rc;
+    if (is_hybrid) {
+        tessera_seal_priv_hybrid_t priv;
+        priv.suite = TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM;
+        memcpy(priv.sk, sk_buf.buf, TESSERA_SEAL_HYBRID_SK_BYTES);
+        rc = tessera_seal_decrypt_hybrid(
+            (const uint8_t *) env_buf.buf, (size_t) env_buf.len,
+            &priv,
+            ad_given ? (const uint8_t *) ad_buf.buf : NULL,
+            ad_given ? (size_t) ad_buf.len : 0,
+            (uint8_t *) PyBytes_AS_STRING(out_obj), cap, &out_len);
+        tessera_seal_zeroize_priv_hybrid(&priv);
+    } else {
+        tessera_seal_priv_t priv;
+        priv.suite = peeked_suite;
+        memcpy(priv.sk, sk_buf.buf, TESSERA_SEAL_MLKEM1024_SK_BYTES);
+        rc = tessera_seal_decrypt(
+            (const uint8_t *) env_buf.buf, (size_t) env_buf.len,
+            &priv,
+            ad_given ? (const uint8_t *) ad_buf.buf : NULL,
+            ad_given ? (size_t) ad_buf.len : 0,
+            (uint8_t *) PyBytes_AS_STRING(out_obj), cap, &out_len);
+        tessera_seal_zeroize_priv(&priv);
+    }
     PyBuffer_Release(&env_buf);
     PyBuffer_Release(&sk_buf);
     if (ad_given) PyBuffer_Release(&ad_buf);
@@ -305,6 +401,10 @@ static PyObject *py_set_now_ms(PyObject *self, PyObject *arg) {
 static PyMethodDef Methods[] = {
     {"generate_keypair", (PyCFunction) py_generate_keypair, METH_VARARGS | METH_KEYWORDS,
      "generate_keypair(suite=0x01) -> (sk_bytes, pk_bytes)"},
+    {"generate_keypair_hybrid", py_generate_keypair_hybrid, METH_NOARGS,
+     "generate_keypair_hybrid() -> (sk_bytes[3200], pk_bytes[1600])  (suite 0x06)"},
+    {"generate_keypair_hybrid_from_seed", py_generate_keypair_hybrid_from_seed, METH_O,
+     "generate_keypair_hybrid_from_seed(seed[96]) -> (sk_bytes[3200], pk_bytes[1600])"},
     {"encrypt", (PyCFunction) py_encrypt, METH_VARARGS | METH_KEYWORDS,
      "encrypt(pt, pk_bytes, suite=0x01, ad=b\"\", ts_ms=None, counter=0) -> envelope"},
     {"decrypt", (PyCFunction) py_decrypt, METH_VARARGS | METH_KEYWORDS,
@@ -358,10 +458,16 @@ PyMODINIT_FUNC PyInit_tessera_seal_ext(void) {
     PyModule_AddIntConstant(m, "VARIANT_TESSERA_SEAL", TESSERA_SEAL_VARIANT);
     PyModule_AddIntConstant(m, "SUITE_MLKEM1024_AESGCM", TESSERA_SEAL_SUITE_MLKEM1024_AESGCM);
     PyModule_AddIntConstant(m, "SUITE_MLKEM1024_CHACHA", TESSERA_SEAL_SUITE_MLKEM1024_CHACHA);
+    PyModule_AddIntConstant(m, "SUITE_HYBRID_X25519_MLKEM1024_AESGCM",
+                            TESSERA_SEAL_SUITE_HYBRID_X25519_MLKEM1024_AESGCM);
     PyModule_AddIntConstant(m, "HEADER_BYTES", TESSERA_SEAL_HEADER_BYTES);
     PyModule_AddIntConstant(m, "MLKEM1024_PK_BYTES", TESSERA_SEAL_MLKEM1024_PK_BYTES);
     PyModule_AddIntConstant(m, "MLKEM1024_SK_BYTES", TESSERA_SEAL_MLKEM1024_SK_BYTES);
     PyModule_AddIntConstant(m, "MLKEM1024_CT_BYTES", TESSERA_SEAL_MLKEM1024_CT_BYTES);
+    PyModule_AddIntConstant(m, "HYBRID_PK_BYTES", TESSERA_SEAL_HYBRID_PK_BYTES);
+    PyModule_AddIntConstant(m, "HYBRID_SK_BYTES", TESSERA_SEAL_HYBRID_SK_BYTES);
+    PyModule_AddIntConstant(m, "HYBRID_CT_BYTES", TESSERA_SEAL_HYBRID_CT_BYTES);
+    PyModule_AddIntConstant(m, "HYBRID_SEED_BYTES", TESSERA_SEAL_HYBRID_SEED_BYTES);
     PyModule_AddIntConstant(m, "AEAD_NONCE_BYTES", TESSERA_SEAL_AEAD_NONCE_BYTES);
     PyModule_AddIntConstant(m, "AEAD_TAG_BYTES", TESSERA_SEAL_AEAD_TAG_BYTES);
     PyModule_AddIntConstant(m, "COMMIT_BYTES", TESSERA_SEAL_COMMIT_BYTES);

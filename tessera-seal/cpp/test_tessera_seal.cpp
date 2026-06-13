@@ -42,6 +42,25 @@ static std::string first_str_field(const std::string& json, const std::string& k
     return json.substr(p, e - p);
 }
 
+// Forward-advancing field scan (mirrors the C test's find_str_field): finds
+// the next `"key": "..."` at or after `pos`, returns its string value, and
+// advances `pos` past the value's closing quote so successive calls read the
+// record's fields in document order. Returns false (and leaves pos) if not
+// found. This is robust to records that omit some fields (e.g. negative
+// hybrid_ad_binding records have no expected_plaintext_hex).
+static bool next_str_field(const std::string& json, const std::string& key,
+                           std::size_t& pos, std::string& out) {
+    const std::string needle = "\"" + key + "\": \"";
+    std::size_t p = json.find(needle, pos);
+    if (p == std::string::npos) return false;
+    p += needle.size();
+    std::size_t e = json.find('"', p);
+    if (e == std::string::npos) return false;
+    out = json.substr(p, e - p);
+    pos = e + 1;
+    return true;
+}
+
 static std::vector<std::uint8_t> unhex(const std::string& s) {
     std::vector<std::uint8_t> out(s.size() / 2);
     for (std::size_t i = 0; i < out.size(); ++i) {
@@ -157,22 +176,21 @@ int main() {
         std::printf("PASS tamper (6 sites)\n"); ++g_pass;
     }
 
-    // Suite 0x06 (hybrid) rejection — TSEAL-00044 (TP-030).
+    // Non-hybrid path vs suite 0x06 — TSEAL-00031 (mirrors the C reference's
+    // test_nonhybrid_path_rejects_0x06).
     //
-    // The C++ wrapper has no hybrid support yet (TSEAL-00031 backlog). The
-    // normative contract is that non-hybrid languages MUST reject suite 0x06
-    // as UnknownSuite — never the BadKey-class Error, never the auth-class
-    // DecryptionError. The wrapper delegates to the C reference, where
-    // tessera_seal_peek_header() owns suite validation and decrypt() runs it
-    // before the priv->suite BAD_KEY check, so both layers must throw
-    // UnknownSuite here.
+    // With hybrid support landed, suite 0x06 is now a KNOWN suite:
+    // tessera_seal_peek_header() ACCEPTS it (pinning KEM_CT_LEN to the 1600 B
+    // hybrid size). The NON-hybrid decrypt() path still rejects a 0x06
+    // envelope, but as a structural BadKey (its non-hybrid PrivateKey carries a
+    // 0x01/0x02 key; priv->suite != header.suite 0x06), never the auth-class
+    // DecryptionError, never UnknownSuite.
     //
     // Header bytes are copied verbatim from the first record (hybrid_empty)
     // of ../conformance/vectors/hybrid_decrypt.json: ts=1700000000000,
     // variant=0x04, suite=0x06, ctr=10, kem_ct_len=1600, ad_len=0. The body
     // is zero-padded to the declared structural size (1600 KEM_CT + 12 nonce
-    // + 16 tag + 32 commit = 1676 B total), so the only thing wrong with
-    // this envelope is the suite.
+    // + 16 tag + 32 commit = 1676 B total).
     {
         const std::uint8_t hybrid_header[16] = {
             0x01, 0x8b, 0xcf, 0xe5, 0x68, 0x00, 0x04, 0x06,
@@ -181,27 +199,35 @@ int main() {
         std::vector<std::uint8_t> env(16 + 1600 + 12 + 16 + 32, 0x00);
         std::memcpy(env.data(), hybrid_header, sizeof(hybrid_header));
 
-        bool peek_threw = false;
-        try { (void)peek_header(env); }
-        catch (const UnknownSuite&) { peek_threw = true; }
-        catch (...) {}
-        EXPECT(peek_threw, "suite_0x06_peek_header_unknown_suite");
+        // Structural layer: peek_header now ACCEPTS 0x06 (known suite, 1600 B).
+        bool peek_ok = false;
+        try {
+            auto h = peek_header(env);
+            peek_ok = (h.suite == 0x06 && h.kem_ct_len == 1600);
+        } catch (...) {}
+        EXPECT(peek_ok, "suite_0x06_peek_header_known_suite");
 
+        // Non-hybrid decrypt with a 0x01 key: BadKey (suite/key mismatch),
+        // before any KEM/AEAD work. Never UnknownSuite, never DecryptionError.
         auto [priv, pub] = generate_keypair();
-        bool dec_threw = false;
+        bool dec_badkey = false;
         try { (void)decrypt(env, priv, {}); }
-        catch (const UnknownSuite&) { dec_threw = true; }
-        catch (...) {}  // BadKey / DecryptionError / anything else = FAIL
-        EXPECT(dec_threw, "suite_0x06_decrypt_unknown_suite");
+        catch (const DecryptionError&) {}
+        catch (const UnknownSuite&) {}
+        catch (const Error& e) { dec_badkey = (e.code() == TESSERA_SEAL_E_BAD_KEY); }
+        catch (...) {}
+        EXPECT(dec_badkey, "suite_0x06_nonhybrid_decrypt_bad_key");
 
-        // A well-formed 0x01 envelope re-tagged 0x06 must also be UnknownSuite.
+        // A well-formed 0x01 envelope re-tagged 0x06 has the wrong KEM_CT_LEN
+        // (1568, not 1600) so peek_header — and thus decrypt — rejects it with
+        // InvalidLength.
         auto env2 = encrypt({'x'}, pub);
         env2[7] = 0x06;
-        bool retag_threw = false;
+        bool retag_invalid = false;
         try { (void)decrypt(env2, priv, {}); }
-        catch (const UnknownSuite&) { retag_threw = true; }
+        catch (const InvalidLength&) { retag_invalid = true; }
         catch (...) {}
-        EXPECT(retag_threw, "suite_0x06_retag_decrypt_unknown_suite");
+        EXPECT(retag_invalid, "suite_0x06_retag_decrypt_invalid_length");
     }
 
     // Peek header
@@ -239,10 +265,17 @@ int main() {
         auto badv = env; badv[6] = 0x03;
         bool threw_v = false;
         try { (void)peek_ad(badv); } catch (const UnknownVariant&) { threw_v = true; } catch (...) {}
-        auto bads = env; bads[7] = 0x06;  // hybrid: no C/C++ support yet
+        // 0x06 is a KNOWN suite (hybrid), but this non-hybrid envelope carries
+        // KEM_CT_LEN=1568, not the 1600 a 0x06 envelope requires — so
+        // peek_header (via peek_ad) rejects InvalidLength, not UnknownSuite.
+        auto bad6 = env; bad6[7] = 0x06;
+        bool threw_6 = false;
+        try { (void)peek_ad(bad6); } catch (const InvalidLength&) { threw_6 = true; } catch (...) {}
+        // A genuinely unimplemented suite byte (0x05) is UnknownSuite.
+        auto bads = env; bads[7] = 0x05;
         bool threw_s = false;
         try { (void)peek_ad(bads); } catch (const UnknownSuite&) { threw_s = true; } catch (...) {}
-        EXPECT(threw_v && threw_s, "peek_ad_unknown_variant_suite");
+        EXPECT(threw_v && threw_6 && threw_s, "peek_ad_unknown_variant_suite");
     }
 
     // peek_ad KAT: first positive record of ad_binding.json binds a 41-byte
@@ -292,10 +325,251 @@ int main() {
         EXPECT(monotonic, "sender_context_monotonic");
 
         bool init_threw = false;
-        try { SenderContext bad(0x06); }  // hybrid: no C/C++ support yet
+        try { SenderContext bad(0x06); }  // hybrid: C SenderContext is 0x01/0x02 only
         catch (const UnknownSuite&) { init_threw = true; }
         catch (...) {}
         EXPECT(init_threw, "sender_context_rejects_unknown_suite");
+    }
+
+    // -----------------------------------------------------------------------
+    // Hybrid suite 0x06 (X25519 + ML-KEM-1024 + AES-256-GCM + UtC), TSEAL-00031.
+    // Mirrors the C / Rust / Go hybrid set: roundtrip, envelope size + wire
+    // KEM_CT_LEN==1600, AD-binding negative, X25519-half tamper, from-seed
+    // determinism, suite/key consistency, and KAT byte-identity consumption of
+    // hybrid_decrypt.json + hybrid_ad_binding.json.
+    // -----------------------------------------------------------------------
+
+    // Hybrid roundtrip.
+    {
+        auto [priv, pub] = generate_keypair_hybrid();
+        EXPECT(pub.suite() == 0x06 && priv.suite() == 0x06, "hybrid_keypair_suite");
+        std::vector<std::uint8_t> pt = {'h','y','b','r','i','d',' ','c','+','+'};
+        auto env = encrypt_hybrid(pt, pub);
+        auto got = decrypt_hybrid(env, priv, {});
+        EXPECT(got == pt, "hybrid_roundtrip");
+    }
+
+    // Hybrid envelope size + wire KEM_CT_LEN == 1600 + peek_header agrees.
+    {
+        auto [priv, pub] = generate_keypair_hybrid();
+        (void)priv;
+        std::vector<std::uint8_t> ad(41);
+        for (std::size_t i = 0; i < 41; ++i) ad[i] = static_cast<std::uint8_t>(i);
+        std::vector<std::uint8_t> pt = {'s','i','z','e'};
+        auto env = encrypt_hybrid(pt, pub, ad);
+        // Envelope size matches the hybrid predicate (32 B larger in KEM_CT).
+        bool size_ok = (env.size() == envelope_size_hybrid(pt.size(), ad.size()));
+        // Wire KEM_CT_LEN field (big-endian at offset 10) == 1600.
+        std::uint16_t wire_kem_ct_len =
+            static_cast<std::uint16_t>((env[10] << 8) | env[11]);
+        auto h = peek_header(env);
+        EXPECT(size_ok && wire_kem_ct_len == 1600 && h.suite == 0x06
+               && h.kem_ct_len == 1600 && env.size() == kHeaderBytes + kHybridCTBytes
+                  + ad.size() + kAEADNonceBytes + pt.size() + kAEADTagBytes + kCommitBytes,
+               "hybrid_envelope_size_and_kem_ct_len");
+    }
+
+    // Hybrid AD binding positive + negative (1-bit flip -> DecryptionError).
+    {
+        auto [priv, pub] = generate_keypair_hybrid();
+        std::vector<std::uint8_t> ad(41);
+        for (std::size_t i = 0; i < 41; ++i) ad[i] = static_cast<std::uint8_t>(0x80 + i);
+        std::vector<std::uint8_t> pt = {'b','o','u','n','d'};
+        auto env = encrypt_hybrid(pt, pub, ad);
+        auto got = decrypt_hybrid(env, priv, ad);
+        EXPECT(got == pt, "hybrid_ad_binding_positive");
+
+        auto wrong = ad;
+        wrong[7] ^= 0x01;
+        bool threw = false;
+        try { (void)decrypt_hybrid(env, priv, wrong); }
+        catch (const DecryptionError&) { threw = true; }
+        catch (...) {}
+        EXPECT(threw, "hybrid_ad_binding_negative");
+    }
+
+    // Hybrid X25519-half tamper: flip a byte in the trailing 32 B of KEM_CT
+    // (the X25519 ephemeral pk). The combiner output diverges -> single
+    // auth-class DecryptionError (the hybrid-specific failure mode).
+    {
+        auto [priv, pub] = generate_keypair_hybrid();
+        std::vector<std::uint8_t> pt = {'t','a','m','p','e','r'};
+        auto env = encrypt_hybrid(pt, pub);
+        // KEM_CT spans [HEADER .. HEADER+1600); the X25519 ephemeral pk is the
+        // last 32 bytes of that region.
+        std::size_t x_eph_off = kHeaderBytes + kMLKem1024CTBytes + 5;
+        env[x_eph_off] ^= 0x40;
+        bool threw = false;
+        try { (void)decrypt_hybrid(env, priv, {}); }
+        catch (const DecryptionError&) { threw = true; }
+        catch (...) {}
+        EXPECT(threw, "hybrid_x25519_tamper");
+    }
+
+    // Hybrid from-seed determinism: a 96-byte seed reconstructs a stable
+    // keypair, and the seed-derived key round-trips an envelope.
+    {
+        std::vector<std::uint8_t> seed(kHybridSeedBytes);
+        for (std::size_t i = 0; i < seed.size(); ++i)
+            seed[i] = static_cast<std::uint8_t>(i * 3 + 11);
+        auto [p1, q1] = generate_keypair_hybrid_from_seed(seed);
+        auto [p2, q2] = generate_keypair_hybrid_from_seed(seed);
+        bool stable = (q1.to_bytes() == q2.to_bytes());
+        std::vector<std::uint8_t> pt = {'s','e','e','d'};
+        auto env = encrypt_hybrid(pt, q1);
+        auto got = decrypt_hybrid(env, p1, {});
+        // Cross-decrypt with the independently reconstructed private key too.
+        auto got2 = decrypt_hybrid(env, p2, {});
+        EXPECT(stable && got == pt && got2 == pt, "hybrid_from_seed_determinism");
+    }
+
+    // Hybrid suite/key consistency.
+    {
+        // decrypt(): a hybrid priv whose suite tag is wrong -> BadKey.
+        auto [priv, pub] = generate_keypair_hybrid();
+        auto env = encrypt_hybrid({'x'}, pub);
+        // Forge a hybrid private key tagged with the wrong suite (0x01) but the
+        // correct key bytes; decrypt_hybrid must reject on the priv.suite check.
+        auto sk_bytes = std::vector<std::uint8_t>(
+            priv.c_ptr()->sk, priv.c_ptr()->sk + kHybridSKBytes);
+        auto mis = HybridPrivateKey::from_bytes(sk_bytes);
+        mis.c_ptr()->suite = 0x01;  // header is 0x06 -> mismatch
+        bool dec_badkey = false;
+        try { (void)decrypt_hybrid(env, mis, {}); }
+        catch (const DecryptionError&) {}
+        catch (const Error& e) { dec_badkey = (e.code() == TESSERA_SEAL_E_BAD_KEY); }
+        catch (...) {}
+        EXPECT(dec_badkey, "hybrid_decrypt_suite_key_mismatch_bad_key");
+
+        // encrypt(): a hybrid pub whose suite tag is not 0x06 -> BadKey.
+        auto pk_bytes = pub.to_bytes();
+        auto mis_pub = HybridPublicKey::from_bytes(pk_bytes);
+        mis_pub.c_ptr()->suite = 0x01;
+        bool enc_badkey = false;
+        try { (void)encrypt_hybrid({'x'}, mis_pub); }
+        catch (const Error& e) { enc_badkey = (e.code() == TESSERA_SEAL_E_BAD_KEY); }
+        catch (...) {}
+        EXPECT(enc_badkey, "hybrid_encrypt_suite_key_mismatch_bad_key");
+    }
+
+    // KAT byte-identity: decrypt every record of hybrid_decrypt.json to the
+    // Python-generated expected plaintext. THIS is the cross-language
+    // byte-identity gate for suite 0x06 — the proof the C++ port is correct.
+    // Fields are read in document order via a forward cursor: every record is
+    // op="decrypt" (positive). Field order: name, op, suite,
+    // private_key_seed_hex, private_key_hex, public_key_hex, envelope_hex,
+    // expected_ad_hex, expected_plaintext_hex.
+    {
+        std::string json = slurp("../conformance/vectors/hybrid_decrypt.json");
+        if (json.empty()) {
+            std::printf("FAIL kat_hybrid_decrypt: cannot read "
+                        "../conformance/vectors/hybrid_decrypt.json\n");
+            ++g_fail;
+        } else {
+            std::size_t pos = 0;
+            int records = 0;
+            bool all_ok = true;
+            std::string nm, op, sk_hex, env_hex, ad_hex, pt_hex;
+            while (next_str_field(json, "name", pos, nm)) {
+                if (!next_str_field(json, "private_key_hex", pos, sk_hex)) break;
+                if (!next_str_field(json, "envelope_hex", pos, env_hex)) break;
+                if (!next_str_field(json, "expected_ad_hex", pos, ad_hex)) break;
+                if (!next_str_field(json, "expected_plaintext_hex", pos, pt_hex)) break;
+
+                if (sk_hex.size() != kHybridSKBytes * 2) {
+                    std::printf("FAIL kat-h:%s bad sk len\n", nm.c_str());
+                    all_ok = false; ++g_fail; continue;
+                }
+                auto sk  = unhex(sk_hex);
+                auto env = unhex(env_hex);
+                auto expected_ad = ad_hex.empty() ? std::vector<std::uint8_t>{} : unhex(ad_hex);
+                auto expected_pt = pt_hex.empty() ? std::vector<std::uint8_t>{} : unhex(pt_hex);
+                auto priv = HybridPrivateKey::from_bytes(sk);
+                bool ok = false;
+                try {
+                    auto got = decrypt_hybrid(env, priv, expected_ad);
+                    ok = (got == expected_pt);
+                } catch (const std::exception& e) {
+                    std::printf("FAIL kat-h:%s threw %s\n", nm.c_str(), e.what());
+                }
+                if (!ok) {
+                    std::printf("FAIL kat-h:%s plaintext mismatch\n", nm.c_str());
+                    all_ok = false; ++g_fail;
+                } else {
+                    ++records;
+                }
+            }
+            EXPECT(all_ok && records == 4,
+                   "kat_hybrid_decrypt_json_byte_identical (4 records)");
+        }
+    }
+
+    // KAT byte-identity: hybrid_ad_binding.json. Schema differs from
+    // hybrid_decrypt.json — records carry op="decrypt" (positive, with
+    // expected_plaintext_hex) or op="decrypt_should_fail" (negative, with
+    // error_kind DECRYPT_FAILED and NO expected_plaintext_hex). Positive
+    // records must decrypt byte-identically with the matching AD; negative
+    // records (wrong AD / flipped X25519 ephemeral) must throw DecryptionError.
+    // Switch on `op`; fields are scanned in document order via the forward
+    // cursor (mirrors the C reference test_kat_ad_binding).
+    {
+        std::string json = slurp("../conformance/vectors/hybrid_ad_binding.json");
+        if (json.empty()) {
+            std::printf("FAIL kat_hybrid_ad_binding: cannot read "
+                        "../conformance/vectors/hybrid_ad_binding.json\n");
+            ++g_fail;
+        } else {
+            std::size_t pos = 0;
+            int records = 0, positives = 0, negatives = 0;
+            bool all_ok = true;
+            std::string nm, op, sk_hex, env_hex, ad_hex;
+            while (next_str_field(json, "name", pos, nm)) {
+                if (!next_str_field(json, "op", pos, op)) break;
+                if (!next_str_field(json, "private_key_hex", pos, sk_hex)) break;
+                if (!next_str_field(json, "envelope_hex", pos, env_hex)) break;
+                if (!next_str_field(json, "expected_ad_hex", pos, ad_hex)) break;
+                bool expect_fail = (op == "decrypt_should_fail");
+
+                if (sk_hex.size() != kHybridSKBytes * 2) {
+                    std::printf("FAIL kat-h-ad:%s bad sk len\n", nm.c_str());
+                    all_ok = false; ++g_fail; continue;
+                }
+                auto sk  = unhex(sk_hex);
+                auto env = unhex(env_hex);
+                auto ad  = ad_hex.empty() ? std::vector<std::uint8_t>{} : unhex(ad_hex);
+                auto priv = HybridPrivateKey::from_bytes(sk);
+
+                bool ok = false;
+                if (expect_fail) {
+                    // Negative: must throw the single auth-class DecryptionError.
+                    try { (void)decrypt_hybrid(env, priv, ad); }
+                    catch (const DecryptionError&) { ok = true; }
+                    catch (...) {}
+                    if (ok) ++negatives;
+                } else {
+                    // Positive: decrypt byte-identically. Recover the expected
+                    // plaintext field that follows the AD field for this record.
+                    std::string pt_hex;
+                    std::size_t pt_pos = pos;
+                    next_str_field(json, "expected_plaintext_hex", pt_pos, pt_hex);
+                    auto expected_pt = pt_hex.empty()
+                        ? std::vector<std::uint8_t>{} : unhex(pt_hex);
+                    try {
+                        auto got = decrypt_hybrid(env, priv, ad);
+                        ok = (got == expected_pt);
+                    } catch (const std::exception& e) {
+                        std::printf("FAIL kat-h-ad:%s threw %s\n", nm.c_str(), e.what());
+                    }
+                    if (ok) ++positives;
+                }
+                if (!ok) { std::printf("FAIL kat-h-ad:%s (expect_fail=%d)\n",
+                                       nm.c_str(), expect_fail ? 1 : 0);
+                           all_ok = false; ++g_fail; }
+                else ++records;
+            }
+            EXPECT(all_ok && records == 4 && positives == 2 && negatives == 2,
+                   "kat_hybrid_ad_binding_json_byte_identical (2 pos + 2 neg)");
+        }
     }
 
     std::printf("\nTotal: %d pass, %d fail\n", g_pass, g_fail);

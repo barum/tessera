@@ -2,6 +2,9 @@
 
 Reverse-chronological. One entry per PR (or per logical change shipped together).
 
+- 2026-06-13 — [TSEAL-00034 — Hybrid suite 0x06 CPython extension port (wraps C; in-suite KAT byte-identity) (sec)](2026-06-13-tseal-00034-hybrid-cpython-port.md)
+- 2026-06-13 — [TSEAL-00032 — Hybrid suite 0x06 TypeScript port (@noble/curves 2.0.1; in-suite KAT byte-identity) (sec)](2026-06-13-tseal-00032-hybrid-typescript-port.md)
+- 2026-06-13 — [TSEAL-00031 — Hybrid suite 0x06 C++ wrapper port (wraps C; in-suite KAT byte-identity) (sec)](2026-06-13-tseal-00031-hybrid-cpp-port.md)
 - 2026-06-13 — [TSEAL-00030 — Hybrid suite 0x06 (X25519 + ML-KEM-1024) C port; hybrid is now a 4-way KAT contract, C 288→297 (sec)](2026-06-13-tseal-00030-hybrid-c-port.md)
 - 2026-06-13 — [TSEAL-00049 — Pin KEM_CT_LEN to the suite ciphertext size; fixes a HIGH C heap over-read (CWE-125) (sec)](2026-06-13-tseal-00049-kem-ct-len-pin.md)
 - 2026-06-10 — [TSEAL-00048 — HQC suite-byte 0x07 reservation, automated timing-histogram regression, second-source ML-KEM vector cross-check (sec)](2026-06-10-tseal-00048-hqc-timing-mlkemtest.md)

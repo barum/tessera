@@ -8,16 +8,24 @@
  * Authority order: whitepaper -> python/tessera_seal.py -> c/tessera_seal.h ->
  * THIS MODULE. Cross-language KAT vectors live under ../conformance/vectors/.
  *
+ * An opt-in hybrid suite (0x06, X25519 + ML-KEM-1024, X-Wing-style combiner)
+ * is available as a separate suite-byte allocation; suites 0x01/0x02 remain
+ * pure post-quantum (TSEAL-00032).
+ *
  * Uses Paul Miller's noble libraries:
  *   - @noble/post-quantum for ML-KEM-1024
+ *   - @noble/curves for X25519 (hybrid suite 0x06)
  *   - @noble/ciphers for AES-256-GCM and ChaCha20-Poly1305
  *   - @noble/hashes for SHA3-256, SHAKE-256, HMAC-SHA3-256, HKDF-SHA3-256
  *
  * No "Kyber" naming leaks: ml_kem1024 from noble is re-exported as MlKem1024.
+ * The hybrid public surface uses "X25519" and "ML-KEM-1024" only — never
+ * "Curve25519" or "ECDH".
  */
 
 import { randomBytes } from "node:crypto";
 import { ml_kem1024 } from "@noble/post-quantum/ml-kem.js";
+import { x25519 } from "@noble/curves/ed25519.js";
 import { gcm } from "@noble/ciphers/aes.js";
 import { chacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { shake256, sha3_256 } from "@noble/hashes/sha3.js";
@@ -31,12 +39,24 @@ export const MLKem1024 = ml_kem1024;
 export const TESSERA_SEAL_VARIANT = 0x04 as const;
 export const SUITE_MLKEM1024_AESGCM = 0x01 as const;
 export const SUITE_MLKEM1024_CHACHA = 0x02 as const;
+export const SUITE_HYBRID_X25519_MLKEM1024_AESGCM = 0x06 as const;
 export const HEADER_BYTES = 16 as const;
 export const MLKEM1024_PK_BYTES = 1568 as const;
 export const MLKEM1024_SK_BYTES = 3168 as const;
 export const MLKEM1024_CT_BYTES = 1568 as const;
 export const MLKEM1024_SS_BYTES = 32 as const;
 export const MLKEM1024_SEED_BYTES = 64 as const;
+// X25519 sizes (RFC 7748) — all 32 bytes.
+export const X25519_PK_BYTES = 32 as const;
+export const X25519_SK_BYTES = 32 as const;
+export const X25519_SS_BYTES = 32 as const;
+// Hybrid sizes (suite 0x06): public key = ML-KEM-1024 pk || X25519 pk;
+// private key = ML-KEM-1024 sk || X25519 sk; KEM ciphertext = ML-KEM-1024 ct
+// || X25519 ephemeral pk; seed = ML-KEM seed || X25519 scalar.
+export const HYBRID_PK_BYTES = (MLKEM1024_PK_BYTES + X25519_PK_BYTES) as 1600; // 1600
+export const HYBRID_SK_BYTES = (MLKEM1024_SK_BYTES + X25519_SK_BYTES) as 3200; // 3200
+export const HYBRID_CT_BYTES = (MLKEM1024_CT_BYTES + X25519_PK_BYTES) as 1600; // 1600
+export const HYBRID_SEED_BYTES = (MLKEM1024_SEED_BYTES + X25519_SK_BYTES) as 96; // 96
 export const AEAD_NONCE_BYTES = 12 as const;
 export const AEAD_TAG_BYTES = 16 as const;
 export const COMMIT_BYTES = 32 as const;
@@ -61,6 +81,34 @@ const INFO_AEAD_KEY = new TextEncoder().encode("pqcrypt v1 aead k");
 const INFO_AEAD_NONCE = new TextEncoder().encode("pqcrypt v1 aead n");
 const INFO_COMMIT_KEY = new TextEncoder().encode("pqcrypt v1 commit");
 const INFO_TIMING_PAD = new TextEncoder().encode("pqcrypt v1 timing pad");
+// Hybrid combiner label (suite 0x06). frozen v1 wire tag — not a rebrandable
+// name. X-Wing-style: hash both shared secrets, both halves of the KEM
+// ciphertext, and this fixed protocol label.
+const HYBRID_COMBINER_LABEL = new TextEncoder().encode("pqcrypt v1 hybrid combiner");
+
+// --- Suite predicates / size helpers (hybrid-aware)
+
+const ALLOWED_SUITES: readonly number[] = [
+    SUITE_MLKEM1024_AESGCM,
+    SUITE_MLKEM1024_CHACHA,
+    SUITE_HYBRID_X25519_MLKEM1024_AESGCM,
+];
+
+function isHybrid(suite: number): boolean {
+    return suite === SUITE_HYBRID_X25519_MLKEM1024_AESGCM;
+}
+
+function pkSizeFor(suite: number): number {
+    return isHybrid(suite) ? HYBRID_PK_BYTES : MLKEM1024_PK_BYTES;
+}
+
+function skSeedSizeFor(suite: number): number {
+    return isHybrid(suite) ? HYBRID_SEED_BYTES : MLKEM1024_SEED_BYTES;
+}
+
+function ctSizeFor(suite: number): number {
+    return isHybrid(suite) ? HYBRID_CT_BYTES : MLKEM1024_CT_BYTES;
+}
 
 // --- Errors
 
@@ -130,7 +178,7 @@ function nowMs(): number {
 // --- Suite check
 
 function checkSuite(suite: number): void {
-    if (suite !== SUITE_MLKEM1024_AESGCM && suite !== SUITE_MLKEM1024_CHACHA) {
+    if (!ALLOWED_SUITES.includes(suite)) {
         throw new UnknownSuite(suite);
     }
 }
@@ -138,19 +186,25 @@ function checkSuite(suite: number): void {
 // --- Keys (opaque wrappers)
 
 export interface PublicKey {
+    // Suites 0x01/0x02: 1568 B (ML-KEM-1024 pk). Suite 0x06: 1600 B
+    // (ML-KEM-1024 pk || X25519 pk).
     bytes: Uint8Array;
     suite: number;
 }
 
 export interface PrivateKey {
-    bytes: Uint8Array;      // 3168-byte expanded form (FIPS 203)
-    seed: Uint8Array;       // 64-byte (d || z) — kept for KAT round-trips
+    // Suites 0x01/0x02: 3168-byte expanded form (FIPS 203). Suite 0x06:
+    // 3200 B (ML-KEM-1024 sk || X25519 scalar).
+    bytes: Uint8Array;
+    // Non-hybrid: 64-byte (d || z). Hybrid: 96-byte (d || z || X25519 scalar).
+    // Kept for KAT round-trips.
+    seed: Uint8Array;
     suite: number;
 }
 
 export function generateKeypair(suite: number = SUITE_MLKEM1024_AESGCM): { priv: PrivateKey; pub: PublicKey } {
     checkSuite(suite);
-    const seed = randomBytes(MLKEM1024_SEED_BYTES);
+    const seed = randomBytes(skSeedSizeFor(suite));
     return generateKeypairFromSeed(seed, suite);
 }
 
@@ -159,20 +213,39 @@ export function generateKeypairFromSeed(
     suite: number = SUITE_MLKEM1024_AESGCM
 ): { priv: PrivateKey; pub: PublicKey } {
     checkSuite(suite);
-    if (seed.length !== MLKEM1024_SEED_BYTES) {
-        throw new TesseraSealError(`seed must be ${MLKEM1024_SEED_BYTES} bytes`);
+    if (!isHybrid(suite)) {
+        if (seed.length !== MLKEM1024_SEED_BYTES) {
+            throw new TesseraSealError(`seed must be ${MLKEM1024_SEED_BYTES} bytes`);
+        }
+        const { secretKey, publicKey } = MLKem1024.keygen(seed);
+        return {
+            priv: { bytes: secretKey, seed: new Uint8Array(seed), suite },
+            pub: { bytes: publicKey, suite },
+        };
     }
-    const { secretKey, publicKey } = MLKem1024.keygen(seed);
+    // Hybrid path: 96-byte seed = ML-KEM seed (64) || X25519 scalar (32).
+    if (seed.length !== HYBRID_SEED_BYTES) {
+        throw new TesseraSealError(
+            `hybrid seed must be ${HYBRID_SEED_BYTES} bytes (64 ML-KEM seed || 32 X25519 scalar)`
+        );
+    }
+    const pqSeed = seed.subarray(0, MLKEM1024_SEED_BYTES);
+    const xScalar = seed.subarray(MLKEM1024_SEED_BYTES);
+    const { secretKey: mlSk, publicKey: mlPk } = MLKem1024.keygen(pqSeed);
+    // x25519.getPublicKey clamps the scalar per RFC 7748 (matches the Python
+    // `cryptography` reference and the recorded KAT public keys).
+    const xPk = x25519.getPublicKey(xScalar);
     return {
-        priv: { bytes: secretKey, seed: new Uint8Array(seed), suite },
-        pub: { bytes: publicKey, suite },
+        priv: { bytes: concat(mlSk, xScalar), seed: new Uint8Array(seed), suite },
+        pub: { bytes: concat(mlPk, xPk), suite },
     };
 }
 
 export function publicKeyFromBytes(pk: Uint8Array, suite: number = SUITE_MLKEM1024_AESGCM): PublicKey {
     checkSuite(suite);
-    if (pk.length !== MLKEM1024_PK_BYTES) {
-        throw new TesseraSealError(`public key must be ${MLKEM1024_PK_BYTES} bytes`);
+    const expected = pkSizeFor(suite);
+    if (pk.length !== expected) {
+        throw new TesseraSealError(`public key for suite 0x${suite.toString(16).padStart(2, "0")} must be ${expected} bytes`);
     }
     return { bytes: new Uint8Array(pk), suite };
 }
@@ -234,10 +307,20 @@ export function peekHeader(env: Uint8Array): DecodedHeader {
     if (env.length < HEADER_BYTES) throw new InvalidLength("envelope shorter than header");
     const h = unpackHeader(env);
     if (h.variant !== TESSERA_SEAL_VARIANT) throw new UnknownVariant(h.variant);
-    if (h.suite !== SUITE_MLKEM1024_AESGCM && h.suite !== SUITE_MLKEM1024_CHACHA) {
+    if (!ALLOWED_SUITES.includes(h.suite)) {
         throw new UnknownSuite(h.suite);
     }
-    if (h.kemCtLen > MAX_KEM_CT_LEN) throw new InvalidLength(`kem_ct_len ${h.kemCtLen}`);
+    // Pin KEM_CT_LEN to the suite-required KEM-ciphertext size (1568 for the
+    // pure ML-KEM-1024 suites 0x01/0x02; 1600 for hybrid 0x06). Accepting any
+    // other value would let a fixed-size KEM read run past the envelope buffer
+    // (CWE-125, TSEAL-00049). The exact-size check subsumes the MAX_KEM_CT_LEN
+    // bound.
+    const expectedCt = ctSizeFor(h.suite);
+    if (h.kemCtLen !== expectedCt) {
+        throw new InvalidLength(
+            `kem_ct_len ${h.kemCtLen} != ${expectedCt} required for suite 0x${h.suite.toString(16).padStart(2, "0")}`
+        );
+    }
     if (h.adLen > MAX_AD_LEN) throw new InvalidLength(`ad_len ${h.adLen}`);
     return h;
 }
@@ -284,7 +367,11 @@ export function validateMinTimestamp(env: Uint8Array, minMs: number): boolean {
 }
 
 export function envelopeSize(ptLen: number, adLen: number): number {
-    return HEADER_BYTES + MLKEM1024_CT_BYTES + adLen + AEAD_NONCE_BYTES + ptLen + AEAD_TAG_BYTES + COMMIT_BYTES;
+    return envelopeSizeForSuite(SUITE_MLKEM1024_AESGCM, ptLen, adLen);
+}
+
+export function envelopeSizeForSuite(suite: number, ptLen: number, adLen: number): number {
+    return HEADER_BYTES + ctSizeFor(suite) + adLen + AEAD_NONCE_BYTES + ptLen + AEAD_TAG_BYTES + COMMIT_BYTES;
 }
 
 // --- KDF schedule
@@ -326,10 +413,15 @@ function deriveSyntheticKeys(headerBytes: Uint8Array): SessionKeys {
     };
 }
 
-// --- AEAD dispatch
+// --- AEAD dispatch (suite 0x06 shares AES-256-GCM with suite 0x01)
+
+const AESGCM_SUITES: readonly number[] = [
+    SUITE_MLKEM1024_AESGCM,
+    SUITE_HYBRID_X25519_MLKEM1024_AESGCM,
+];
 
 function aeadEncrypt(suite: number, key: Uint8Array, nonce: Uint8Array, pt: Uint8Array, aad: Uint8Array): Uint8Array {
-    if (suite === SUITE_MLKEM1024_AESGCM) {
+    if (AESGCM_SUITES.includes(suite)) {
         return gcm(key, nonce, aad).encrypt(pt);
     } else if (suite === SUITE_MLKEM1024_CHACHA) {
         return chacha20poly1305(key, nonce, aad).encrypt(pt);
@@ -339,7 +431,7 @@ function aeadEncrypt(suite: number, key: Uint8Array, nonce: Uint8Array, pt: Uint
 
 function aeadDecrypt(suite: number, key: Uint8Array, nonce: Uint8Array, ctTag: Uint8Array, aad: Uint8Array): Uint8Array | null {
     try {
-        if (suite === SUITE_MLKEM1024_AESGCM) {
+        if (AESGCM_SUITES.includes(suite)) {
             return gcm(key, nonce, aad).decrypt(ctTag);
         } else if (suite === SUITE_MLKEM1024_CHACHA) {
             return chacha20poly1305(key, nonce, aad).decrypt(ctTag);
@@ -348,6 +440,90 @@ function aeadDecrypt(suite: number, key: Uint8Array, nonce: Uint8Array, ctTag: U
         return null;
     }
     return null;
+}
+
+// --- KEM dispatch (suite-aware Encaps / Decaps)
+
+/**
+ * X-Wing-style hybrid combiner (suite 0x06). frozen v1 wire tag — not a
+ * rebrandable name. Produces a 32-byte session shared secret from both KEM
+ * shared secrets, both halves of the KEM ciphertext, and the fixed protocol
+ * label. The byte order is fixed: flipping it breaks the polyglot KAT contract.
+ */
+function hybridCombine(
+    ssMLKEM: Uint8Array,
+    xSs: Uint8Array,
+    mlKemCt: Uint8Array,
+    xEphPk: Uint8Array
+): Uint8Array {
+    return shake256(concat(HYBRID_COMBINER_LABEL, ssMLKEM, xSs, mlKemCt, xEphPk), { dkLen: 32 });
+}
+
+/**
+ * Suite-aware KEM Encaps. Returns { ss, kemCt } where ss is the 32-byte
+ * session shared secret. For suite 0x06 the kemCt is `ml_kem_ct ||
+ * x25519_ephemeral_pk` (1600 B) and the X25519 ephemeral comes from the OS
+ * CSPRNG (crypto.randomBytes via randomBytes), never a userspace PRNG.
+ */
+function suiteEncaps(suite: number, recipientPub: PublicKey): { ss: Uint8Array; kemCt: Uint8Array } {
+    if (!isHybrid(suite)) {
+        const { cipherText, sharedSecret } = MLKem1024.encapsulate(recipientPub.bytes);
+        if (cipherText.length !== MLKEM1024_CT_BYTES || sharedSecret.length !== MLKEM1024_SS_BYTES) {
+            throw new TesseraSealError("ML-KEM produced unexpected sizes");
+        }
+        return { ss: sharedSecret, kemCt: cipherText };
+    }
+    // Hybrid: split recipient pk, run both KEMs, combine.
+    const mlKemPk = recipientPub.bytes.subarray(0, MLKEM1024_PK_BYTES);
+    const xRecipientPk = recipientPub.bytes.subarray(MLKEM1024_PK_BYTES);
+    const { cipherText: mlKemCt, sharedSecret: ssMLKEM } = MLKem1024.encapsulate(mlKemPk);
+    if (mlKemCt.length !== MLKEM1024_CT_BYTES || ssMLKEM.length !== MLKEM1024_SS_BYTES) {
+        throw new TesseraSealError("ML-KEM produced unexpected sizes");
+    }
+    // Fresh ephemeral X25519 keypair per envelope. OS CSPRNG only.
+    const xEphScalar = randomBytes(X25519_SK_BYTES);
+    const xEphPk = x25519.getPublicKey(xEphScalar);
+    const xSs = x25519.getSharedSecret(xEphScalar, xRecipientPk);
+    if (xSs.length !== X25519_SS_BYTES) {
+        throw new TesseraSealError("X25519 produced unexpected shared-secret size");
+    }
+    const ss = hybridCombine(ssMLKEM, xSs, mlKemCt, xEphPk);
+    return { ss, kemCt: concat(mlKemCt, xEphPk) };
+}
+
+/**
+ * Suite-aware KEM Decaps. Returns the 32-byte session shared secret or null
+ * on a structural KEM error (e.g. wrong-size hybrid ct). ML-KEM's FO transform
+ * implicit-rejects malformed ciphertext (pseudorandom ss) rather than throwing,
+ * so a null return here is reserved for genuine structural problems; the
+ * subsequent AEAD/commit verify catches the authentication-class cases.
+ */
+function suiteDecaps(suite: number, recipientPriv: PrivateKey, kemCt: Uint8Array): Uint8Array | null {
+    if (!isHybrid(suite)) {
+        try {
+            return MLKem1024.decapsulate(kemCt, recipientPriv.bytes);
+        } catch {
+            return null;
+        }
+    }
+    if (kemCt.length !== HYBRID_CT_BYTES) return null;
+    const mlKemCt = kemCt.subarray(0, MLKEM1024_CT_BYTES);
+    const xEphPk = kemCt.subarray(MLKEM1024_CT_BYTES);
+    const mlKemSk = recipientPriv.bytes.subarray(0, MLKEM1024_SK_BYTES);
+    const xSk = recipientPriv.bytes.subarray(MLKEM1024_SK_BYTES);
+    let ssMLKEM: Uint8Array;
+    try {
+        ssMLKEM = MLKem1024.decapsulate(mlKemCt, mlKemSk);
+    } catch {
+        return null;
+    }
+    let xSs: Uint8Array;
+    try {
+        xSs = x25519.getSharedSecret(xSk, xEphPk);
+    } catch {
+        return null;
+    }
+    return hybridCombine(ssMLKEM, xSs, mlKemCt, xEphPk);
 }
 
 // --- UtC commit
@@ -396,27 +572,25 @@ export function encrypt(
     const ts = tsMs === null ? nowMs() : tsMs;
     if (ts >= 2 ** 48) throw new InvalidLength("ts overflow");
 
-    // ML-KEM-1024 Encaps
-    const { cipherText, sharedSecret } = MLKem1024.encapsulate(recipientPub.bytes);
-    if (cipherText.length !== MLKEM1024_CT_BYTES || sharedSecret.length !== MLKEM1024_SS_BYTES) {
-        throw new TesseraSealError("ML-KEM produced unexpected sizes");
-    }
+    // KEM Encaps (hybrid-aware). For suite 0x06, kemCt is ml_kem_ct ||
+    // x25519_ephemeral_pk (1600 B) and ss is the X-Wing combiner output.
+    const { ss, kemCt } = suiteEncaps(suite, recipientPub);
 
-    // Header
+    // Header. KEM_CT_LEN is the actual ciphertext length (1568 or 1600).
     const header = new Uint8Array(HEADER_BYTES);
-    packHeader(header, ts, TESSERA_SEAL_VARIANT, suite, counter, MLKEM1024_CT_BYTES, ad.length);
+    packHeader(header, ts, TESSERA_SEAL_VARIANT, suite, counter, kemCt.length, ad.length);
 
-    const sk = deriveSessionKeys(header, sharedSecret);
+    const sk = deriveSessionKeys(header, ss);
 
     // AEAD AAD = header || kem_ct || ad
-    const aad = concat(header, cipherText, ad);
+    const aad = concat(header, kemCt, ad);
     const aeadBlob = aeadEncrypt(suite, sk.kAead, sk.nonce, pt, aad);
     const aeadCt = aeadBlob.subarray(0, pt.length);
     const aeadTag = aeadBlob.subarray(pt.length);
 
-    const commit = utcCommit(sk.kCommit, header, cipherText, ad, aeadCt);
+    const commit = utcCommit(sk.kCommit, header, kemCt, ad, aeadCt);
 
-    return concat(header, cipherText, ad, sk.nonce, aeadCt, aeadTag, commit);
+    return concat(header, kemCt, ad, sk.nonce, aeadCt, aeadTag, commit);
 }
 
 // --- Decrypt
@@ -447,16 +621,18 @@ export function decrypt(env: Uint8Array, priv: PrivateKey, expectedAd: Uint8Arra
     const aeadTag = env.subarray(p, p + AEAD_TAG_BYTES); p += AEAD_TAG_BYTES;
     const commitWire = env.subarray(p, p + COMMIT_BYTES);
 
-    // ML-KEM Decaps. FO transform implicit-rejects on bad ct -> pseudorandom ss.
-    let ssMLKEM: Uint8Array;
+    // KEM Decaps (hybrid-aware). ML-KEM's FO transform implicit-rejects on bad
+    // ct -> pseudorandom ss; for hybrid 0x06 both halves feed the combiner, so a
+    // substituted X25519 ephemeral also yields a wrong session key. suiteDecaps
+    // returns null only on a genuine structural error (e.g. wrong-size hybrid
+    // ct); we fall through to the uniform AEAD/commit verify either way.
+    let ss = suiteDecaps(h.suite, priv, kemCt);
     let ssOk = true;
-    try {
-        ssMLKEM = MLKem1024.decapsulate(kemCt, priv.bytes);
-    } catch {
+    if (ss === null) {
         ssOk = false;
-        ssMLKEM = new Uint8Array(MLKEM1024_SS_BYTES);
+        ss = new Uint8Array(MLKEM1024_SS_BYTES);
     }
-    const sk = deriveSessionKeys(headerBytes, ssMLKEM);
+    const sk = deriveSessionKeys(headerBytes, ss);
 
     const nonceMatch = ctEq(nonceWire, sk.nonce);
     const adMatch = ad.length === expectedAd.length
