@@ -1,0 +1,49 @@
+# cargo-fuzz harness for the TesseraSeal Rust reference (TESS-00016 / TP-096).
+#
+# Coverage-guided runs need the nightly toolchain + cargo-fuzz:
+#
+#   rustup toolchain install nightly
+#   cargo install cargo-fuzz
+#   cd tessera-seal/rust && cargo +nightly fuzz run fuzz_decrypt -- -max_total_time=60
+#   cd tessera-seal/rust && cargo +nightly fuzz run fuzz_peek_header -- -max_total_time=60
+#
+# The harness bodies live in src/lib.rs so they also compile and run on
+# STABLE as plain unit tests (a 10k-input random smoke per target):
+#
+#   cd tessera-seal/rust/fuzz && cargo test --lib
+[package]
+name = "tessera-seal-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tessera-seal = { path = ".." }
+
+[lib]
+name = "tessera_seal_fuzz"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fuzz_decrypt"
+path = "fuzz_targets/fuzz_decrypt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_peek_header"
+path = "fuzz_targets/fuzz_peek_header.rs"
+test = false
+doc = false
+bench = false
+
+# Standalone: deliberately NOT a member of the repo-root workspace, per
+# cargo-fuzz convention (the root workspace profile settings conflict with
+# the sanitizer/profile flags cargo-fuzz injects).
+[workspace]

@@ -1,0 +1,44 @@
+# cargo-fuzz harness for the TesseraID Rust reference (TESS-00016 / TP-096).
+# Populates the formerly-empty tessera-id/rust/fuzz/ directory (TP-111 overlap).
+#
+# Coverage-guided runs need the nightly toolchain + cargo-fuzz:
+#
+#   rustup toolchain install nightly
+#   cargo install cargo-fuzz
+#   cd tessera-id/rust && cargo +nightly fuzz run fuzz_decode -- -max_total_time=60
+#
+# The harness body lives in src/lib.rs so it also compiles and runs on
+# STABLE as a plain unit test (a 10k-input random smoke):
+#
+#   cd tessera-id/rust/fuzz && cargo test --lib
+#
+# Not to be confused with `src/bin/fuzz_decode.rs` in the parent crate, which
+# is a fixed-seed regression-replay loop (TP-101), not coverage-guided fuzzing.
+[package]
+name = "tessera-id-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tessera-id = { path = ".." }
+
+[lib]
+name = "tessera_id_fuzz"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fuzz_decode"
+path = "fuzz_targets/fuzz_decode.rs"
+test = false
+doc = false
+bench = false
+
+# Standalone: deliberately NOT a member of the repo-root workspace, per
+# cargo-fuzz convention.
+[workspace]

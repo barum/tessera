@@ -74,6 +74,35 @@ test: test_tessera_seal
 bench: bench_tessera_seal
 	./bench_tessera_seal
 
+# --- Fuzzing (TESS-00016 / TP-096) ------------------------------------------
+# libFuzzer + AddressSanitizer harness over peek_header/peek_ad/decrypt.
+# Apple's Xcode clang does NOT ship the libFuzzer runtime; Homebrew LLVM
+# does, so prefer it when present. Override with: make fuzz FUZZ_CC=...
+ifneq ($(wildcard /opt/homebrew/opt/llvm/bin/clang),)
+  FUZZ_CC ?= /opt/homebrew/opt/llvm/bin/clang
+else
+  FUZZ_CC ?= clang
+endif
+FUZZ_CFLAGS ?= -g -O1 -std=c11 -Wall -Wextra -fsanitize=fuzzer,address -fno-omit-frame-pointer
+FUZZ_TIME   ?= 60
+FUZZ_RUNS   ?= 50000
+
+fuzz_decrypt: fuzz_decrypt.c tessera_seal.c tessera_seal.h $(COMMON)/hkdf_sha3.c
+	$(FUZZ_CC) $(FUZZ_CFLAGS) -I$(COMMON) -I. $(OPENSSL_CFLAGS) \
+	    fuzz_decrypt.c tessera_seal.c $(COMMON)/hkdf_sha3.c \
+	    -o fuzz_decrypt $(OPENSSL_LDFLAGS)
+
+# Seeds the corpus from the frozen KAT envelopes (read-only; vectors are
+# never modified), then runs a wall-clock budget AND an iteration budget.
+fuzz: fuzz_decrypt
+	mkdir -p fuzz_corpus
+	python3 -c 'import json, pathlib; \
+	    recs = json.load(open("../conformance/vectors/decrypt.json")); \
+	    [pathlib.Path("fuzz_corpus/kat_%s" % r["name"]).write_bytes(bytes.fromhex(r["envelope_hex"])) \
+	     for r in recs if r.get("envelope_hex")]'
+	./fuzz_decrypt -max_total_time=$(FUZZ_TIME) fuzz_corpus
+	./fuzz_decrypt -runs=$(FUZZ_RUNS) fuzz_corpus
+
 libtessera_seal.a: tessera_seal.o hkdf_sha3.o
 	$(AR) rcs libtessera_seal.a tessera_seal.o hkdf_sha3.o
 
@@ -87,6 +116,7 @@ install: libtessera_seal.a tessera-seal.pc
 	install -m 644 tessera-seal.pc $(DESTDIR)$(PCDIR)/
 
 clean:
-	rm -f *.o *.a tessera-seal.pc test_tessera_seal bench_tessera_seal
+	rm -f *.o *.a tessera-seal.pc test_tessera_seal bench_tessera_seal fuzz_decrypt
+	rm -rf fuzz_corpus fuzz_decrypt.dSYM crash-* leak-* timeout-* oom-*
 
-.PHONY: all test bench clean install
+.PHONY: all test bench clean install fuzz_decrypt fuzz
