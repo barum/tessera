@@ -9,7 +9,7 @@ Guidance for Claude Code (claude.ai/code) working in the **tessera** repository.
 - **[tessera-id/](tessera-id/)** — a 41-byte sortable identifier format (Standard + HLC variants). See [tessera-id/CLAUDE.md](tessera-id/CLAUDE.md).
 - **[tessera-hash/](tessera-hash/)** — a 73-byte SHAKE-256 content hash format. See [tessera-hash/CLAUDE.md](tessera-hash/CLAUDE.md).
 - **[tessera-seal/](tessera-seal/)** — a post-quantum encryption envelope format (ML-KEM-1024 + AES-256-GCM + UtC commit). See [tessera-seal/CLAUDE.md](tessera-seal/CLAUDE.md).
-- **[common/](common/)** — shared *library* primitives used by more than one project (Keccak/SHAKE-256 in C, C++, Java).
+- **[common/](common/)** — shared *library* primitives used by more than one project (Keccak/SHAKE-256: C sources under `common/c/`, Java under `common/java/`; the C++ ports compile `common/c/keccak.c` directly — there is no separate `common/cpp/`).
 - **[tools/](tools/)** — cross-project conformance harness. Not part of any project's normative surface.
 
 When working inside a project, treat its `CLAUDE.md` as authoritative for that project's invariants. This umbrella file only covers things that span projects.
@@ -61,7 +61,7 @@ Every behavior-changing PR updates:
 
 1. **Project `CLAUDE.md`** when project invariants move.
 2. **Project release notes** at `<project>/docs/release-notes/YYYY-MM-DD-<slug>.md`. Required sections: Summary, Wire/API changes, Migration guidance, Test plan, Rollback. Add an entry to the project's rolling `docs/release-notes/CHANGELOG.md` index (reverse-chronological).
-3. **Whitepaper LaTeX** for any spec change. Rebuild and check in the produced artifact for TesseraID (`TesseraID_Whitepaper.pdf`).
+3. **Whitepaper LaTeX** for any spec change. Rebuild and check in the produced artifact for TesseraID (`TesseraID_Whitepaper.pdf`). Each project tracks exactly one named `*_Whitepaper.pdf` artifact in its `latex/` dir; `main.pdf` build outputs are ignored.
 4. **README files** when the public surface area changes (root `README.md`, `<project>/README.md`, per-language READMEs).
 
 If a change is purely internal with no operator/consumer impact, state it explicitly in the PR description: `release-notes: minimal — code-only refactor, identical wire behavior`.

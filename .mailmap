@@ -1,0 +1,4 @@
+# Unify commit identities: history was authored under an employer address
+# (bahrams@jfrog.com); the canonical maintainer identity going forward is the
+# personal address below (TESS-00017, docs/decisions/2026-06-10-history-policy.md).
+Bahram Samani <barumsumni@gmail.com> <bahrams@jfrog.com>

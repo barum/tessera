@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# commit-msg — enforce the Tessera conventional commit-subject pattern
+# (CONTRIBUTING.md "Branch, commit, and PR conventions"; TESS-00017).
+#
+# Enable once per clone with:
+#   git config core.hooksPath .githooks
+#
+# Git invokes this hook with a single argument: the path to the file that
+# holds the proposed commit message. Exit nonzero to abort the commit.
+set -euo pipefail
+
+msg_file="$1"
+subject="$(head -n 1 -- "$msg_file")"
+
+pattern='^(feat|fix|docs|refactor|chore|sec)\((TID|THASH|TSEAL|TESS)-[0-9]{5}\) - .+'
+
+# Git-generated merge subjects are exempt: PRs are squash-merged server-side,
+# and local `git pull`/`git merge` auto-subjects are not hand-written.
+if [[ "$subject" == Merge\ * ]]; then
+  exit 0
+fi
+
+if [[ ! "$subject" =~ $pattern ]]; then
+  {
+    echo "commit-msg: subject does not match the Tessera commit convention:"
+    echo "  ${subject}"
+    echo ""
+    echo "Expected: <type>(<TICKET>) - <short description>"
+    echo "  types:   feat | fix | docs | refactor | chore | sec"
+    echo "  tickets: TID-NNNNN | THASH-NNNNN | TSEAL-NNNNN | TESS-NNNNN"
+    echo "  example: fix(TSEAL-00042) - reject suite byte 0x05 in Go decoder"
+    echo ""
+    echo "See CONTRIBUTING.md, section 'Branch, commit, and PR conventions'."
+  } >&2
+  exit 1
+fi

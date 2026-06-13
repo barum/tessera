@@ -34,6 +34,7 @@ When implementations disagree, fix the outlier — never bend the spec to match 
   - Ticket prefixes name the project: **`TID-NNNNN`** (TesseraID), **`THASH-NNNNN`**
     (TesseraHash), **`TSEAL-NNNNN`** (TesseraSeal), **`TESS-NNNNN`** (umbrella/repo-wide).
   - Example: `fix(TSEAL-00042) - reject suite byte 0x05 in Go decoder`
+- Enable the repo's commit-message lint hook once per clone: `git config core.hooksPath .githooks`
 - Security-relevant changes use the `sec` type and require explicit review — see the
   "Security invariants" section of [CLAUDE.md](CLAUDE.md).
 
