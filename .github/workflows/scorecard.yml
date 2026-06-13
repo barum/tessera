@@ -1,0 +1,59 @@
+name: scorecard
+
+# OpenSSF Scorecard supply-chain self-assessment (TESS-00019 / TP-118).
+# Runs weekly plus manual dispatch. publish_results stays false until the
+# repository is public (the Scorecard results API and README badge only work
+# for public repos — flip to true alongside TP-006/TP-085 publication, then
+# add the badge). The SARIF report is always kept as a run artifact so the
+# score and per-check deductions are reviewable on a private repo today.
+on:
+  schedule:
+    - cron: "30 5 * * 1" # Mondays 05:30 UTC
+  workflow_dispatch:
+
+# Least privilege at the top level (repo convention, TESS-00006 / TP-015).
+# The analysis job elevates only what the Scorecard docs require:
+# id-token: write (OIDC, used by the publish path) and security-events: write
+# (SARIF upload to code scanning), both scoped to the job.
+permissions:
+  contents: read
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Upload the SARIF results to GitHub code scanning.
+      security-events: write
+      # Required by ossf/scorecard-action's OIDC publish path; kept now so
+      # flipping publish_results to true needs no permissions change.
+      id-token: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Run OpenSSF Scorecard
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # Do NOT publish to the public OpenSSF results API until the repo
+          # itself is public (gated on TP-006 name decision + TP-085 posture).
+          publish_results: false
+
+      - name: Upload Scorecard SARIF as run artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scorecard-sarif
+          path: results.sarif
+          retention-days: 30
+
+      # Code-scanning SARIF upload needs a public repo (or GHAS on private);
+      # informational until publication — do not fail the weekly run on it.
+      - name: Upload SARIF to code scanning
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
+        with:
+          sarif_file: results.sarif
