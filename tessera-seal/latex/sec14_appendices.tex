@@ -38,6 +38,9 @@ Cross-rejection is normative: \pqid{} and \pqhash{} decoders MUST reject \code{0
 
 \begin{center}
 \small
+% \resizebox: the natural table width exceeds \textwidth; without it the Status
+% column renders off the page edge (pre-existing clip, fixed TSEAL-00048).
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}lll@{}}
 \toprule
 \textbf{Suite} & \textbf{Algorithms} & \textbf{Status} \\
@@ -45,15 +48,16 @@ Cross-rejection is normative: \pqid{} and \pqhash{} decoders MUST reject \code{0
 \code{0x01} & ML-KEM-1024 + AES-256-GCM + UtC commit + HKDF-SHA3-256                & v1.0 mandatory (pure PQ) \\
 \code{0x02} & ML-KEM-1024 + ChaCha20-Poly1305 + UtC commit + HKDF-SHA3-256          & v1.0 optional (pure PQ) \\
 \code{0x06} & X25519 + ML-KEM-1024 + AES-256-GCM + UtC commit + HKDF-SHA3-256       & v1.2 optional (hybrid) \\
-\code{0x00}, \code{0x03}--\code{0x05}, \code{0x07}--\code{0xFF} & Reserved-future   & MUST reject \\
+\code{0x07} & RESERVED: ML-KEM-1024+HQC hybrid or HQC-only (\cref{sec:suites})       & reserved; MUST reject \\
+\code{0x00}, \code{0x03}--\code{0x05}, \code{0x08}--\code{0xFF} & Reserved-future   & MUST reject \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{center}
 
 Earmarked future suites (not normative in v1.x):
 \begin{itemize}
 \item \code{0x03}: ML-KEM-1024 + AEGIS-128L + UtC commit. Evaluated and deferred in PQCK-00020 (v1.2, 2026-05-21): AEGIS libraries not yet polyglot-ready. The byte remains reserved-future; revisit when libcrux, OpenSSL, and Go stdlib all ship verified AEGIS implementations.
-\item \code{0x07}: HQC + AES-256-GCM + UtC commit (lattice-fatigue backup, would only land if Module-LWE confidence falters).
+\item \code{0x07}: \textbf{explicitly RESERVED} (TSEAL-00048) for the HQC contingency --- an ML-KEM-1024+HQC hybrid or HQC-only successor suite \citep{nisthqc2025}; allocated upon NIST HQC FIPS finalization (draft slipped; final $\sim$2027); activation trigger = Module-LWE confidence loss or HQC standardization. See \cref{sec:suites} for the full roadmap paragraph.
 \item Hardened-implementation variants (masked ML-KEM, side-channel-protected X25519) would each take a new suite byte rather than modify \code{0x01}/\code{0x02}/\code{0x06}.
 \end{itemize}
 

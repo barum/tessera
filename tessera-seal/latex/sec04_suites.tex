@@ -5,6 +5,9 @@ The \code{SUITE} byte at offset 7 selects a complete algorithm bundle. v1.x allo
 
 \begin{center}
 \small
+% \resizebox: the natural table width exceeds \textwidth; without it the Status
+% and Notes columns render off the page edge (pre-existing clip, fixed TSEAL-00048).
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}clllll@{}}
 \toprule
 \textbf{Suite} & \textbf{KEM(s)} & \textbf{AEAD} & \textbf{KDF/MAC} & \textbf{Status} & \textbf{Notes} \\
@@ -12,10 +15,26 @@ The \code{SUITE} byte at offset 7 selects a complete algorithm bundle. v1.x allo
 \code{0x01} & ML-KEM-1024 & AES-256-GCM + UtC commit (32 B) & HKDF-SHA3-256 & \textbf{mandatory} & v1 default, pure PQ \\
 \code{0x02} & ML-KEM-1024 & ChaCha20-Poly1305 + UtC commit (32 B) & HKDF-SHA3-256 & optional & software-only, pure PQ \\
 \code{0x06} & X25519 + ML-KEM-1024 (\cref{sec:hybrid}) & AES-256-GCM + UtC commit (32 B) & HKDF-SHA3-256 & optional & hybrid, v1.2 (PQCK-00021) \\
-\code{0x00}, \code{0x03}--\code{0x05}, \code{0x07}--\code{0xFF} & --- reject --- & --- & --- & --- & reserved-future \\
+\code{0x07} & ML-KEM-1024+HQC or HQC-only & TBD & TBD & \textbf{reserved} & HQC contingency; reject in v1.x \\
+\code{0x00}, \code{0x03}--\code{0x05}, \code{0x08}--\code{0xFF} & --- reject --- & --- & --- & --- & reserved-future \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{center}
+
+\textbf{HQC contingency (suite \code{0x07} --- RESERVED, not allocated).} Suite byte \code{0x07} is
+\emph{reserved} for the ML-KEM-failure contingency: an ML-KEM-1024+HQC hybrid or an HQC-only successor
+suite built on NIST's selected backup KEM, HQC \citep{nisthqc2025}. The byte will be \emph{allocated} upon
+NIST HQC FIPS finalization (the draft standard has slipped; final expected $\sim$2027). The
+\emph{activation triggers} for actually shipping it are (a) a loss of confidence in the Module-LWE problem
+underlying ML-KEM, or (b) HQC standardization together with verified, constant-time HQC implementations
+across the pinned per-language sources. Until allocation, \code{0x07} remains reserved-future on the wire
+and every v1.x decoder MUST reject it like any other unallocated byte --- the reservation is a registry
+entry, not wire behavior. When allocated, \code{0x07} follows the standard new-suite discipline:
+whitepaper amendment, Python reference first, lockstep ports, frozen KAT vectors. This converts a
+structural ML-KEM break from an unplanned emergency into a pre-reserved migration path, complementing the
+X25519 hybrid escape valve of suite \code{0x06}: code-based HQC does not share ML-KEM's lattice
+assumptions, so it remains a viable post-quantum fallback even in the Module-LWE-loss scenario where
+\code{0x06} degrades to classical-only protection.
 
 The wire is unambiguous about which guarantee a given envelope makes: suites \code{0x01}/\code{0x02} commit to ``post-quantum confidentiality, no classical fallback''; suite \code{0x06} commits to ``post-quantum \emph{or} classical confidentiality, the attacker must break both.'' Suite \code{0x06} is a \emph{separate suite-byte allocation} (\cref{sec:hybrid}); it is never an in-place modification of \code{0x01}/\code{0x02}. Callers select by passing the suite byte explicitly to \code{encrypt}; \code{decrypt} dispatches by the suite byte in the envelope header.
 
