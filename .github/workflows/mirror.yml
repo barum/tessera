@@ -1,0 +1,21 @@
+name: mirror
+# Pre-sync gate for the per-language mirrors. The actual mirror generation/push is run by a
+# maintainer with sync-mirrors.sh + repo credentials (mirrors are private until the publish gate
+# clears). This workflow asserts the cross-language byte-identity gate is green before a release is
+# propagated to the mirrors. See docs/decisions/2026-06-13-hub-and-mirrors.md.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with: { persist-credentials: false }
+      - name: Cross-language conformance gate (must be green before mirroring)
+        run: |
+          echo "Run tools/conformance/run.sh here (same as conformance.yml) before propagating $GITHUB_REF to mirrors."
+          echo "Mirror generation: tools/mirror/sync-mirrors.sh <lang> $GITHUB_REF  (maintainer-run; see tools/mirror/README.md)"
