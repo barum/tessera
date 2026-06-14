@@ -73,7 +73,7 @@ update `docs/release-notes/CHANGELOG.md`. Acceptance: index lists all entries re
 release-notes discipline rule satisfied.
 
 #### TP-006 · P0 · 6 · chore · tessera-name-clearance-decision
-Deps: — · Status: DECISION-RECORDED (2026-06-10) — memo done (docs/decisions/2026-06-10-name-clearance.md); registry reservations/registration pending
+Deps: — · Status: DECIDED (2026-06-13) — Option A SELECTED (keep Tessera; publish only tessera-id/-hash/-seal; Java groupId io.github.barum). See docs/decisions/2026-06-10-name-clearance.md §5. Registry-name reservations still pending (need maintainer credentials)
 Hand-off: TESS ticket. "Tessera" collides in the exact crypto/security category — ConsenSys Tessera is an
 established enterprise crypto/privacy product, and bare `tessera` names are already taken on npm, PyPI, and
 crates.io. No clearance was recorded in the rename (c97338d). Before ANY registry publish or public launch:

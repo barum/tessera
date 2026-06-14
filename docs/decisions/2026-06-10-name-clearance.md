@@ -4,7 +4,8 @@
 - **Remediation item:** TP-006 (P0, DECISION-REQUIRED) — see
   [docs/remediation-plan-2026-06-10.md](../remediation-plan-2026-06-10.md)
 - **Ticket:** TESS (assign number on hand-off)
-- **Status:** RESEARCHED — awaiting maintainer decision. Nothing has been renamed and nothing has been
+- **Status:** DECIDED 2026-06-13 — **Option A** (keep Tessera; publish only `tessera-id`/`tessera-hash`/`tessera-seal`; Java groupId `io.github.barum`). See §5. Registry-name reservations + IP (TP-115) + export (TP-116) still gate the actual publish. Original research below.
+- **Status (original):** RESEARCHED — awaiting maintainer decision. Nothing has been renamed and nothing has been
   published; this memo records the live-web findings and the options.
 - **Context:** The PQToolkit → Tessera rename (TESS-00001, commit `c97338d`) landed with no recorded name
   clearance. This memo is that record. It blocks TP-085..TP-094 (registry publishing).
@@ -187,11 +188,22 @@ Additional actions under Option A:
 
 ## 5. Decision
 
-- [ ] **Option A** — keep Tessera, hyphenated artifacts only, reserve the 9 registry names (recommended)
+- [x] **Option A** — keep Tessera, hyphenated artifacts only, reserve the 9 registry names (recommended) **— SELECTED**
 - [ ] Option B — qualify (`tessera-pq-*` / scoped)
 - [ ] Option C — rename now
 
-Decided by: ____________  Date: ____________
+Decided by: Bahram Samani (maintainer)  Date: 2026-06-13
+
+**Recorded decision (2026-06-13):** Keep the family name **Tessera**. The only publishable artifact
+names are the hyphenated **`tessera-id`**, **`tessera-hash`**, **`tessera-seal`** (verified free on
+npm / PyPI / crates.io); Java Maven groupId is **`io.github.barum`**. The bare `tessera` name is NOT
+claimed on any registry. Every published README carries the disambiguation line (§4.2: not affiliated
+with ConsenSys/Quorum Tessera, Graphite's Tessera, the `tessera` 3D-tiles crate, or Tessera
+Technologies/Xperi). The per-language mirror repos (`tessera-rust`, `tessera-python`, …) already use
+these names. **Still open before any publish/public release:** reserve the registry names as
+placeholders (needs maintainer registry credentials), the IP carve-out (TP-115), and the per-URL BIS
+export notification (TP-116). A future *commercial/trademark* use of the mark would still need a
+counsel-led USPTO + EUIPO clearance in Classes 9/42; that is out of scope for this open-source release.
 
 ## Sources
 
