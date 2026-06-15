@@ -27,6 +27,9 @@ Documentation surface only:
   the pattern catalog (which now reads as narrative-then-reference).
 - `latex/sec02_three_projects.tex`, `latex/sec09_appendices.tex` — dropped the stale "(repo root:
   …)" parentheticals; the appendix now notes the umbrella itself is the root-published artifact.
+- `latex/main.tex` — cover reframed to match the front-door role: subtitle "One Wire Discipline for
+  Identity, Integrity, and Confidentiality in the Post-Quantum Era", front-door tagline, doc version
+  bumped to **v1.1 (non-normative)**, and a rewritten footer.
 - **Publishing flip:** root `Tessera_Whitepaper.pdf` is now a **tracked** artifact (cp-synced from
   `latex/Tessera_Whitepaper.pdf`); root `TesseraID_Whitepaper.pdf` is **removed** (`git rm`) — the
   TesseraID PDF remains tracked at `tessera-id/latex/`. `.gitignore` flipped accordingly
