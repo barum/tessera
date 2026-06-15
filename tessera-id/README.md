@@ -1,3 +1,5 @@
+<img src="../assets/logo/tessera-id.svg" width="88" height="88" align="left" alt="TesseraID logo">
+
 # TesseraID Reference Implementations
 
 TesseraID (Post-Quantum Identifier) — 41-byte time-sortable ID with a 256-bit random

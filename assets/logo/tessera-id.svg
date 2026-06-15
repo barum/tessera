@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="TesseraID">
+  <title>TesseraID</title>
+  <rect x="12" y="12" width="104" height="104" rx="26" fill="#2563EB"/>
+  <!-- sorted records: marker dot + identifier bar, ascending = time-sortable -->
+  <g fill="#F8FAFC">
+    <circle cx="40" cy="46" r="5"/>
+    <rect x="52" y="41" width="28" height="10" rx="5"/>
+    <circle cx="40" cy="64" r="5"/>
+    <rect x="52" y="59" width="42" height="10" rx="5"/>
+    <circle cx="40" cy="82" r="5"/>
+    <rect x="52" y="77" width="56" height="10" rx="5"/>
+  </g>
+</svg>

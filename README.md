@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo/tessera.svg" width="128" height="128" alt="Tessera logo">
+</p>
+
 # tessera — Post-Quantum Identifier, Hash & Encryption Toolkit
 
 [![conformance](https://github.com/barum/tessera/actions/workflows/conformance.yml/badge.svg?branch=main)](https://github.com/barum/tessera/actions/workflows/conformance.yml)

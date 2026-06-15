@@ -1,3 +1,5 @@
+<img src="../assets/logo/tessera-seal.svg" width="88" height="88" align="left" alt="TesseraSeal logo">
+
 # tessera-seal
 
 **Pure post-quantum encryption envelope** with byte-identical polyglot reference implementations under the [tessera](../) monorepo.

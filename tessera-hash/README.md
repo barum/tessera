@@ -1,3 +1,5 @@
+<img src="../assets/logo/tessera-hash.svg" width="88" height="88" align="left" alt="TesseraHash logo">
+
 # TesseraHash Reference Implementations
 
 TesseraHash (Post-Quantum Content Hash) — 73-byte content identifier with a 512-bit
