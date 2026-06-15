@@ -11,6 +11,42 @@ tessera-seal, latex) are manual-dispatch workflows — see the
 Each project under this root is an independent spec with normative wire format, polyglot
 reference implementations, and (where applicable) its own whitepaper.
 
+## Why tessera — coordination-free data identity at hyperscale
+
+Two forces are reshaping how large systems handle data, and they pull in the same direction.
+
+**1. Scale-out with no coordinator.** Distributed systems — and machine-learning training
+clusters in particular, now pushing past **1M+ accelerators** — mint identifiers on every node
+with no central allocator in the hot path. Every shard, sample, checkpoint, row, event, and
+lineage record needs a unique, ideally sortable handle generated *locally*. A worker-ID scheme
+(Snowflake's 10-bit worker field caps at **1,024** workers) cannot even enumerate such a fleet;
+the alternative is a random-field ID whose field is wide enough that independent generators
+*never* collide. Using the birthday bound, P(collision) ≈ n² / 2^(b+1), a fleet that mints on the
+order of 10¹⁸ IDs over its lifetime sees:
+
+| Format | Random bits | P(≥1 collision) @ ~10¹⁸ IDs |
+|---|---|---|
+| ULID | 80 | ≈ 1 (effectively certain) |
+| UUIDv4 | 122 | ~9% |
+| **TesseraID** | **256** | **~10⁻⁴¹ (never)** |
+
+TesseraID keeps a 48-bit millisecond prefix so IDs stay **time-sortable** (index locality on
+append-heavy checkpoint/sample stores — the thing UUIDv4 destroys) and spends a full 256 bits on
+the random tail, putting collisions permanently out of reach no matter how large the fleet grows.
+UUIDv7 and ULID already brought sortability to random IDs; tessera's difference is the PQ-era
+field width *plus* a Hybrid-Logical-Clock variant for causal ordering across the fleet.
+
+**2. Data outlives the cryptography.** Datasets, checkpoints, ledgers, and provenance are retained
+for years — across the arrival of cryptographically-relevant quantum computers. tessera sizes
+every field for that horizon: TesseraID's 256-bit tail retains ~128-bit second-preimage strength
+against Grover search (an attacker can't feasibly target or forge a specific record's ID),
+TesseraHash carries a 512-bit SHAKE-256 content tail for dedup and integrity across exabyte
+datasets, and TesseraSeal encrypts artifacts under ML-KEM-1024 with a key-committing AEAD — so
+*harvest-now, decrypt-later* fails against anything sealed today. The three share one variant-byte
+namespace, so an artifact can be **identified** (TesseraID), **content-addressed** (TesseraHash),
+and **sealed** (TesseraSeal) with primitives that interlock — e.g. binding a TesseraID as an
+envelope's associated data pins ciphertext to the record it belongs to.
+
 ## Projects
 
 - Umbrella overview whitepaper: [latex/Tessera_Whitepaper.pdf](latex/Tessera_Whitepaper.pdf)
@@ -82,22 +118,25 @@ harnesses, not library code; not part of either project's normative surface.
 ## Supported languages
 
 Each project ships reference implementations in 8 languages, all byte-identical for the
-same wire format. TesseraSeal status as of v1.3 (2026-05-21):
+same wire format. Status as of 2026-06-15:
 
 | Lang | TesseraID | TesseraHash | TesseraSeal (suites `0x01`/`0x02`) | TesseraSeal hybrid `0x06` |
 |------|------|--------|--------------------------------|------------------------|
-| Python      | [tessera-id/python/](tessera-id/python/)         | [tessera-hash/python/](tessera-hash/python/)         | [tessera-seal/python/](tessera-seal/python/)         | ✓ (v1.2) |
-| C           | [tessera-id/c/](tessera-id/c/)                   | [tessera-hash/c/](tessera-hash/c/)                   | [tessera-seal/c/](tessera-seal/c/) (OpenSSL 3.5+)    | — (v1.4) |
-| C++         | [tessera-id/cpp/](tessera-id/cpp/)               | [tessera-hash/cpp/](tessera-hash/cpp/)               | [tessera-seal/cpp/](tessera-seal/cpp/) (v1.1 wrapper)| — (v1.4) |
-| Go          | [tessera-id/go/](tessera-id/go/)                 | [tessera-hash/go/](tessera-hash/go/)                 | [tessera-seal/go/](tessera-seal/go/) (stdlib mlkem)  | ✓ (v1.3, TSEAL-00029) |
-| Rust        | [tessera-id/rust/](tessera-id/rust/)             | [tessera-hash/rust/](tessera-hash/rust/)             | [tessera-seal/rust/](tessera-seal/rust/) (RustCrypto)| ✓ (v1.3, TSEAL-00028) |
-| TypeScript  | [tessera-id/typescript/](tessera-id/typescript/) | [tessera-hash/typescript/](tessera-hash/typescript/) | [tessera-seal/typescript/](tessera-seal/typescript/) (@noble) | — (v1.4) |
-| Java        | [tessera-id/java/](tessera-id/java/)             | [tessera-hash/java/](tessera-hash/java/)             | [tessera-seal/java/](tessera-seal/java/) (SunJCE)    | — (v1.4) |
-| CPython ext | [tessera-id/cpython/](tessera-id/cpython/) (bundles TesseraHash) | [tessera-hash/cpython/](tessera-hash/cpython/) (planned) | [tessera-seal/cpython/](tessera-seal/cpython/) (v1.1, wraps the C reference) | — (v1.4) |
+| Python      | [tessera-id/python/](tessera-id/python/)         | [tessera-hash/python/](tessera-hash/python/)         | [tessera-seal/python/](tessera-seal/python/)         | ✓ (PQCK-00021) |
+| C           | [tessera-id/c/](tessera-id/c/)                   | [tessera-hash/c/](tessera-hash/c/)                   | [tessera-seal/c/](tessera-seal/c/) (OpenSSL 3.5+)    | ✓ (TSEAL-00030) |
+| C++         | [tessera-id/cpp/](tessera-id/cpp/)               | [tessera-hash/cpp/](tessera-hash/cpp/)               | [tessera-seal/cpp/](tessera-seal/cpp/) (v1.1 wrapper)| ✓ lib (TSEAL-00031) |
+| Go          | [tessera-id/go/](tessera-id/go/)                 | [tessera-hash/go/](tessera-hash/go/)                 | [tessera-seal/go/](tessera-seal/go/) (stdlib mlkem)  | ✓ (PQCK-00029) |
+| Rust        | [tessera-id/rust/](tessera-id/rust/)             | [tessera-hash/rust/](tessera-hash/rust/)             | [tessera-seal/rust/](tessera-seal/rust/) (RustCrypto)| ✓ (PQCK-00028) |
+| TypeScript  | [tessera-id/typescript/](tessera-id/typescript/) | [tessera-hash/typescript/](tessera-hash/typescript/) | [tessera-seal/typescript/](tessera-seal/typescript/) (@noble) | ✓ lib (TSEAL-00032) |
+| Java        | [tessera-id/java/](tessera-id/java/)             | [tessera-hash/java/](tessera-hash/java/)             | [tessera-seal/java/](tessera-seal/java/) (SunJCE)    | — (TSEAL-00033) |
+| CPython ext | [tessera-id/cpython/](tessera-id/cpython/) (bundles TesseraHash) | [tessera-hash/cpython/](tessera-hash/cpython/) (planned) | [tessera-seal/cpython/](tessera-seal/cpython/) (v1.1, wraps the C reference) | ✓ lib (TSEAL-00034) |
 
 Per-language conformance runners live under [tools/conformance/](tools/conformance/).
-"✓" languages decrypt hybrid envelopes generated by any other "✓" language byte-identical;
-"—" languages reject suite `0x06` as `UNKNOWN_SUITE` and follow in v1.4.
+Hybrid suite `0x06` has two axes: **✓** marks the four languages whose tessera-seal conformance
+runner consumes the `hybrid_*.json` vectors byte-identically (Python, C, Go, Rust); **✓ lib** marks
+languages that implement suite `0x06` at the library level — verified by an in-suite KAT against the
+same frozen vectors — but have no tessera-seal conformance runner yet (C++, TypeScript, CPython
+ext). Only **Java** (TSEAL-00033, backlog) still rejects `0x06` as `UNKNOWN_SUITE`.
 
 The Go workspace is at [go.work](go.work); the Rust workspace is at [Cargo.toml](Cargo.toml).
 
@@ -117,15 +156,17 @@ TESSERA_CONFORMANCE_SKIP="cpython java" bash tools/conformance/run.sh
 TESSERA_CONFORMANCE_SKIP="cpp typescript java cpython" bash tools/conformance/run.sh
 ```
 
-Latest local run (2026-06-10, post TESS-00009 KAT expansion), alpha quick loop:
-**Python 296 / C 287 / Go 296 / Rust 296 PASS, 0 FAIL** (each with 6 explicit SKIPs for
-doc pseudo-records). The full 8-language run is also green locally: C++ / TypeScript /
-Java each report **229 PASS, 0 FAIL, 6 SKIP** (tessera-id + tessera-hash; they skip the
-TesseraSeal vector directory until their v1.4 tessera-seal ports land) and the CPython
-extension reports **224 PASS, 0 FAIL, 11 SKIP** (its 3 hlc_overflow records are SKIPped
-explicitly rather than fake-passed). Hybrid suite `0x06` vectors (9 records) are consumed
-by Python, Rust, and Go; C / TypeScript / Java / CPython ext skip them until their v1.4
-hybrid ports land (harness skip wired in `tools/conformance/run.sh:hybrid_supported()`).
+Latest local run (2026-06-15, alpha quick loop):
+**Python 297 / C 297 / Go 297 / Rust 297 PASS, 0 FAIL** (each with 6 explicit SKIPs for
+doc pseudo-records; 288 standard + 9 hybrid records). The full 8-language run is also green
+locally: C++ / TypeScript / Java each report **229 PASS, 0 FAIL, 6 SKIP** (tessera-id +
+tessera-hash; they have no tessera-seal conformance runner and skip the TesseraSeal vector
+directory) and the CPython extension reports **224 PASS, 0 FAIL, 11 SKIP** (its 3 hlc_overflow
+records are SKIPped explicitly rather than fake-passed). Hybrid suite `0x06` vectors (9 records)
+are consumed by the four languages with a tessera-seal runner — Python, C (TSEAL-00030), Go, and
+Rust; C++, TypeScript, Java, and the CPython extension have no tessera-seal runner, so the harness
+skips them (wired in `tools/conformance/run.sh:hybrid_supported()`) — though C++, TypeScript, and
+the CPython ext now implement suite `0x06` at the library level (Java alone still rejects it).
 CI numbers come from `conformance.yml` runs; treat local numbers as local until CI
 confirms them.
 

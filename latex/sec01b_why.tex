@@ -1,0 +1,27 @@
+\section{Why \tessera{}}
+\label{sec:why}
+
+Two forces are reshaping how large systems handle data, and they pull in the same direction.
+
+\textbf{Scale-out with no coordinator.} Distributed systems --- and machine-learning training clusters in particular, now pushing past one million accelerators --- mint identifiers on every node with no central allocator in the hot path. Every shard, sample, checkpoint, row, event, and lineage record needs a unique, ideally sortable handle generated \emph{locally}. A worker-ID scheme (Snowflake's 10-bit worker field tops out at 1{,}024 workers) cannot even enumerate such a fleet; the alternative is a random-field identifier whose field is wide enough that independent generators never collide.
+
+The birthday bound makes this quantitative: for $b$ random bits, the probability that $n$ identifiers contain at least one collision is $P \approx n^{2} / 2^{\,b+1}$. For a fleet that mints on the order of $10^{18}$ identifiers over its lifetime:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lrl@{}}
+\toprule
+\textbf{Format} & \textbf{Random bits} & \textbf{$P(\geq 1\text{ collision})$ at ${\sim}10^{18}$ IDs} \\
+\midrule
+ULID            & 80  & $\approx 1$ (effectively certain) \\
+UUIDv4          & 122 & ${\sim}\,9\%$ \\
+\tesseraid{}    & 256 & ${\sim}\,10^{-41}$ (never) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\tesseraid{} keeps a 48-bit millisecond prefix so identifiers remain time-sortable --- index locality on append-heavy checkpoint and sample stores, exactly what UUIDv4 destroys --- and spends a full 256 bits on the random tail, putting collisions permanently out of reach regardless of fleet size. UUIDv7 and ULID already brought sortability to random identifiers; \tessera{}'s difference is the field width plus a Hybrid-Logical-Clock variant for causal ordering across nodes.
+
+\textbf{Data that outlives its cryptography.} Training corpora, checkpoints, ledgers, and provenance are retained for years --- across the expected arrival of cryptographically-relevant quantum computers. \tessera{} sizes every field for that horizon: \tesseraid{}'s 256-bit tail retains ${\sim}128$-bit second-preimage strength against Grover search (an attacker cannot feasibly target or forge a specific record's identifier); \tesserahash{} carries a 512-bit SHAKE-256 (FIPS 202) content tail for deduplication and integrity across exabyte datasets; and \tesseraseal{} encrypts artifacts under ML-KEM-1024 (FIPS 203) with a key-committing AEAD, so \emph{harvest-now, decrypt-later} fails against anything sealed today.
+
+The three formats share one variant-byte namespace and one wire discipline, so a single artifact can be \emph{identified} (\tesseraid{}), \emph{content-addressed} (\tesserahash{}), and \emph{sealed} (\tesseraseal{}) with primitives that interlock --- for example, binding a \tesseraid{} as the AEAD associated data pins an envelope to the record it belongs to.

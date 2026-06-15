@@ -1,0 +1,8 @@
+\section{Why \tesserahash{} at scale}
+\label{sec:why-hash}
+
+Two forces are reshaping how large systems handle data. Distributed systems --- and machine-learning training clusters in particular, now pushing past one million accelerators --- generate data on every node faster than any central index can track, and that data is retained for years, across the expected arrival of cryptographically-relevant quantum computers.
+
+\tesserahash{} addresses the first by content: the same bytes always produce the same 73-byte identifier, so duplicate shards, samples, and checkpoints across an exabyte-scale corpus are detected by equality of identifier alone --- no coordinator, no central manifest. It addresses the second with field width: a 512-bit SHAKE-256 (FIPS 202) content tail keeps second-preimage and collision resistance far beyond the reach of Grover-style quantum search, so a content address minted today still pins exactly one artifact decades from now. With the birthday bound $P \approx n^{2}/2^{\,b+1}$, even $10^{18}$ distinct contents leave the 512-bit tail at a collision probability around $10^{-118}$ --- the field width, not operational care, is what guarantees uniqueness.
+
+Provenance metadata --- a 48-bit millisecond timestamp and a counter --- makes the identifiers time-sortable for the same index-locality reasons its sibling \tesseraid{} is. In the \tessera{} monorepo a \tesserahash{} can serve as the associated data that binds a \tesseraseal{} envelope to specific content, so identity, integrity, and confidentiality interlock across one shared variant-byte namespace.

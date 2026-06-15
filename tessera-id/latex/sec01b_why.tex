@@ -1,0 +1,25 @@
+\section{Why \tessera{} at hyperscale}
+\label{sec:why-hyperscale}
+
+Two forces are reshaping how large systems handle data, and they pull in the same direction.
+
+\textbf{Scale-out with no coordinator.} Distributed systems --- and machine-learning training clusters in particular, now pushing past one million accelerators --- mint identifiers on every node with no central allocator in the hot path. Every shard, sample, checkpoint, row, event, and lineage record needs a unique, ideally sortable handle generated \emph{locally}. A worker-ID scheme (Snowflake's 10-bit worker field tops out at 1{,}024 workers) cannot even enumerate such a fleet; the alternative is a random-field identifier whose field is wide enough that independent generators never collide.
+
+The birthday bound makes this quantitative: for $b$ random bits, the probability that $n$ identifiers contain at least one collision is $P \approx n^{2} / 2^{\,b+1}$. For a fleet that mints on the order of $10^{18}$ identifiers over its lifetime:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lrl@{}}
+\toprule
+\textbf{Format} & \textbf{Random bits} & \textbf{$P(\geq 1\text{ collision})$ at ${\sim}10^{18}$ IDs} \\
+\midrule
+ULID            & 80  & $\approx 1$ (effectively certain) \\
+UUIDv4          & 122 & ${\sim}\,9\%$ \\
+\tesseraid{}    & 256 & ${\sim}\,10^{-41}$ (never) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\tesseraid{} keeps a 48-bit millisecond prefix so identifiers remain time-sortable --- index locality on append-heavy checkpoint and sample stores, exactly what UUIDv4 destroys --- and spends a full 256 bits on the random tail, putting collisions permanently out of reach regardless of fleet size. UUIDv7 and ULID already brought sortability to random identifiers; \tesseraid{}'s difference is the field width plus a Hybrid-Logical-Clock variant (\cref{sec:distributed}) for causal ordering across nodes.
+
+\textbf{Data that outlives its cryptography.} Training corpora, checkpoints, ledgers, and provenance are retained for years --- across the expected arrival of cryptographically-relevant quantum computers. \tesseraid{} sizes its random tail for that horizon: 256 bits retains ${\sim}128$-bit second-preimage strength against Grover search, so an attacker cannot feasibly target or forge a specific record's identifier. Its sibling formats extend the same discipline --- \tesserahash{} carries a 512-bit SHAKE-256 content tail, and \tesseraseal{} encrypts under ML-KEM-1024 with a key-committing AEAD --- and share one variant-byte namespace, so a single artifact can be \emph{identified}, \emph{content-addressed}, and \emph{sealed} with primitives that interlock (for example, binding a \tesseraid{} as the AEAD associated data pins an envelope to the record it belongs to).

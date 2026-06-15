@@ -1,0 +1,8 @@
+\section{Why \pqcrypt{}}
+\label{sec:why-seal}
+
+Two forces are reshaping how large systems handle data, and they pull in the same direction.
+
+\textbf{Scale-out with no coordinator.} Distributed systems --- and machine-learning training clusters in particular, now pushing past one million accelerators --- mint identifiers and seal artifacts on every node with no central allocator in the hot path. The \pqid{} sibling format in the \pqtoolkit{} monorepo answers the identity half with a 256-bit random tail (the birthday bound keeps collisions near $10^{-41}$ even across $10^{18}$ identifiers) while staying time-sortable via a 48-bit millisecond prefix.
+
+\textbf{Data that outlives its cryptography.} Training corpora, checkpoints, ledgers, and provenance are retained for years --- across the expected arrival of cryptographically-relevant quantum computers. This is where \pqcrypt{} earns its place. It encrypts artifacts under ML-KEM-1024 (FIPS 203) with a key-committing AEAD, so \emph{harvest-now, decrypt-later} fails against anything sealed today, and a single envelope cannot be made to open to two different plaintexts under two different keys --- the multi-recipient confusion that matters when thousands of nodes consume the same sealed dataset. \pqcrypt{} interlocks with its siblings: bind a \pqid{} as the AEAD associated data and the envelope is cryptographically pinned to the record it belongs to; bind a \pqhash{} of the plaintext and it is pinned to specific content. \pqid{} (256-bit tail) and \pqhash{} (512-bit SHAKE-256 tail) are sized for the same post-quantum horizon, so the identifier, the content address, and the ciphertext all remain hard targets together.
