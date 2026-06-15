@@ -35,7 +35,7 @@ Canonical text encodings: 55-character Base64URL \citep{rfc4648} (no padding) an
 \begin{itemize}
 \item \code{0x01} (mandatory, pure PQ): ML-KEM-1024 + AES-256-GCM + 32-byte UtC commitment tag \citep{bellare2022commitment} + HKDF-SHA3-256.
 \item \code{0x02} (optional, pure PQ): ML-KEM-1024 + ChaCha20-Poly1305 + UtC + HKDF-SHA3-256. For software-only callers without AES hardware.
-\item \code{0x06} (optional, hybrid; v1.2, TSEAL-00021): X25519 \citep{rfc7748} + ML-KEM-1024 + AES-256-GCM + UtC + HKDF-SHA3-256. Opt-in defense-in-depth; uses an X-Wing--style \citep{xwing-draft} SHAKE-256 combiner over both shared secrets.
+\item \code{0x06} (optional, hybrid; v1.2, PQCK-00021): X25519 \citep{rfc7748} + ML-KEM-1024 + AES-256-GCM + UtC + HKDF-SHA3-256. Opt-in defense-in-depth; uses an X-Wing--style \citep{xwing-draft} SHAKE-256 combiner over both shared secrets.
 \end{itemize}
 
 The suites \code{0x01}/\code{0x02} carry an unambiguous pure-PQ confidentiality promise: residual risk (a structural break of Module-LWE) is accepted in exchange. Suite \code{0x06} is the opt-in alternative that adds a classical safety net via X25519. The wire byte at header offset 7 records which promise the envelope makes; a single envelope never makes both.

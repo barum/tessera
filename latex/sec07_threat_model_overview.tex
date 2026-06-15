@@ -53,6 +53,6 @@ These apply to all three projects:
 
 \subsection{Pre-external-audit posture}
 
-TesseraSeal v1.x ships with an internal pre-external-audit threat-model walk-through at \texttt{tessera-seal/docs/security-audit-v1.2.md}. It enumerates known attacks vs mitigations, per-language posture, and six open items for an external auditor (CI timing histogram, FIPS 140-3 path, synthetic-key timing-pad invariant testing, hybrid C port, plugin protocol fuzz harness, memory-zeroization audit).
+TesseraSeal v1.x ships with an internal pre-external-audit threat-model walk-through at \texttt{tessera-seal/docs/security-audit-v1.2.md}. It enumerates known attacks vs mitigations, per-language posture, and six open items for an external auditor; of these, the CI timing histogram (automated in TSEAL-00048) and the hybrid C port (TSEAL-00030, 2026-06-13) have since shipped, leaving four (FIPS 140-3 path, synthetic-key timing-pad invariant testing, plugin protocol fuzz harness, memory-zeroization audit).
 
 TesseraID and TesseraHash are simpler in shape and do not have an equivalent internal audit document; their threat models live entirely in their respective whitepapers. A future external audit would cover all three projects, with the TesseraSeal portion being the largest by surface area.

@@ -3,12 +3,12 @@
 
 \subsection{KAT vector files}
 
-\texttt{tessera-seal/conformance/vectors/}. The listing below matches the shipped directory contents as of 2026-06-10 (post the 2026-06-10 KAT expansion, TESS-00009):
+\texttt{tessera-seal/conformance/vectors/}. The listing below matches the shipped directory contents as of 2026-06-13 (post the 2026-06-10 KAT expansion, TESS-00009, and the TSEAL-00049 \code{KEM\_CT\_LEN} pin):
 
 \begin{itemize}
 \item \texttt{decrypt.json} (9 records) --- known envelopes $\to$ known plaintexts, exercising the decrypt path for suites \code{0x01} and \code{0x02}, including a 64\,KiB-plaintext record (\texttt{pt\_64kib\_aesgcm}) and a maximum-\code{AD\_LEN} (65\,536-byte) record (\texttt{ad\_max\_65536\_aesgcm}).
 \item \texttt{peek\_header.json} (5 records) --- header parsing without authentication, including counter-boundary records at \code{CTR} = \code{0xFFFE} and \code{0xFFFF}.
-\item \texttt{invalid.json} (31 records) --- bad variant bytes (\code{0x00}--\code{0x03}, \code{0x05}, \code{0x10}, \code{0x7F}, \code{0xFE}, \code{0xFF}); bad suite bytes (\code{0x00}, \code{0x03}--\code{0x05}, \code{0x10}, \code{0x7F}, \code{0xFE}, \code{0xFF}); single-bit flips in \code{KEM\_CT}, AD, nonce, \code{AEAD\_CT}, \code{AEAD\_TAG}, and \code{COMMIT}; the \texttt{bad\_key\_suite\_mismatch} record (BadKey class, \cref{sec:failure-modes}); truncation with a structurally valid header (mid-\code{KEM\_CT}, mid-\code{AEAD\_CT}, one byte short of \code{COMMIT}); and a wrong-\code{KEM\_CT\_LEN}-with-valid-header record.
+\item \texttt{invalid.json} (32 records) --- bad variant bytes (\code{0x00}--\code{0x03}, \code{0x05}, \code{0x10}, \code{0x7F}, \code{0xFE}, \code{0xFF}); bad suite bytes (\code{0x00}, \code{0x03}--\code{0x05}, \code{0x10}, \code{0x7F}, \code{0xFE}, \code{0xFF}); single-bit flips in \code{KEM\_CT}, AD, nonce, \code{AEAD\_CT}, \code{AEAD\_TAG}, and \code{COMMIT}; the \texttt{bad\_key\_suite\_mismatch} record (BadKey class, \cref{sec:failure-modes}); truncation with a structurally valid header (mid-\code{KEM\_CT}, mid-\code{AEAD\_CT}, one byte short of \code{COMMIT}); and two wrong-\code{KEM\_CT\_LEN}-with-valid-header records (one declaring the wrong length, one declaring a too-small length that would trigger the CWE-125 heap over-read fixed in TSEAL-00049).
 \item \texttt{ad\_binding.json} (6 records) --- \pqid{}-as-AD positive and negative cases.
 \item \texttt{commitment.json} (3 records) --- UtC commit tag KATs independent of the AEAD path.
 \item \texttt{min\_timestamp.json} (4 records) --- \code{MIN\_TIMESTAMP\_MS} helper parity (mirrors \pqid{}'s and \pqhash{}'s analogous files).
@@ -33,20 +33,22 @@ Vectors are consumed by the same harness used by \pqid{} and \pqhash{}: \texttt{
 \texttt{tools/conformance/run.sh} filters \texttt{hybrid\_*.json} vector files per language via \texttt{hybrid\_supported()}:
 
 \begin{lstlisting}[language=bash]
-# Hybrid (suite 0x06) shipped in Python (TSEAL-00021), Rust (TSEAL-00028),
-# Go (TSEAL-00029), and C (TSEAL-00030). C++/TypeScript/Java/CPython ext have no
-# tessera-seal runner yet and reject 0x06 as UNKNOWN_SUITE for now.
+# Hybrid (suite 0x06) consumed by the four languages with a tessera-seal
+# runner: Python (PQCK-00021), Rust (PQCK-00028), Go (PQCK-00029),
+# and C (TSEAL-00030). C++/TypeScript/Java/CPython ext have no tessera-seal
+# runner, so the harness skips hybrid_*.json (and all seal vectors) for them.
 hybrid_supported() {
     case "$1" in
         python) return 0 ;;
         rust)   return 0 ;;
         go)     return 0 ;;
+        c)      return 0 ;;
         *)      return 1 ;;
     esac
 }
 \end{lstlisting}
 
-Languages without hybrid skip the \texttt{hybrid\_*.json} files entirely and MUST reject suite \code{0x06} as \texttt{UNKNOWN\_SUITE} for any non-hybrid envelope (the rejection is pinned by per-language unit tests, TSEAL-00044; see \cref{sec:failure-modes}). When porting hybrid to a new language: (1) implement hybrid in the language, (2) update the language's conformance runner to accept 96-byte seeds (\cref{sec:hybrid}), (3) flip the language's \texttt{hybrid\_supported()} entry, (4) verify the language's PASS count rises by 9 (one per record across the three \texttt{hybrid\_*.json} files).
+\texttt{hybrid\_supported()} is a property of the \emph{conformance runner}, not of library support. The four languages it returns false for (C++, TypeScript, Java, CPython ext) have no \pqcrypt{} runner and therefore skip the \texttt{hybrid\_*.json} files in the harness. At the \emph{library} level, however, C++ (TSEAL-00031), TypeScript (TSEAL-00032), and the CPython extension (TSEAL-00034) implement suite \code{0x06} --- each pinned by an in-suite test that decodes the frozen \texttt{hybrid\_*.json} vectors byte-identically --- and only Java (TSEAL-00033, backlog) still rejects \code{0x06} as \texttt{UNKNOWN\_SUITE} (pinned by its per-language reject test, TSEAL-00044; see \cref{sec:failure-modes}). When porting hybrid into the harness for a new language: (1) implement hybrid in the language, (2) update the language's conformance runner to accept 96-byte seeds (\cref{sec:hybrid}), (3) flip the language's \texttt{hybrid\_supported()} entry, (4) verify the language's PASS count rises by 9 (one per record across the three \texttt{hybrid\_*.json} files).
 
 \subsection{Local invocation}
 
@@ -65,8 +67,8 @@ Latest state (2026-06-13, Apple M4 Max, alpha quick loop, counts across all thre
 \midrule
 Python   & 297 & 0 & 288 standard + 9 hybrid \\
 C        & 297 & 0 & 288 + 9 hybrid (TSEAL-00030) \\
-Go       & 297 & 0 & 288 + 9 hybrid (TSEAL-00029) \\
-Rust     & 297 & 0 & 288 + 9 hybrid (TSEAL-00028) \\
+Go       & 297 & 0 & 288 + 9 hybrid (PQCK-00029) \\
+Rust     & 297 & 0 & 288 + 9 hybrid (PQCK-00028) \\
 \bottomrule
 \end{tabular}
 \end{center}

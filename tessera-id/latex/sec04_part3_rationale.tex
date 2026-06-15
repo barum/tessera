@@ -28,7 +28,7 @@ Two design choices were considered for the relationship between Standard and HLC
 
 \textbf{Storage compatibility.} A single column type (\code{CHAR(55)}, \code{BYTEA(41)}, or whatever) holds both variants. Mixing variants in the same table is permitted and the rows still sort correctly across variants --- though we caution users against doing this in practice (see Part \ref{sec:distributed} for why mixing HLC and Standard TesseraIDs in the same ordered stream introduces some subtle gotchas).
 
-\textbf{Future evolution.} The variant byte gives us a 254-value space for additional generation strategies without changing the wire format. A future signed variant (Part \ref{sec:future}) would be a straightforward \code{0x03}, with the identifier itself unchanged in length and shape.
+\textbf{Future evolution.} The variant byte gives us a large space for additional generation strategies without changing the wire format. A future signed variant (Part \ref{sec:future}) would take the next free byte from the monorepo-shared reserved-future range \code{0x05}--\code{0xFE} (\code{0x03} is already allocated to TesseraHash and \code{0x04} to TesseraSeal), with the identifier itself unchanged in length and shape.
 
 The cost is one byte per identifier --- a price we are happy to pay for the option value of future evolution and the immediate value of letting Standard and HLC coexist in a single deployable format.
 

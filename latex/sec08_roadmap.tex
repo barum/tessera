@@ -13,22 +13,29 @@ This section documents what is in scope for v1.x, what is scheduled for v1.4/v2,
 \midrule
 \tesseraid{}    & v1.1 & 2026-05-21 & Eight-language byte-identical implementations; HLC variant; cross-project variant-byte rejection contract pinned. \\
 \tesserahash{}  & v1.0 & 2026-05-21 & Eight-language byte-identical implementations; SHAKE-256 tail; cross-rejection of cross-project bytes. \\
-\tesseraseal{} & v1.3 partial & 2026-05-21 & Eight-language alpha for suites \code{0x01}/\code{0x02}; hybrid \code{0x06} in Python, Rust, Go; plugin protocol + \texttt{.tseal-key-v1.1} keyfile; CLI binary. \\
+\tesseraseal{} & v1.3 (+hybrid) & 2026-06-13 & Eight-language alpha for suites \code{0x01}/\code{0x02}; hybrid \code{0x06} as a 4-way conformance contract (Python, Rust, Go, C) plus library-level hybrid in C++, TypeScript, CPython ext; plugin protocol + \texttt{.tseal-key-v1.1} keyfile; CLI binary. \\
 \bottomrule
 \end{tabularx}
 \end{center}
 
 \subsection{Open backlog (v1.4 / v2)}
 
-\textbf{TesseraSeal v1.4 (priority order):}
+\textbf{TesseraSeal hybrid \code{0x06} port status (as of 2026-06-13):}
 
 \begin{enumerate}
-\item TSEAL-00030: Hybrid suite \code{0x06} port to C (OpenSSL 3.5+ \texttt{EVP\_PKEY\_X25519}). Closes the largest single gap in the cross-language hybrid contract.
-\item TSEAL-00031: Hybrid \code{0x06} in TypeScript (\texttt{@noble/curves/ed25519} X25519).
-\item TSEAL-00032: Hybrid \code{0x06} in Java (SunJCE \texttt{XDH} keypair, JEP 339).
-\item TSEAL-00033: Hybrid \code{0x06} in CPython extension (mirror Python).
-\item TSEAL-00034: Rust AES-NI/ARMv8 intrinsics for 1\,MiB AEAD throughput. Currently regressed because \texttt{aes-gcm 0.10} does not enable ARMv8 intrinsics on stable Rust without a nightly cfg.
-\item TSEAL-00035: CI timing-histogram regression test. Currently the histogram check is manual; automating it in CI closes open item \#1 from the v1.2 security audit doc.
+\item TSEAL-00030: Hybrid suite \code{0x06} port to C (OpenSSL 3.5+ \texttt{EVP\_PKEY\_X25519}). \textbf{Shipped} --- promotes hybrid to a 4-way byte-identical conformance contract (Python, Rust, Go, C) and closes the largest single gap.
+\item TSEAL-00031: Hybrid \code{0x06} C++ wrapper (routes to the C entry points). \textbf{Shipped} --- library-level, verified by in-suite \texttt{hybrid\_*.json} KAT byte-identity (no \tesseraseal{} conformance runner yet).
+\item TSEAL-00032: Hybrid \code{0x06} in TypeScript (\texttt{@noble/curves} X25519, pinned 2.0.1). \textbf{Shipped} --- library-level, verified by in-suite KAT byte-identity.
+\item TSEAL-00034: Hybrid \code{0x06} in the CPython extension (wraps the C reference). \textbf{Shipped} --- library-level, verified by in-suite KAT byte-identity.
+\item TSEAL-00033: Hybrid \code{0x06} in Java (SunJCE \texttt{XDH} keypair). \textbf{Open} --- the sole remaining hybrid gap, pending a JDK 24+ build/verify environment.
+\end{enumerate}
+
+\textbf{Other TesseraSeal backlog:}
+
+\begin{enumerate}
+\item Add \tesseraseal{} conformance runners for C++, TypeScript, Java, and the CPython extension so their (already library-level) suite coverage --- including hybrid \code{0x06} where implemented --- is harness-enforced rather than in-suite-test-enforced.
+\item Rust AES-NI/ARMv8 intrinsics for 1\,MiB AEAD throughput. Currently regressed because \texttt{aes-gcm 0.10} does not enable ARMv8 intrinsics on stable Rust without a nightly cfg.
+\item Suite \code{0x07} (HQC contingency) is reserved on the registry (TSEAL-00048) but \emph{not} allocated; v1.x decoders MUST reject it. Allocation is gated on NIST HQC FIPS finalization or a Module-LWE confidence loss.
 \end{enumerate}
 
 \textbf{TesseraID v1.x:} no open backlog. The format is stable; future work is operational (benchmarks, additional reference implementations, documentation polish).

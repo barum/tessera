@@ -24,22 +24,23 @@ The cross-language conformance harness is the single quality signal that catches
 
 \subsection{The hybrid suite \texorpdfstring{\code{0x06}}{0x06} skip discipline}
 
-\tesseraseal{}'s hybrid suite \code{0x06} (TSEAL-00021, v1.2) is a polyglot KAT contract that some language ports have not yet caught up to as of v1.3. The harness filters \texttt{hybrid\_*.json} vector files per language via the \texttt{hybrid\_supported()} function in \texttt{tools/conformance/run.sh}:
+\tesseraseal{}'s hybrid suite \code{0x06} (PQCK-00021, v1.2) is a polyglot KAT contract carried by the four languages with their own \tesseraseal{} conformance runners --- Python, C (TSEAL-00030, 2026-06-13), Go, and Rust --- which decrypt the \texttt{hybrid\_*.json} vectors byte-identically. The harness filters those vector files per language via the \texttt{hybrid\_supported()} function in \texttt{tools/conformance/run.sh}:
 
 \begin{lstlisting}[language=bash]
 hybrid_supported() {
     case "$1" in
-        python) return 0 ;;   # TSEAL-00021, v1.2
-        rust)   return 0 ;;   # TSEAL-00028, v1.3
-        go)     return 0 ;;   # TSEAL-00029, v1.3
-        *)      return 1 ;;   # C / C++ / TS / Java / CPython ext: v1.4 backlog
+        python) return 0 ;;   # PQCK-00021, v1.2
+        rust)   return 0 ;;   # PQCK-00028, v1.3
+        go)     return 0 ;;   # PQCK-00029, v1.3
+        c)      return 0 ;;   # TSEAL-00030, 2026-06-13
+        *)      return 1 ;;   # C++ / TS / Java / CPython ext: no seal runner
     esac
 }
 \end{lstlisting}
 
-Languages without hybrid skip the \texttt{hybrid\_*.json} files entirely and MUST reject suite \code{0x06} as \code{UNKNOWN\_SUITE} for any non-hybrid envelope they encounter. When porting hybrid to a new language: (i) implement hybrid in that language, (ii) update the language's conformance runner to accept 96-byte hybrid seeds (the standard runners hard-coded \texttt{len(seed) != 64}), (iii) flip the language's \texttt{hybrid\_supported()} entry, (iv) verify the language's PASS count rises by 9 (one per record across the three hybrid KAT files).
+The four languages without a \tesseraseal{} conformance runner (C++, TypeScript, Java, CPython ext) skip the \texttt{hybrid\_*.json} files in the harness regardless of library support. This runner axis is distinct from \emph{library} support: as of 2026-06-13, C++ (TSEAL-00031), TypeScript (TSEAL-00032), and the CPython extension (TSEAL-00034) implement suite \code{0x06} at the library level --- each verified by an in-suite test that decodes the frozen \texttt{hybrid\_*.json} vectors byte-identically --- and only Java (TSEAL-00033, backlog) still rejects \code{0x06} as \code{UNKNOWN\_SUITE}. When porting hybrid into the \emph{harness} for a new language: (i) implement hybrid in that language, (ii) update the language's conformance runner to accept 96-byte hybrid seeds (the standard runners hard-coded \texttt{len(seed) != 64}), (iii) flip the language's \texttt{hybrid\_supported()} entry, (iv) verify the language's PASS count rises by 9 (one per record across the three hybrid KAT files).
 
-\subsection{Latest cross-language state (2026-06-10)}
+\subsection{Latest cross-language state (2026-06-13)}
 
 \begin{center}
 \small
@@ -47,17 +48,19 @@ Languages without hybrid skip the \texttt{hybrid\_*.json} files entirely and MUS
 \toprule
 \textbf{Language} & \textbf{PASS} & \textbf{FAIL} & \textbf{SKIP} & \textbf{Notes} \\
 \midrule
-Python      & 296 & 0 & 6  & TesseraID + TesseraHash + TesseraSeal v1.x including hybrid \code{0x06}. \\
-C           & 287 & 0 & 6  & TesseraSeal hybrid skipped; TSEAL-00030 backlog. \\
+Python      & 297 & 0 & 6  & TesseraID + TesseraHash + TesseraSeal v1.x including hybrid \code{0x06}. \\
+C           & 297 & 0 & 6  & TesseraSeal hybrid via OpenSSL 3.5+ \texttt{EVP\_PKEY\_X25519} (TSEAL-00030). \\
 C++         & 229 & 0 & 6  & TesseraID + TesseraHash only (no TesseraSeal runner yet). \\
-Go          & 296 & 0 & 6  & TesseraSeal hybrid via stdlib \texttt{crypto/ecdh} (TSEAL-00029). \\
-Rust        & 296 & 0 & 6  & TesseraSeal hybrid via \texttt{x25519-dalek} 2 (TSEAL-00028). \\
+Go          & 297 & 0 & 6  & TesseraSeal hybrid via stdlib \texttt{crypto/ecdh} (PQCK-00029). \\
+Rust        & 297 & 0 & 6  & TesseraSeal hybrid via \texttt{x25519-dalek} 2 (PQCK-00028). \\
 TypeScript  & 229 & 0 & 6  & TesseraID + TesseraHash only (no TesseraSeal runner yet). \\
 Java        & 229 & 0 & 6  & TesseraID + TesseraHash only (no TesseraSeal runner yet). \\
 CPython ext & 224 & 0 & 11 & TesseraID + TesseraHash; HLC clock-override records SKIP explicitly. \\
 \bottomrule
 \end{tabularx}
 \end{center}
+
+The four alpha languages each gained one invalid record since 2026-06-10 from the TSEAL-00049 \code{KEM\_CT\_LEN} pin (288 standard records), and C rose from 287 to 297 by consuming the 9 \texttt{hybrid\_*.json} records once its hybrid port landed (TSEAL-00030): 288 standard + 9 hybrid = 297.
 
 C++, TypeScript, Java, and the CPython extension have no \texttt{tessera\_seal\_runner} binary and \emph{skip} the TesseraSeal vector directory entirely --- there is \emph{no} Python-runner fallback for TesseraSeal (\texttt{tessera\_seal\_runner\_cmd} in \texttt{tools/conformance/run.sh} simply has no entry for those four languages). Their TesseraSeal conformance coverage begins when their v1.4 TesseraSeal ports land; their per-language suites cover TesseraID and TesseraHash directly today. SKIP counts are explicit, never silent: \texttt{doc} pseudo-records and records a language cannot execute emit \texttt{SKIP} lines that the harness reconciles against each file's record count.
 

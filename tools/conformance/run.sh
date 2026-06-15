@@ -167,11 +167,14 @@ expected_count() {
     awk -v f="$1" '$1 == f { print $2 }' "$COUNTS_FILE"
 }
 
-# Languages with hybrid (suite 0x06) support. Vectors matching hybrid_*.json
-# are only fed to these languages; others would FAIL with UNKNOWN_SUITE.
-# Hybrid (suite 0x06) shipped in Python (TSEAL-00021), Rust (TSEAL-00028),
-# Go (TSEAL-00029), and C (TSEAL-00030). C++/TypeScript/Java/CPython ext remain
-# on the v1.4 hybrid backlog and reject 0x06 as UNKNOWN_SUITE for now.
+# Languages whose tessera-seal CONFORMANCE RUNNER consumes the hybrid_*.json
+# (suite 0x06) vectors. Vectors matching hybrid_*.json are only fed to these.
+# Runner-hybrid: Python (PQCK-00021), Rust (PQCK-00028), Go (PQCK-00029),
+# and C (TSEAL-00030). C++/TS/Java/CPython ext have no tessera-seal runner, so
+# the harness skips hybrid_*.json (and all seal vectors) for them. The LIBRARY
+# axis differs: C++ (TSEAL-00031), TS (TSEAL-00032), and the CPython ext
+# (TSEAL-00034) now implement 0x06 at the library level; only Java (TSEAL-00033)
+# still rejects 0x06 as UNKNOWN_SUITE.
 hybrid_supported() {
     case "$1" in
         python) return 0 ;;

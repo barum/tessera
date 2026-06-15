@@ -6,7 +6,7 @@
 
 TesseraID v1 is meant to be a stable, deployable specification. The directions sketched here could become v2 or v3 if real use cases demand them; none are part of v1.
 
-\textbf{ML-DSA signed variant (deferred).} An earlier draft included an embedded post-quantum signature using ML-DSA \citep{fips204}. It was dropped because the smallest ML-DSA signature ($\sim$3{,}300 bytes for ML-DSA-44) is two orders of magnitude larger than the identifier itself, and embedding a signature in the identifier conflates identification with authentication. A future variant \code{0x03} may revisit this with a more compact scheme (e.g., a hash-based MAC keyed off a shared secret).
+\textbf{ML-DSA signed variant (deferred).} An earlier draft included an embedded post-quantum signature using ML-DSA \citep{fips204}. It was dropped because the smallest ML-DSA signature ($\sim$3{,}300 bytes for ML-DSA-44) is two orders of magnitude larger than the identifier itself, and embedding a signature in the identifier conflates identification with authentication. A future variant from the reserved-future range \code{0x05}--\code{0xFE} (\code{0x03} is TesseraHash, \code{0x04} is TesseraSeal) may revisit this with a more compact scheme (e.g., a hash-based MAC keyed off a shared secret).
 
 \textbf{Time-authority variant.} A variant whose timestamp is signed by a trusted time authority (e.g., Roughtime \citep{roughtime}, an RFC 3161 TSA \citep{rfc3161}) would eliminate the timestamp-tampering concern for compliance-sensitive use cases. The signature would live outside the 41-byte container with the identifier carrying a reference.
 
