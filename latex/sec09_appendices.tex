@@ -105,9 +105,11 @@ This umbrella whitepaper is built from LaTeX sources under \texttt{latex/} (\tex
 \textbf{Per-project documents.} This umbrella does not restate normative content from the per-project whitepapers. Refer to:
 
 \begin{itemize}
-\item \tesseraid{}: \texttt{tessera-id/latex/TesseraID\_Whitepaper.pdf} (repo root: \texttt{TesseraID\_Whitepaper.pdf}). 46-page document covering wire format, security analysis, distributed-systems model, comparisons with UUIDv4/v7/ULID/KSUID/Snowflake, eight-language reference implementations.
+\item \tesseraid{}: \texttt{tessera-id/latex/TesseraID\_Whitepaper.pdf}. 46-page document covering wire format, security analysis, distributed-systems model, comparisons with UUIDv4/v7/ULID/KSUID/Snowflake, eight-language reference implementations.
 \item \tesserahash{}: \texttt{tessera-hash/latex/TesseraHash\_Whitepaper.pdf}. 21-page document covering wire format, SHAKE-256 binding, encodings, security argument, conformance, comparison with adjacent hash formats.
-\item \tesseraseal{}: \texttt{tessera-seal/latex/TesseraSeal\_Whitepaper.pdf} (repo root: \texttt{TesseraSeal\_Whitepaper.pdf}). 26-page document covering wire format, ML-KEM-1024 binding, hybrid suite \code{0x06}, AEAD + UtC commitment, KDF, AD-binding patterns, failure modes, side channels, plugin protocol, conformance, comparisons.
+\item \tesseraseal{}: \texttt{tessera-seal/latex/TesseraSeal\_Whitepaper.pdf}. 26-page document covering wire format, ML-KEM-1024 binding, hybrid suite \code{0x06}, AEAD + UtC commitment, KDF, AD-binding patterns, failure modes, side channels, plugin protocol, conformance, comparisons.
+
+\item This umbrella document is the repo-root published artifact (\texttt{Tessera\_Whitepaper.pdf}); it is the unifying narrative front door and is \emph{non-normative} relative to the three project whitepapers above (when they disagree, the project whitepaper wins).
 \end{itemize}
 
 \textbf{Authority order} (when sources disagree): the per-project whitepaper for project-specific content; this umbrella whitepaper for cross-project content; then the per-project Python reference; then the per-project canonical C ABI; then every other language port. A cross-language disagreement is never resolved by changing the spec to match an outlier.

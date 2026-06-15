@@ -17,11 +17,17 @@ abstract: >-
   reference, a canonical C ABI, and a cross-language known-answer-test conformance harness.
 references:
   - type: report
+    title: "Tessera Umbrella Whitepaper"
+    authors:
+      - family-names: Samani
+        given-names: Bahram
+    url: "https://github.com/barum/tessera/blob/main/Tessera_Whitepaper.pdf"
+  - type: report
     title: "TesseraID Whitepaper"
     authors:
       - family-names: Samani
         given-names: Bahram
-    url: "https://github.com/barum/tessera/blob/main/TesseraID_Whitepaper.pdf"
+    url: "https://github.com/barum/tessera/blob/main/tessera-id/latex/TesseraID_Whitepaper.pdf"
   - type: report
     title: "TesseraHash Whitepaper"
     authors:

@@ -19,7 +19,7 @@ change the spec to match an outlier implementation.
 Start with [README.md](README.md) for the language tree, then use each project's whitepaper
 and reference implementations as the source of truth:
 
-- [TesseraID_Whitepaper.pdf](TesseraID_Whitepaper.pdf), [tessera-id/python/tessera_id.py](tessera-id/python/tessera_id.py), [tessera-id/c/tessera_id.h](tessera-id/c/tessera_id.h)
+- [tessera-id/latex/TesseraID_Whitepaper.pdf](tessera-id/latex/TesseraID_Whitepaper.pdf), [tessera-id/python/tessera_id.py](tessera-id/python/tessera_id.py), [tessera-id/c/tessera_id.h](tessera-id/c/tessera_id.h)
 - [tessera-hash/latex/TesseraHash_Whitepaper.pdf](tessera-hash/latex/TesseraHash_Whitepaper.pdf), [tessera-hash/python/tessera_hash.py](tessera-hash/python/tessera_hash.py), [tessera-hash/c/tessera_hash.h](tessera-hash/c/tessera_hash.h)
 - [tessera-seal/latex/TesseraSeal_Whitepaper.pdf](tessera-seal/latex/TesseraSeal_Whitepaper.pdf), [tessera-seal/python/tessera_seal.py](tessera-seal/python/tessera_seal.py), [tessera-seal/c/tessera_seal.h](tessera-seal/c/tessera_seal.h)
 

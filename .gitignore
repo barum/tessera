@@ -88,13 +88,13 @@ dist/
 */latex/main.pdf
 /latex/main.pdf
 
-# Root-level whitepaper PDFs: only TesseraID is a tracked published artifact at the
-# repo root (per CLAUDE.md authority order). The canonical TesseraSeal / TesseraHash /
-# Tessera PDFs live in their own latex/ dirs; the root copies are transient
-# build byproducts.
+# Root-level whitepaper PDFs: the repo root publishes ONE tracked artifact — the
+# umbrella Tessera_Whitepaper.pdf (the unifying project narrative front door, TESS-00024).
+# Every project's own whitepaper is tracked in its <project>/latex/ dir; the root
+# single-project copies are transient build byproducts and stay untracked.
 /TesseraSeal_Whitepaper.pdf
 /TesseraHash_Whitepaper.pdf
-/Tessera_Whitepaper.pdf
+/TesseraID_Whitepaper.pdf
 
 # OS
 .DS_Store

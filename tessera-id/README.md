@@ -5,7 +5,7 @@ tail for ~128-bit post-quantum security under Grover's algorithm.
 
 For the project overview, see the [root README](../README.md). For the full
 specification, rationale, security analysis, and benchmark methodology, see
-[../TesseraID_Whitepaper.pdf](../TesseraID_Whitepaper.pdf).
+[latex/TesseraID_Whitepaper.pdf](latex/TesseraID_Whitepaper.pdf).
 
 **Positioning** — when to choose TesseraID over UUIDv7/ULID/KSUID, the honest 41-vs-16-byte
 cost arithmetic, and when *not* to use it: [docs/positioning.md](docs/positioning.md)
@@ -53,7 +53,7 @@ latex/       LaTeX source for the typeset whitepaper PDF
 
 When implementations disagree, resolve in this order:
 
-1. [`../TesseraID_Whitepaper.pdf`](../TesseraID_Whitepaper.pdf) and [`latex/`](latex/) source — normative spec.
+1. [`latex/TesseraID_Whitepaper.pdf`](latex/TesseraID_Whitepaper.pdf) and [`latex/`](latex/) source — normative spec.
 2. [`python/tessera_id.py`](python/tessera_id.py) — readable reference. Defines API shape and semantics.
 3. [`c/tessera_id.h`](c/tessera_id.h) — canonical C ABI. Source of truth for field offsets and error codes.
 4. Other languages follow Python + C.

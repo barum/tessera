@@ -3,6 +3,20 @@
 
 The three projects are designed to compose. This section documents the canonical patterns and the reasoning behind each.
 
+\subsection{An end-to-end walkthrough}
+
+Before the individual patterns, here is the whole chain at once --- one training shard moving through a cluster, touching all three formats, with no central coordinator anywhere in the path:
+
+\begin{enumerate}
+\item \textbf{Identity (\tesseraid{}).} The producing node mints a \tesseraid{} for the shard: 41 bytes, generated locally, unique without a coordinator, and time-sortable so the shard lands in order in an append-mostly store.
+\item \textbf{Integrity (\tesserahash{}).} It computes a \tesserahash{} over the shard's bytes. Two nodes that independently hold the same shard derive the same content tail, so duplicates across the corpus collapse to one, and any consumer can verify that the bytes it received are the bytes that were committed --- no key, no manifest, no coordinator.
+\item \textbf{Confidentiality (\tesseraseal{}).} It seals the shard for the consumer's ML-KEM-1024 public key, binding the \tesseraid{} as the AEAD associated data (Pattern~1 below). The envelope is now post-quantum-confidential \emph{and} cryptographically pinned to that record: an attacker who re-points it at a different \tesseraid{} gets a generic \texttt{DecryptionError}, nothing more.
+\item \textbf{Content-addressed storage.} The cluster stores the envelope at a key derived from the \tesserahash{} of the \emph{ciphertext} (Pattern~4 below), so identical sealed objects deduplicate at the storage layer.
+\item \textbf{Consumption.} A consumer node fetches the envelope, opens it with its private key, and re-derives the \tesserahash{} of the recovered plaintext to confirm it received exactly the committed content. Identity, integrity, and confidentiality were each provided by exactly one format, and the three composed without a single round-trip to a coordinator.
+\end{enumerate}
+
+That is the unifying value: one record, three orthogonal guarantees, one shared wire discipline. The patterns below formalize each link in this chain and name the threat each one closes.
+
 \subsection{Pattern 1: \tesseraid{}-as-AD (record-level confidentiality binding)}
 
 \textbf{Use when:} a record has a stable \tesseraid{} identifier and the record's content needs confidentiality and integrity tied to that identifier.

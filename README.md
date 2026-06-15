@@ -49,10 +49,12 @@ envelope's associated data pins ciphertext to the record it belongs to.
 
 ## Projects
 
-- Umbrella overview whitepaper: [latex/Tessera_Whitepaper.pdf](latex/Tessera_Whitepaper.pdf)
-  (sources: [latex/](latex/)) — covers the cross-project relationships, shared variant-byte
-  namespace, and polyglot discipline. **Non-normative** relative to the three project
-  whitepapers below; when they disagree, the project whitepaper wins.
+- **Start here — the unifying narrative:** [Tessera_Whitepaper.pdf](Tessera_Whitepaper.pdf)
+  (sources: [latex/](latex/)). The repo-root front door: why three formats (identity, integrity,
+  confidentiality) instead of one, how they compose end-to-end for a single record, and the shared
+  variant-byte namespace, polyglot discipline, and conformance harness that keep them one system.
+  **Non-normative** relative to the three project whitepapers below; when they disagree, the
+  project whitepaper wins.
 
 ### [tessera-id/](tessera-id/) — Post-Quantum Identifier
 
@@ -61,7 +63,7 @@ security against Grover-style quantum search while remaining a practical drop-in
 ULID/UUIDv7-shaped workloads. Two variants share the wire format: Standard (wall-clock +
 monotonic counter) and HLC (Hybrid Logical Clock for distributed causality).
 
-- Whitepaper: [TesseraID_Whitepaper.pdf](TesseraID_Whitepaper.pdf)
+- Whitepaper: [tessera-id/latex/TesseraID_Whitepaper.pdf](tessera-id/latex/TesseraID_Whitepaper.pdf)
 - Whitepaper sources: [tessera-id/latex/](tessera-id/latex/) (LaTeX) and [tessera-id/docs/](tessera-id/docs/) (DOCX pipeline)
 - Project README: [tessera-id/README.md](tessera-id/README.md)
 - Project CLAUDE.md (invariants + per-language guide): [tessera-id/CLAUDE.md](tessera-id/CLAUDE.md)

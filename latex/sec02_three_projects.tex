@@ -5,7 +5,7 @@ Each project under \tessera{} is independent on the wire: a consumer can adopt o
 
 \subsection{\tesseraid{}: post-quantum-era identifier}
 
-\textbf{Project root:} \texttt{tessera-id/}. \textbf{Whitepaper:} \texttt{tessera-id/latex/TesseraID\_Whitepaper.pdf} (or repo-root \texttt{TesseraID\_Whitepaper.pdf}).
+\textbf{Project root:} \texttt{tessera-id/}. \textbf{Whitepaper:} \texttt{tessera-id/latex/TesseraID\_Whitepaper.pdf}.
 
 \tesseraid{} is a 41-byte, lexicographically-sortable identifier. Layout: \code{TS(6) || VARIANT(1) || COUNTER(2) || RANDOM(32)}, big-endian. The 32-byte random tail is the security claim: $2^{128}$ second-preimage even against an attacker running Grover's algorithm \citep{grover1996} --- the same security target NIST uses for ML-KEM-1024 \citep{fips203} (which \tesseraseal{} uses; see below). The 16-bit per-millisecond counter and 48-bit timestamp make the format sortable and traceable without coordination.
 

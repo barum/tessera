@@ -8,6 +8,7 @@ whitepaper, repo-wide doc/git hygiene. Per-project changes live in
 reference the former PQToolkit / PQID / PQHash / PQCrypt names are a historical
 ledger — kept verbatim; see TESS-00001 for the rename.)
 
+- 2026-06-15 — [TESS-00024 — Umbrella whitepaper becomes the repo-root front door (unifying narrative: why three formats + end-to-end walkthrough); root TesseraID PDF demoted to tessera-id/latex/ (docs)](2026-06-15-tess-00024-umbrella-root-front-door.md)
 - 2026-06-15 — [TESS-00023 — "Why tessera" positioning case added to README + all four whitepapers; README conformance freshness (docs)](2026-06-15-tess-00023-why-tessera-positioning.md)
 - 2026-06-15 — [TESS-00022 — Whitepaper freshness sweep: reconcile all four whitepapers with the 2026-06-13 hybrid ports + KEM_CT_LEN pin (docs)](2026-06-15-tess-00022-whitepaper-freshness-sweep.md)
 - 2026-06-10 — [TESS-00019 — Governance remainder: OpenSSF Scorecard workflow, C2SP submission plan, strategic backlog, plan status sweep](2026-06-10-tess-00019-governance-remainder.md)

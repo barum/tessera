@@ -6,7 +6,7 @@ Project-specific guidance for the TesseraID identifier format. The repo-wide umb
 
 TesseraID is a **41-byte sortable, post-quantum-era identifier**. The wire format is normative; the per-language code is a reference implementation. Authoritative sources, in order:
 
-1. The whitepaper PDF at [../TesseraID_Whitepaper.pdf](../TesseraID_Whitepaper.pdf) and its LaTeX source at [latex/](latex/).
+1. The whitepaper PDF at [latex/TesseraID_Whitepaper.pdf](latex/TesseraID_Whitepaper.pdf) and its LaTeX source at [latex/](latex/). (The repo root publishes the umbrella [../Tessera_Whitepaper.pdf](../Tessera_Whitepaper.pdf), not this project's PDF.)
 2. The Python reference at [python/tessera_id.py](python/tessera_id.py) and the C header at [c/tessera_id.h](c/tessera_id.h) — these define the canonical API shape.
 3. [../AGENTS.md](../AGENTS.md) — invariants that MUST NOT be silently broken.
 
@@ -85,7 +85,7 @@ The whitepaper has two source forms that must agree:
 - LaTeX (typeset PDF): [latex/main.tex](latex/main.tex) with per-section `secNN_*.tex` files; build with `cd tessera-id/latex && make`.
 - DOCX-generation JS pipeline: [docs/build_whitepaper.js](docs/build_whitepaper.js) plus `wp_section*.js` modules; produces [docs/TesseraID_Whitepaper.docx](docs/TesseraID_Whitepaper.docx).
 
-The root [../TesseraID_Whitepaper.pdf](../TesseraID_Whitepaper.pdf) is the published artifact. When the spec changes, both source pipelines must be updated.
+The tracked artifact is [latex/TesseraID_Whitepaper.pdf](latex/TesseraID_Whitepaper.pdf) (the repo root publishes the umbrella `Tessera_Whitepaper.pdf` instead). When the spec changes, both source pipelines must be updated.
 
 ## Scope discipline
 

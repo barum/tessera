@@ -25,3 +25,15 @@ UUIDv4          & 122 & ${\sim}\,9\%$ \\
 \textbf{Data that outlives its cryptography.} Training corpora, checkpoints, ledgers, and provenance are retained for years --- across the expected arrival of cryptographically-relevant quantum computers. \tessera{} sizes every field for that horizon: \tesseraid{}'s 256-bit tail retains ${\sim}128$-bit second-preimage strength against Grover search (an attacker cannot feasibly target or forge a specific record's identifier); \tesserahash{} carries a 512-bit SHAKE-256 (FIPS 202) content tail for deduplication and integrity across exabyte datasets; and \tesseraseal{} encrypts artifacts under ML-KEM-1024 (FIPS 203) with a key-committing AEAD, so \emph{harvest-now, decrypt-later} fails against anything sealed today.
 
 The three formats share one variant-byte namespace and one wire discipline, so a single artifact can be \emph{identified} (\tesseraid{}), \emph{content-addressed} (\tesserahash{}), and \emph{sealed} (\tesseraseal{}) with primitives that interlock --- for example, binding a \tesseraid{} as the AEAD associated data pins an envelope to the record it belongs to.
+
+\subsection{Why three formats, not one}
+
+A record moving through a large system has three needs that look similar but are not, and no single field serves all three well:
+
+\begin{itemize}
+\item \textbf{Identity} --- a name that is unique, time-sortable, and mintable on any node with no coordinator, assigned once and stable for the record's lifetime. This is \tesseraid{}.
+\item \textbf{Integrity} --- a fingerprint that changes the instant the bytes change, that any party can recompute with no key and no coordinator, to deduplicate or to verify that received content is the content that was committed. This is \tesserahash{}.
+\item \textbf{Confidentiality} --- a sealed container only the intended recipient can open, built to survive the quantum transition, that cannot be silently re-pointed at a different record. This is \tesseraseal{}.
+\end{itemize}
+
+They are deliberately \emph{separate} formats because their security arguments and lifetimes diverge: an identifier is public and permanent; a content hash is keyless and rolls on every edit; an envelope is keyed, confidential, and bound to a recipient. Folding them into one field would force the weakest of those assumptions onto all three --- a public identifier cannot also be a secret key, and a keyless hash cannot also be a confidentiality boundary. Yet they are \emph{unified} where it pays off: a shared 9-byte header layout, one variant-byte namespace (\cref{sec:shared-namespace}) so any decoder rejects the other two formats' bytes, and one polyglot conformance harness (\cref{sec:conformance}). Adopting all three is one mental model and one dependency surface --- not three disjoint libraries, pulled from three places, that happen to share a name. The rest of this document is that unifying view: \cref{sec:three-projects} introduces each format, \cref{sec:patterns} shows how they compose end to end, and \cref{sec:shared-namespace,sec:polyglot,sec:conformance} cover the shared namespace, discipline, and tooling that keep them one system.

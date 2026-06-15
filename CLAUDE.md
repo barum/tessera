@@ -16,7 +16,7 @@ When working inside a project, treat its `CLAUDE.md` as authoritative for that p
 
 ## Authority order (when sources disagree)
 
-1. Project whitepaper (LaTeX under `<project>/latex/`, published PDF at repo root for TesseraID).
+1. Project whitepaper (LaTeX under `<project>/latex/`, with the built `*_Whitepaper.pdf` tracked in that same `latex/` dir). The repo root publishes one artifact — the umbrella `Tessera_Whitepaper.pdf` (the unifying project narrative, TESS-00024), which is **non-normative** relative to the project whitepapers.
 2. Project Python reference (`<project>/python/<project>.py`) — readable canonical source.
 3. Project C header (`<project>/c/<project>.h`) — canonical ABI, field offsets, error codes.
 4. All other languages (Go, Rust, TS, C++, Java, CPython ext) follow.
@@ -61,7 +61,7 @@ Every behavior-changing PR updates:
 
 1. **Project `CLAUDE.md`** when project invariants move.
 2. **Project release notes** at `<project>/docs/release-notes/YYYY-MM-DD-<slug>.md`. Required sections: Summary, Wire/API changes, Migration guidance, Test plan, Rollback. Add an entry to the project's rolling `docs/release-notes/CHANGELOG.md` index (reverse-chronological).
-3. **Whitepaper LaTeX** for any spec change. Rebuild and check in the produced artifact for TesseraID (`TesseraID_Whitepaper.pdf`). Each project tracks exactly one named `*_Whitepaper.pdf` artifact in its `latex/` dir; `main.pdf` build outputs are ignored.
+3. **Whitepaper LaTeX** for any spec change. Rebuild and check in the produced `*_Whitepaper.pdf` artifact in that project's `latex/` dir. Each project tracks exactly one named `*_Whitepaper.pdf` in its `latex/` dir; `main.pdf` build outputs are ignored. The repo root tracks only the umbrella `Tessera_Whitepaper.pdf` (cp-synced from `latex/Tessera_Whitepaper.pdf` after a rebuild); root single-project copies are gitignored.
 4. **README files** when the public surface area changes (root `README.md`, `<project>/README.md`, per-language READMEs).
 
 If a change is purely internal with no operator/consumer impact, state it explicitly in the PR description: `release-notes: minimal — code-only refactor, identical wire behavior`.
