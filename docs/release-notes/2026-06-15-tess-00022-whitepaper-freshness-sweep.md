@@ -73,6 +73,9 @@ Second-pass fixes (residual internal contradictions caught by the verification r
 - Rebuilt PDFs (tracked artifacts), **all four now stamped 2026-06-15**:
   `latex/Tessera_Whitepaper.pdf`, `tessera-seal/latex/TesseraSeal_Whitepaper.pdf`,
   `tessera-hash/latex/TesseraHash_Whitepaper.pdf`, `tessera-id/latex/TesseraID_Whitepaper.pdf`.
+  The repo-root published copy `TesseraID_Whitepaper.pdf` (the only project with a root-level
+  published artifact, per `tessera-id/CLAUDE.md`) is synced byte-identical to the `latex/` build —
+  the Makefile writes only the `latex/`-dir copy, so the root copy must be `cp`-synced by hand.
 
 ## Wire/API changes
 
