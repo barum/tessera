@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/logo/tessera.svg" width="128" height="128" alt="Tessera logo">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/tessera-wordmark-dark.svg">
+    <img src="assets/logo/tessera-wordmark.svg" width="440" alt="tessera">
+  </picture>
 </p>
 
 # tessera — Post-Quantum Identifier, Hash & Encryption Toolkit

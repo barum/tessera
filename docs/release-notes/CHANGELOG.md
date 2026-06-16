@@ -8,6 +8,7 @@ whitepaper, repo-wide doc/git hygiene. Per-project changes live in
 reference the former PQToolkit / PQID / PQHash / PQCrypt names are a historical
 ledger — kept verbatim; see TESS-00001 for the rename.)
 
+- 2026-06-15 — [TESS-00026 — Logo wordmark + social card + PNG exports; logos on the whitepaper title pages + README wordmark (docs)](2026-06-15-tess-00026-logo-exports-and-wordmark.md)
 - 2026-06-15 — [TESS-00025 — Logo set (SVG) for tessera + the three formats; wired into the READMEs (docs)](2026-06-15-tess-00025-logo-set.md)
 - 2026-06-15 — [TESS-00024 — Umbrella whitepaper becomes the repo-root front door (unifying narrative: why three formats + end-to-end walkthrough); root TesseraID PDF demoted to tessera-id/latex/ (docs)](2026-06-15-tess-00024-umbrella-root-front-door.md)
 - 2026-06-15 — [TESS-00023 — "Why tessera" positioning case added to README + all four whitepapers; README conformance freshness (docs)](2026-06-15-tess-00023-why-tessera-positioning.md)
