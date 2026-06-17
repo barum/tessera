@@ -32,10 +32,12 @@ believe is a security vulnerability.
 | Surface | Status | Security support |
 |---------|--------|------------------|
 | TesseraSeal suites `0x01`/`0x02` in **Python, C, Go, Rust** | Reference surface | **Full** — fixes prioritized, advisories issued |
-| TesseraSeal hybrid suite `0x06` in **Python, Go, Rust** | Alpha | Full, but alpha: wire frozen, ports incomplete |
+| TesseraSeal hybrid suite `0x06` in **Python, C, Go, Rust** | Reference surface (4-way harness KAT) | **Full** — wire frozen; Java still rejects `0x06` (TSEAL-00033 backlog) |
+| TesseraSeal hybrid suite `0x06` in **C++, TypeScript, CPython ext** | Library-level (in-suite KAT; no harness runner) | Best-effort — byte-identical decode of frozen `hybrid_*.json` vectors |
 | TesseraID (`0x01`/`0x02`) and TesseraHash (`0x03`) in Python, C, Go, Rust | Reference surface | **Full** |
 | TesseraID / TesseraHash in **C++, TypeScript, Java, CPython ext** | Ports | **Best-effort** |
-| TesseraSeal in C++, TypeScript, Java, CPython ext | Not yet implemented (v1.4 backlog) | Out of scope until shipped |
+| TesseraSeal in **Java** | Partial — suites `0x01`/`0x02` only; hybrid `0x06` rejects `UNKNOWN_SUITE` | Best-effort until TSEAL-00033 lands |
+| TesseraSeal in **C++, TypeScript, CPython ext** (suites `0x01`/`0x02`) | Library-level (no tessera-seal conformance runner) | Best-effort — in-suite tests; harness runs id + hash only |
 | `tools/` conformance harness, build scripts, CI | Non-normative | Best-effort |
 
 Only the latest release on `main` is supported. There are no maintained back-branches; fixes

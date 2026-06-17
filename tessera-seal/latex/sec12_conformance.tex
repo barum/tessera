@@ -3,7 +3,7 @@
 
 \subsection{KAT vector files}
 
-\texttt{tessera-seal/conformance/vectors/}. The listing below matches the shipped directory contents as of 2026-06-13 (post the 2026-06-10 KAT expansion, TESS-00009, and the TSEAL-00049 \code{KEM\_CT\_LEN} pin):
+\texttt{tessera-seal/conformance/vectors/}. The listing below matches the shipped directory contents as of 2026-06-17 (post the 2026-06-10 KAT expansion, TESS-00009, the TSEAL-00049 \code{KEM\_CT\_LEN} pin, and the append-only \texttt{kyberslash\_regression.json} record):
 
 \begin{itemize}
 \item \texttt{decrypt.json} (9 records) --- known envelopes $\to$ known plaintexts, exercising the decrypt path for suites \code{0x01} and \code{0x02}, including a 64\,KiB-plaintext record (\texttt{pt\_64kib\_aesgcm}) and a maximum-\code{AD\_LEN} (65\,536-byte) record (\texttt{ad\_max\_65536\_aesgcm}).
@@ -15,13 +15,13 @@
 \item \texttt{hybrid\_decrypt.json} (4 records) --- KAT round-trip for hybrid suite \code{0x06}.
 \item \texttt{hybrid\_ad\_binding.json} (4 records) --- hybrid AD-binding positive and negative cases.
 \item \texttt{hybrid\_peek\_header.json} (1 record) --- hybrid header parse.
+\item \texttt{kyberslash\_regression.json} (1 record) --- KyberSlash-class ML-KEM decaps negative KAT (append-only; functional \texttt{DecryptionError} rejection only --- timing flatness is \texttt{timing-histogram.py}'s job, \cref{sec:failure-modes}).
 \end{itemize}
 
-Two vector files are \emph{planned} (backlog) and are \emph{not} part of the shipped vector set:
+One vector file is \emph{planned} (backlog) and is \emph{not} part of the shipped vector set:
 
 \begin{itemize}
 \item \texttt{encrypt\_roundtrip.json} --- fixed-RNG-seed encrypt determinism. Each record would give a plaintext, a recipient public key, a sender RNG seed, and an expected envelope hex. The generator pathway exists (the seeded DRBG described under ``Vector generation'' below) but the file has not shipped.
-\item A KyberSlash-class timing-regression vector (working name \texttt{kyberslash\_regression.json}) --- known-bad ML-KEM-1024 inputs that exercised KyberSlash 1/2 \citep{kyberslash}, asserting they reject without timing variance.
 \end{itemize}
 
 \subsection{Cross-language runner}
@@ -57,7 +57,7 @@ bash tools/conformance/run.sh
 TESSERA_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh
 \end{lstlisting}
 
-Latest state (2026-06-13, Apple M4 Max, alpha quick loop, counts across all three projects --- \pqid{} + \pqhash{} + \pqcrypt{}; +1 invalid record each since 2026-06-10 from the TSEAL-00049 \code{KEM\_CT\_LEN} pin, and C up to 297 with the TSEAL-00030 hybrid port consuming the 9 \texttt{hybrid\_*.json} records):
+Latest state (2026-06-17, Apple M4 Max, alpha quick loop, counts across all three projects --- \pqid{} + \pqhash{} + \pqcrypt{}; +1 invalid record each since 2026-06-10 from the TSEAL-00049 \code{KEM\_CT\_LEN} pin, +1 \texttt{kyberslash\_regression.json} record, and C up to 298 with the TSEAL-00030 hybrid port consuming the 9 \texttt{hybrid\_*.json} records):
 
 \begin{center}
 \small
@@ -65,10 +65,10 @@ Latest state (2026-06-13, Apple M4 Max, alpha quick loop, counts across all thre
 \toprule
 \textbf{Language} & \textbf{PASS} & \textbf{FAIL} & \textbf{Notes} \\
 \midrule
-Python   & 297 & 0 & 288 standard + 9 hybrid \\
-C        & 297 & 0 & 288 + 9 hybrid (TSEAL-00030) \\
-Go       & 297 & 0 & 288 + 9 hybrid (PQCK-00029) \\
-Rust     & 297 & 0 & 288 + 9 hybrid (PQCK-00028) \\
+Python   & 298 & 0 & 288 standard + 9 hybrid + 1 kyberslash \\
+C        & 298 & 0 & 288 + 9 hybrid + 1 kyberslash (TSEAL-00030) \\
+Go       & 298 & 0 & 288 + 9 hybrid + 1 kyberslash (PQCK-00029) \\
+Rust     & 298 & 0 & 288 + 9 hybrid + 1 kyberslash (PQCK-00028) \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -77,7 +77,7 @@ C++, TypeScript, Java, and the CPython extension have no \pqcrypt{} runner and s
 
 \subsection{CI gate}
 
-The GitHub Actions workflow \texttt{.github/workflows/conformance.yml} runs on every pull request and push (it is the only automatically-triggered workflow in the repository; the per-language matrices are manual-dispatch), and branch protection on \texttt{main} requires its cross-language job. Within that workflow, the 4-language alpha step (Python + C + Go + Rust --- the four languages with their own \pqcrypt{} runners) is the blocking check; the full 8-language step is informational (\texttt{continue-on-error}) until the remaining four ports gain \pqcrypt{} runners.
+The GitHub Actions workflow \texttt{.github/workflows/conformance.yml} runs on every pull request and push (it is the only automatically-triggered workflow in the repository; the per-language matrices are manual-dispatch), and branch protection on \texttt{main} requires its cross-language job. Within that workflow, the 4-language alpha step (Python + C + Go + Rust --- the four languages with their own \pqcrypt{} runners) and a TesseraSeal decrypt-path timing-histogram step (\texttt{tools/scripts/timing-histogram.py --profile ci}, \cref{sec:failure-modes}) are blocking checks; the full 8-language step is informational (\texttt{continue-on-error}) until the remaining four ports gain \pqcrypt{} runners.
 
 \subsection{Vector generation and the append-only freeze}
 

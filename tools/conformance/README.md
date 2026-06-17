@@ -10,18 +10,18 @@ bash tools/conformance/run.sh                                         # all 8 la
 TESSERA_CONFORMANCE_SKIP="cpython java cpp typescript" bash tools/conformance/run.sh   # alpha quick loop
 ```
 
-## Expected per-language results (TESS-00009, 2026-06-10)
+## Expected per-language results (TESS-00009, post TSEAL-00030/00049, 2026-06-13)
 
 A green run prints exactly this summary. Any deviation — lower PASS, any FAIL, or an unexplained
 SKIP delta — is a regression, not noise:
 
 | language   | PASS | FAIL | SKIP | what it runs |
 |------------|-----:|-----:|-----:|--------------|
-| python     |  296 |    0 |    6 | id + hash + seal (incl. 9 hybrid) |
-| c          |  287 |    0 |    6 | id + hash + seal (no hybrid yet; TSEAL-00030) |
+| python     |  298 |    0 |    6 | id + hash + seal (incl. 9 hybrid + 1 kyberslash) |
+| c          |  298 |    0 |    6 | id + hash + seal (incl. 9 hybrid + 1 kyberslash; TSEAL-00030) |
 | cpp        |  229 |    0 |    6 | id + hash only (no seal runner yet) |
-| go         |  296 |    0 |    6 | id + hash + seal (incl. 9 hybrid) |
-| rust       |  296 |    0 |    6 | id + hash + seal (incl. 9 hybrid) |
+| go         |  298 |    0 |    6 | id + hash + seal (incl. 9 hybrid + 1 kyberslash) |
+| rust       |  298 |    0 |    6 | id + hash + seal (incl. 9 hybrid + 1 kyberslash) |
 | typescript |  229 |    0 |    6 | id + hash only (no seal runner yet) |
 | java       |  229 |    0 |    6 | id + hash only (no seal runner yet) |
 | cpython    |  224 |    0 |   11 | id + hash only; additionally SKIPs the 5 executable `hlc_overflow`-op records (the extension exposes no HLC state/clock hooks — covered by the C runner) |
@@ -49,15 +49,16 @@ SKIP composition: 6 `doc` pseudo-records (tessera-id: `hlc_overflow.json`, `hlc_
 | tessera-hash | tessera_hash_verify.json | 15 |
 | tessera-seal | decrypt.json | 9 |
 | tessera-seal | peek_header.json | 5 |
-| tessera-seal | invalid.json | 31 |
+| tessera-seal | invalid.json | 32 |
+| tessera-seal | kyberslash_regression.json | 1 |
 | tessera-seal | ad_binding.json | 6 |
 | tessera-seal | commitment.json | 3 |
 | tessera-seal | min_timestamp.json | 4 |
 | tessera-seal | hybrid_decrypt.json / hybrid_ad_binding.json / hybrid_peek_header.json | 4 / 4 / 1 |
 
-Totals: tessera-id 97, tessera-hash 138, tessera-seal 67 (58 standard + 9 hybrid).
+Totals: tessera-id 97, tessera-hash 138, tessera-seal 68 (58 standard + 9 hybrid + 1 kyberslash).
 Hybrid `hybrid_*.json` files are filtered per language by `hybrid_supported()` in `run.sh`
-(python/go/rust today).
+(python/go/rust/c today).
 
 ## Coverage added by TESS-00009 (2026-06-10)
 

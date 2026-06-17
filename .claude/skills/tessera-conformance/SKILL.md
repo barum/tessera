@@ -30,8 +30,7 @@ The conformance harness is the single quality signal that catches polyglot drift
     - `invalid.json` — bad variant, bad suite, truncated, AD mismatch
     - `commitment.json` — UtC tag KATs
     - `min_timestamp.json` — shape-based helper vector
-
-    A `kyberslash_regression.json` KyberSlash-class timing-regression vector is **planned/backlog, not yet shipped** — the current set above does not include it. KyberSlash posture today rests on the pinned post-patch ML-KEM libraries plus the manual timing-histogram check (open item in `tessera-seal/docs/security-audit-v1.2.md`).
+    - `kyberslash_regression.json` (1 record, append-only) — KyberSlash-class ML-KEM decaps negative KAT; timing flatness is `timing-histogram.py`'s job
     - `hybrid_decrypt.json` (4 records) — KAT round-trip for hybrid suite `0x06`
     - `hybrid_ad_binding.json` (4 records) — hybrid AD binding positive + negative
     - `hybrid_peek_header.json` (1 record) — hybrid header parse
@@ -47,21 +46,22 @@ hybrid_supported() {
         python) return 0 ;;   # TSEAL-00021, v1.2
         rust)   return 0 ;;   # TSEAL-00028, v1.3
         go)     return 0 ;;   # TSEAL-00029, v1.3
-        *)      return 1 ;;   # C/C++/TS/Java/CPython ext — v1.4 backlog
+        c)      return 0 ;;   # TSEAL-00030, v1.4
+        *)      return 1 ;;   # C++/TS/Java/CPython ext — no seal runner
     esac
 }
 ```
 
 Languages without hybrid skip the `hybrid_*.json` files entirely and must reject suite `0x06` as `UNKNOWN_SUITE` for non-hybrid envelopes. When porting hybrid to a new language: (1) implement hybrid in the language, (2) update the language's conformance runner to accept 96-byte seeds (the standard runners hard-coded `len(seed) != 64`), (3) flip the language's `hybrid_supported()` entry, (4) verify the language's PASS count rises by 9 (the three hybrid_*.json files).
 
-## Latest state (v1.3, 2026-06-08, TSEAL-00035)
+## Latest state (2026-06-13, post TSEAL-00030/00049 + kyberslash record)
 
 ```
 language         PASS     FAIL
-python            267        0       (258 standard + 9 hybrid)
-c                 258        0       (no hybrid yet; TSEAL-00030 backlog)
-go                267        0       (258 + 9 hybrid; TSEAL-00029)
-rust              267        0       (258 + 9 hybrid; TSEAL-00028)
+python            298        0       (288 standard + 9 hybrid + 1 kyberslash)
+c                 298        0       (288 + 9 hybrid + 1 kyberslash; TSEAL-00030)
+go                298        0       (288 + 9 hybrid + 1 kyberslash)
+rust              298        0       (288 + 9 hybrid + 1 kyberslash)
 ```
 
 C++, TypeScript, Java, CPython ext have no tessera-seal runner, so they **skip the TesseraSeal vector directory entirely** (they run tessera-id/tessera-hash only, `207 0` each). Only python/c/go/rust run TesseraSeal conformance. The full 8-language run is green. The two new TesseraSeal `invalid.json` records (`suite_0x05_rejected`, `bad_key_suite_mismatch`, TSEAL-00035) raised each alpha language by +2.

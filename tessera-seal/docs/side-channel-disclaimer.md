@@ -33,16 +33,7 @@ caller errors, distinguishable by design, and their detection touches no per-key
 (whitepaper §9.2).
 
 **Timing posture, honestly stated.** An automated timing-histogram script ships at
-[`tools/scripts/timing-histogram.py`](../../tools/scripts/timing-histogram.py) (TSEAL-00048) and runs in the
-manual `tessera-seal.yml` dispatch; it is **not yet a blocking PR gate**. It measures N good-vs-bad decrypt pairs
-against the Python reference (warn > 50 ns / hard-fail > 500 ns on the median per-pair delta) and emits a JSON
-artifact for cross-run trend tracking — on contended hosts single-run medians wander in the ±1 µs band, so read
-the artifact as a trend point. The most recent **manual** measurement (Python reference, 2026-05-19, Apple M4 Max,
-quiet host) observed a median good-vs-bad decrypt difference under 50 ns over 100,000 pairs — see
-[security-audit-v1.2.md](security-audit-v1.2.md) open item #1 (the script addresses the automation half of that
-item; promotion to a blocking CI gate remains open), and [`tessera-seal/benchmarks/`](../benchmarks/) for
-per-language measurement environments. No timing dataset or timing assertion exists under `conformance/vectors/`
-— the regression is a script, not a conformance vector.
+[`tools/scripts/timing-histogram.py`](../../tools/scripts/timing-histogram.py) (TSEAL-00048). It is a **blocking PR gate** in `.github/workflows/conformance.yml` (`--profile ci`: 5000 pairs, hard-fail > 50 µs on the cropped median per-pair delta — calibrated for noisy shared runners) and also runs in the manual `tessera-seal.yml` dispatch (default profile: warn > 50 ns / fail > 500 ns). The script emits a machine-readable JSON artifact (`schema_version` 1, fields `verdict`, `exit_code`, `gate_passed`, `primary_metric_ns`) for trend tracking. On contended hosts single-run medians wander in the ±1 µs band, so read manual-dispatch artifacts as trend points. The most recent **manual** measurement (Python reference, 2026-05-19, Apple M4 Max, quiet host) observed a median good-vs-bad decrypt difference under 50 ns over 100,000 pairs — see [security-audit-v1.2.md](security-audit-v1.2.md). Functional KyberSlash-class rejection is pinned by `conformance/vectors/kyberslash_regression.json` (append-only); timing flatness is this script's job, not a conformance-vector assertion.
 
 The single `DecryptionError` (`TESSERA_SEAL_E_DECRYPT_FAILED`) class for every authentication-class failure (bad
 AEAD tag, bad commit tag, bad KEM ciphertext, AD mismatch, unknown variant in a decrypted internal blob) prevents

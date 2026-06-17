@@ -15,6 +15,7 @@ Vector files:
                               generation time; KEM randomness is captured)
   - peek_header.json       - header parsing, deterministic header bytes
   - invalid.json           - bad variant byte, bad suite byte, truncation
+  - kyberslash_regression.json - KyberSlash-class ML-KEM decaps negative KAT (append-only)
   - ad_binding.json        - TesseraID-as-AD positive / negative
   - commitment.json        - UtC commit-tag KATs independent of AEAD path
   - min_timestamp.json     - validate_min_timestamp helper
@@ -474,6 +475,62 @@ def make_invalid_vectors():
     _write(VECTORS_DIR / "invalid.json", records)
 
 
+def make_kyberslash_regression_vectors():
+    """
+    KyberSlash-class ML-KEM decaps regression vectors (append-only negative KAT).
+
+    Each record is a well-formed suite 0x01 envelope with a corrupted ML-KEM-1024
+    ciphertext that forces the full decaps path. Post-patch libraries must reject
+    with DecryptionError; decrypt-path timing flatness is checked separately by
+    tools/scripts/timing-histogram.py.
+    """
+    path = VECTORS_DIR / "kyberslash_regression.json"
+    existing = []
+    if path.exists():
+        existing = json.loads(path.read_text())
+    existing_names = {r["name"] for r in existing}
+
+    new_records = []
+    cases = [
+        # Byte 768 inside KEM_CT — mid-body decaps (distinct from invalid.json
+        # flip_kem_ct_byte500). Dedicated seed namespace 910_001+.
+        ("mlkem_ct_corrupt_byte768", 910_001, 768, 0x42),
+    ]
+    for name, seed_index, kem_rel, xor_byte in cases:
+        if name in existing_names:
+            continue
+        _reset_kat_drbg()
+        seed = _kp_seed(seed_index)
+        priv, pub = tessera_seal.generate_keypair_from_seed(seed)
+        env = tessera_seal.encrypt(
+            b"kyberslash regression KAT", pub, suite=tessera_seal.SUITE_MLKEM1024_AESGCM,
+            associated_data=b"",
+        )
+        tampered = bytearray(env)
+        off = tessera_seal.HEADER_BYTES + kem_rel
+        tampered[off] ^= xor_byte
+        try:
+            tessera_seal.decrypt(bytes(tampered), priv, expected_ad=b"")
+        except tessera_seal.DecryptionError:
+            pass
+        else:
+            raise SystemExit(f"kyberslash regression record {name!r} unexpectedly decrypted")
+        new_records.append(
+            {
+                "name": name,
+                "op": "decrypt_should_fail",
+                "suite": tessera_seal.SUITE_MLKEM1024_AESGCM,
+                "private_key_seed_hex": _hex(seed),
+                "private_key_hex": _hex(priv.to_bytes()),
+                "envelope_hex": _hex(bytes(tampered)),
+                "expected_ad_hex": "",
+                "error_kind": "DECRYPT_FAILED",
+            }
+        )
+
+    _write(path, existing + new_records)
+
+
 def make_ad_binding_vectors():
     """
     Positive and negative cases for the canonical TesseraID-as-AD pattern.
@@ -730,6 +787,7 @@ def main(argv=None):
         make_decrypt_vectors()
         make_peek_header_vectors()
         make_invalid_vectors()
+        make_kyberslash_regression_vectors()
         make_ad_binding_vectors()
         make_commitment_vectors()
         make_min_timestamp_vectors()

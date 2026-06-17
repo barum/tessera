@@ -22,13 +22,16 @@ manual measurement in security-audit-v1.2.md), the p99 delta, and the
 difference-of-minima are all reported alongside (informational — p99 is dominated by
 host contention and never gates).
 
-Thresholds on |cropped median per-pair delta| (soft gate — shared runners are noisy):
-  *  <= 50 ns           OK    (exit 0)
-  *  >  50 ns, <=500 ns WARN  (exit 0; exit 1 with --strict)
-  *  >  500 ns          FAIL  (exit 2, always)
+Threshold profiles (--profile, overridable with --warn-ns / --fail-ns):
+  * default (quiet-host / manual dispatch):
+      <= 50 ns OK | >50–500 ns WARN (exit 0; exit 1 with --strict) | >500 ns FAIL (exit 2)
+  * ci (GitHub Actions shared runners — TSEAL-00048 §Security considerations):
+      <= 10 µs OK | >10–50 µs WARN (exit 0; exit 1 with --strict) | >50 µs FAIL (exit 2)
+    Real early-return regressions shift the bad path by tens of µs–ms; the relaxed CI
+    fail band catches those without flaking on contended-host noise (±1 µs observed).
 
-A JSON artifact (--json-out) records parameters, environment, full statistics, and the
-verdict for trend tracking across runs.
+A JSON artifact (--json-out, schema_version 1) records parameters, environment, full
+statistics, exit_code, gate_passed, and the verdict for CI parsers and trend tracking.
 
 Optionally (--c-runner auto|PATH|skip, default skip) a COARSE, informational-only C-port
 comparison runs through the prebuilt conformance runner at
@@ -37,9 +40,11 @@ decrypt_should_fail records, timed at process granularity over R repetitions, pe
 delta = (median(T_bad) - median(T_good)) / K. Process spawn noise dominates at the
 nanosecond scale, so the C numbers NEVER affect the exit status.
 
-This script is wired as a dispatch step in .github/workflows/tessera-seal.yml (manual
-dispatch only); it is NOT a blocking PR gate and it ships no timing dataset or assertion
-under tessera-seal/conformance/vectors/.
+Wired as a blocking step in .github/workflows/conformance.yml (--profile ci) and as a
+dispatch step in .github/workflows/tessera-seal.yml (default profile, manual only).
+No timing assertion lives under tessera-seal/conformance/vectors/ — KyberSlash-class
+coverage uses kyberslash_regression.json for functional rejection; timing flatness is
+this script's job.
 
 Usage:
     python3 tools/scripts/timing-histogram.py --pairs 20000 --json-out timing-report.json
@@ -63,9 +68,13 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 sys.path.insert(0, os.path.join(REPO_ROOT, "tessera-seal", "python"))
 
-WARN_NS = 50.0    # soft threshold on |cropped median per-pair delta(bad - good)|
-FAIL_NS = 500.0   # hard threshold on |cropped median per-pair delta|
+SCHEMA_VERSION = 1
 CROP_PCT = 0.95   # pair survives only if BOTH measurements are below their p95
+PROFILES = {
+    "default": {"warn_ns": 50.0, "fail_ns": 500.0, "pairs": 20000},
+    # Shared CI runners: catch tens-of-µs early-return regressions; ignore ±1 µs noise.
+    "ci": {"warn_ns": 10_000.0, "fail_ns": 50_000.0, "pairs": 5000},
+}
 AD = b"timing-histogram TSEAL-00048"
 DEFAULT_C_RUNNER = os.path.join(REPO_ROOT, "tools", "conformance", "c", "tessera_seal_runner")
 
@@ -215,8 +224,14 @@ def measure_c_runner(ts, runner: str, suite: int, batch: int, reps: int) -> Opti
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("-n", "--pairs", type=int, default=20000,
-                    help="number of good/bad decrypt pairs (default 20000)")
+    ap.add_argument("--profile", choices=sorted(PROFILES), default="default",
+                    help="threshold preset: default (50/500 ns) or ci (10/50 µs for shared runners)")
+    ap.add_argument("-n", "--pairs", type=int, default=None,
+                    help="number of good/bad decrypt pairs (default: profile default)")
+    ap.add_argument("--warn-ns", type=float, default=None,
+                    help="override WARN threshold on |cropped median per-pair delta| (nanoseconds)")
+    ap.add_argument("--fail-ns", type=float, default=None,
+                    help="override FAIL threshold on |cropped median per-pair delta| (nanoseconds)")
     ap.add_argument("--suite", type=lambda s: int(s, 0), default=0x01,
                     help="TesseraSeal suite byte (default 0x01)")
     ap.add_argument("--warmup", type=int, default=100, help="warmup pairs (default 100)")
@@ -236,9 +251,15 @@ def main() -> int:
 
     import tessera_seal as ts  # noqa: E402 — path injected above
 
-    print(f"timing-histogram: suite=0x{args.suite:02x} pairs={args.pairs} "
-          f"warmup={args.warmup} envelopes={args.envelopes}")
-    py_stats = measure_python(ts, args.suite, args.pairs, args.warmup, args.envelopes)
+    prof = PROFILES[args.profile]
+    pairs = args.pairs if args.pairs is not None else prof["pairs"]
+    warn_ns = args.warn_ns if args.warn_ns is not None else prof["warn_ns"]
+    fail_ns = args.fail_ns if args.fail_ns is not None else prof["fail_ns"]
+
+    print(f"timing-histogram: profile={args.profile} suite=0x{args.suite:02x} pairs={pairs} "
+          f"warmup={args.warmup} envelopes={args.envelopes} "
+          f"thresholds warn={warn_ns:.0f}ns fail={fail_ns:.0f}ns")
+    py_stats = measure_python(ts, args.suite, pairs, args.warmup, args.envelopes)
 
     c_stats = None
     if args.c_runner != "skip":
@@ -248,30 +269,34 @@ def main() -> int:
             print(f"c-runner: skipped (binary missing/not executable/failed: {runner})")
 
     primary = abs(py_stats["cropped_median_pairwise_delta_ns"])
-    if primary > FAIL_NS:
+    if primary > fail_ns:
         verdict, exit_code = "FAIL", 2
-    elif primary > WARN_NS:
+    elif primary > warn_ns:
         verdict, exit_code = "WARN", 1 if args.strict else 0
     else:
         verdict, exit_code = "OK", 0
 
     report = {
+        "schema_version": SCHEMA_VERSION,
         "tool": "tools/scripts/timing-histogram.py",
         "ticket": "TSEAL-00048",
         "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "params": {"suite": args.suite, "pairs": args.pairs, "warmup": args.warmup,
-                   "strict": args.strict},
+        "params": {"profile": args.profile, "suite": args.suite, "pairs": pairs,
+                   "warmup": args.warmup, "envelopes": args.envelopes, "strict": args.strict},
         "environment": {
             "platform": platform.platform(),
             "machine": platform.machine(),
             "python": platform.python_version(),
             "perf_counter_resolution_s": time.get_clock_info("perf_counter").resolution,
         },
-        "thresholds_ns": {"warn": WARN_NS, "fail": FAIL_NS,
+        "thresholds_ns": {"warn": warn_ns, "fail": fail_ns,
                           "metric": "abs(p95-cropped median of per-pair deltas: bad_ns - good_ns)"},
+        "primary_metric_ns": primary,
         "python_reference": py_stats,
         "c_runner": c_stats,
         "verdict": verdict,
+        "exit_code": exit_code,
+        "gate_passed": exit_code == 0,
     }
     with open(args.json_out, "w") as fh:
         json.dump(report, fh, indent=2)
@@ -291,7 +316,8 @@ def main() -> int:
         print(f"  C per-record delta   : {c_stats['per_record_delta_ns']:12.1f} ns  ({c_stats['note']})")
     print(f"  artifact             : {args.json_out}")
     print(f"timing-histogram verdict: {verdict} "
-          f"(|cropped median pairwise delta| = {primary:.1f} ns; warn > {WARN_NS:.0f}, fail > {FAIL_NS:.0f})")
+          f"(|cropped median pairwise delta| = {primary:.1f} ns; warn > {warn_ns:.0f}, fail > {fail_ns:.0f}; "
+          f"exit_code={exit_code} gate_passed={exit_code == 0})")
     return exit_code
 
 

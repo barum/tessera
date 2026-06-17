@@ -31,27 +31,28 @@ The literal label \texttt{"pqcrypt v1 timing pad"} is a frozen v1 wire tag (\cre
 
 The Python reference additionally executes a synthetic AEAD verify on the KEM-decaps-failure path. \emph{Structural} errors --- invalid length, unknown variant, unknown suite, \texttt{BAD\_KEY} suite mismatch --- MAY return early without running the synthetic schedule: they are caller errors that are distinguishable by design (see the structural-error list above), and their detection touches no per-key secret-correlated bytes, so an early return discloses nothing beyond the error class itself. The C reference's failure-path comment was aligned to this implemented behavior in TSEAL-00043. (An earlier revision of this section required a synthetic AEAD verify \emph{even on structural failure paths}; no port implemented that stronger wording, and this revision replaces it with the contract the eight implementations actually share.)
 
-\subsection{Timing measurement (automated script; not yet a blocking gate)}
+\subsection{Timing measurement (automated script; blocking CI gate)}
 
 An automated timing-histogram regression ships at \texttt{tools/scripts/timing-histogram.py}
 (TSEAL-00048): it measures $N$ good-vs-bad decrypt pairs against the Python reference (default
 $N = 20\,000$; ``bad'' flips one bit in the on-wire commitment tag, so both sides execute the full
 KEM-decaps + KDF + AEAD path), reports median and p99 deltas, writes a JSON artifact for cross-run
-trend tracking, and asserts a soft threshold on the median per-pair delta (warn above 50\,ns,
-hard-fail above 500\,ns, with a \texttt{--strict} flag). It runs as a dispatch-only job in the manual
-\texttt{tessera-seal.yml} workflow; it is \textbf{not yet a blocking PR gate}. On contended hosts the
-single-run noise floor of this statistic is on the order of $\pm 1\,\mu$s (initial 2026-06-10 runs on
-a heavily loaded Apple M4 Max measured medians from $-0.65$ to $+1.4\,\mu$s with sign flips across
-runs --- noise, not signal); read the artifact as a trend point. No timing dataset and no timing
-assertion exist under \texttt{tessera-seal/conformance/vectors/} --- the regression is a script, not
-a conformance vector.
+trend tracking, and gates on the cropped median per-pair delta. It is a \textbf{blocking PR gate} in
+\texttt{.github/workflows/conformance.yml} (\texttt{--profile ci}: $N = 5\,000$, hard-fail above
+50\,$\mu$s --- calibrated for noisy shared runners) and also runs in the manual
+\texttt{tessera-seal.yml} dispatch with the default profile (warn above 50\,ns, hard-fail above
+500\,ns, with a \texttt{--strict} flag). On contended hosts the single-run noise floor of this
+statistic is on the order of $\pm 1\,\mu$s (initial 2026-06-10 runs on a heavily loaded Apple M4 Max
+measured medians from $-0.65$ to $+1.4\,\mu$s with sign flips across runs --- noise, not signal);
+read manual-dispatch artifacts as trend points. No timing-flatness assertion lives under
+\texttt{tessera-seal/conformance/vectors/} --- \texttt{kyberslash\_regression.json} pins functional
+KyberSlash-class \texttt{DecryptionError} rejection only; timing flatness is this script's job.
 
 The most recent \emph{manual} measurement (Python reference, 2026-05-19, Apple M4 Max, quiet host)
 compared 100\,000 decrypt pairs (50\,000 good envelopes, 50\,000 single-bit-flipped) and observed a
 median good-vs-bad latency difference below 50\,ns; the procedure is recorded in
-\texttt{tessera-seal/docs/security-audit-v1.2.md} (open item \#1 --- the script above addresses the
-automation half of that item; promotion to a blocking CI gate remains open). Per-language
-measurement environments are recorded under \texttt{tessera-seal/benchmarks/}.
+\texttt{tessera-seal/docs/security-audit-v1.2.md}. Per-language measurement environments are
+recorded under \texttt{tessera-seal/benchmarks/}.
 
 \subsection{Implicit-reject semantics}
 

@@ -22,7 +22,7 @@ enforced in code, what test exercises it, and any known gaps.
 |---                                                 |---                                                           |---                                                              |---|
 | IND-CCA2 KEM (ML-KEM-1024, FIPS 203)               | per-language ML-KEM lib (kyber-py, OpenSSL `EVP_PKEY` ML-KEM, Go stdlib, RustCrypto, @noble, SunJCE) | KAT vectors in `conformance/vectors/decrypt.json` | Library audit posture documented per language; FIPS 140-3 module validation **not claimed** for v1.x. A KyberSlash regression vector is **planned, not yet shipped** — see open item #7 |
 | Single `DecryptionError` for auth-class failure    | every language: bad AEAD tag, bad commit, bad KEM ct, AD mismatch all map to one error | `test_tessera_seal.*` "decrypt_with_*_fails" tests in all langs | Structural errors (truncation, unknown variant) DO distinguish — safe by §9 |
-| Constant-time AEAD + commit verify                 | AEAD: lib responsibility (verified constant-time). Commit: hand-written constant-time `memcmp` in every language | Visual diff against libsodium/RustCrypto patterns; no timing-histogram regression test in CI yet | **Gap:** no automated CI timing histogram. Manual measurement on Apple M4 Max showed <50 ns median delta on 100k pairs (Python ref, 2026-05-19). Recommend adding to CI in v1.3. |
+| Constant-time AEAD + commit verify                 | AEAD: lib responsibility (verified constant-time). Commit: hand-written constant-time `memcmp` in every language | Visual diff against libsodium/RustCrypto patterns; automated timing-histogram regression in `.github/workflows/conformance.yml` (`--profile ci`, hard-fail > 50 µs on shared runners) plus manual dispatch in `tessera-seal.yml` (default profile, warn > 50 ns / fail > 500 ns) | **Mitigated** in software on reference hardware; CI gate catches tens-of-µs early-return regressions (TSEAL-00048). Manual measurement on Apple M4 Max (quiet host, 2026-05-19) observed <50 ns median delta on 100k pairs |
 | Synthetic-key path on structural failure           | Python, C, Go, Rust decrypt paths execute a dummy AEAD/commit verify when truncation detected | Code review; not exercised by KAT (cannot — by design) | **Gap:** very hard to test; relies on code-review discipline |
 | AD binding fails closed                            | AEAD tag covers `header‖KEM_CT‖AD‖CT`; commit tag covers same | `ad_binding.json` positive + negative vectors, exercised by all langs | None |
 | TesseraID-as-AD canonical pattern                  | Documented in whitepaper §sec08; example in README + CLI; conformance vector for round-trip | Cross-project interop test (tessera-id Python encrypt → tessera-seal decrypt with TesseraID AD) | None |
@@ -31,7 +31,7 @@ enforced in code, what test exercises it, and any known gaps.
 | Variant 0x04 cross-rejection                       | tessera-id/tessera-hash decoders reject 0x04; tessera-seal rejects 0x01-0x03,0x05-0xFF | `conformance/vectors/invalid.json` (tessera-seal) + each project's invalid.json | None |
 | Deterministic AEAD nonce safe                      | HKDF-Expand from fresh per-envelope K_session; new K_session ⇒ new nonce | Mathematical argument in whitepaper §sec07; KAT vectors lock byte-identical output across langs | Nonce reuse impossible by construction (ML-KEM Encaps produces fresh ss every call) |
 | KEM_CT_LEN ≤ 4096, AD_LEN ≤ 65536, PT ≤ 4 GiB      | parser checks in all langs                                    | `conformance/vectors/invalid.json` includes oversize-length cases | None |
-| Hybrid suite 0x06 (Python-only in v1.2)            | combiner `SHAKE-256("pqcrypt v1 hybrid combiner" ‖ ss_mlkem ‖ x_ss ‖ ml_kem_ct ‖ x_eph_pk, 32)` — the literal `"pqcrypt v1 hybrid combiner"` is a **frozen v1 wire tag**, not a rebrandable name, kept verbatim across the Tessera rename | `hybrid_decrypt.json`, `hybrid_ad_binding.json` KATs; 6 dedicated tests | Non-Python langs MUST reject suite 0x06 (`UNKNOWN_SUITE`) in v1.2 — KAT skip enforced by `tools/conformance/run.sh:hybrid_supported()` |
+| Hybrid suite 0x06 (Python/C/Go/Rust harness; C++/TS/CPython ext library-level; Java backlog) | combiner `SHAKE-256("pqcrypt v1 hybrid combiner" ‖ ss_mlkem ‖ x_ss ‖ ml_kem_ct ‖ x_eph_pk, 32)` — the literal `"pqcrypt v1 hybrid combiner"` is a **frozen v1 wire tag**, not a rebrandable name, kept verbatim across the Tessera rename | `hybrid_decrypt.json`, `hybrid_ad_binding.json` KATs (9 records); 4-way harness contract (Python/Rust/Go/C, TSEAL-00030); C++/TS/CPython ext decode frozen vectors in-suite; Java rejects `0x06` (`UNKNOWN_SUITE`, TSEAL-00033) | **Mitigated** in four harness languages; Java is the sole remaining hybrid port |
 
 ## 2. Known attacks vs. mitigations
 
@@ -39,7 +39,7 @@ enforced in code, what test exercises it, and any known gaps.
 |---                                     |---                                             |---                                                               |---|
 | Multi-recipient AEAD-key confusion     | age v1.x: same envelope decrypts under multiple keys to different plaintexts | 32-byte UtC commitment tag binds K_aead to ciphertext (Bellare-Hoang 2022) | **Mitigated** in every suite, including 0x06 |
 | Nonce reuse                            | Bad RNG / counter reuse → catastrophic GCM break | Deterministic nonce from per-envelope-fresh K_session via HKDF-Expand | **Structurally impossible** |
-| KyberSlash 1/2 (timing)                | pq-crystals reference leaked secret via timing of division in NTT inverse | Vendored libs are post-patch (kyber-py 1.0, OpenSSL 3.5, Go 1.26, ml-kem 0.3, @noble); manual timing-histogram check (open item #1). A `kyberslash_regression.json` KAT is **planned, not yet shipped** (open item #7) | **Mitigated** in software via post-patch libraries; physical channels disclaimed |
+| KyberSlash 1/2 (timing)                | pq-crystals reference leaked secret via timing of division in NTT inverse | Vendored libs are post-patch (kyber-py 1.0, OpenSSL 3.5, Go 1.26, ml-kem 0.3, @noble); automated timing-histogram CI gate; first record in `kyberslash_regression.json` (append-only negative KAT, functional rejection only — timing checked by the histogram script) | **Mitigated** in software via post-patch libraries + CI timing gate; physical channels disclaimed |
 | Power / EM side-channels (PQShield 2024) | Cortex-M4 single-trace key recovery <1000 traces | None in software. Disclaimer in `side-channel-disclaimer.md` + whitepaper §sec10 | **Out-of-scope**; embedded HW deployers must add countermeasures |
 | Hertzbleed / DVFS                      | Frequency-side leak                            | Out-of-scope (see disclaimer) | **Out-of-scope** |
 | GoFetch (Apple M-series)               | Prefetcher leak on M1-M3                       | Out-of-scope; documented                                          | **Out-of-scope** |
@@ -66,26 +66,20 @@ enforced in code, what test exercises it, and any known gaps.
 
 ## 4. Open items for external audit
 
-1. **CI timing-histogram regression.** Add an automated 100k bad/good
-   pair benchmark to `tessera-seal.yml` that fails if median delta exceeds
-   100 ns on Linux x86_64 GitHub runners. Currently manual.
+1. **CI timing-histogram regression.** **Done (TSEAL-00048 + conformance gate):** `tools/scripts/timing-histogram.py` runs as a blocking step in `.github/workflows/conformance.yml` with `--profile ci` (5000 pairs, hard-fail > 50 µs on shared runners). Manual dispatch in `tessera-seal.yml` uses the default profile (warn > 50 ns / fail > 500 ns). JSON artifact (`schema_version` 1) records `verdict`, `exit_code`, and `gate_passed`.
 2. **FIPS 140-3 module validation.** Not pursued in v1.x; flag as roadmap.
 3. **Synthetic-key timing-pad invariant testing.** Hard to assert
    automatically; current confidence is code-review + manual histograms.
-4. **Hybrid suite 0x06 in C / Go / Rust / Java / TS.** Python-only in v1.2
-   is a polyglot KAT-contract violation IF a non-Python lang ever decodes
-   it. Mitigation in place (UNKNOWN_SUITE reject) but landing the other 5
-   ports is v1.3 priority work.
+4. **Hybrid suite 0x06 in Java.** Python, C, Go, and Rust consume the 9 hybrid KAT records in the harness (TSEAL-00030 brought C up). C++, TypeScript, and the CPython extension implement hybrid at library level (in-suite KAT byte-identity). **Java (TSEAL-00033) is the sole remaining port** — it rejects `0x06` as `UNKNOWN_SUITE` until a JDK 24+ build/verify environment lands the port.
 5. **Plugin protocol fuzz harness.** No coverage today; add `cargo-fuzz`
    or `python-afl` harness for the frame parser in v1.3.
 6. **Memory-zeroization audit.** Verified per-language in code review;
    no automated check. Consider `zeroize` audit pass for C reference.
-7. **KyberSlash regression vector.** `kyberslash_regression.json` is not
-   yet shipped and not loaded by any conformance runner. Current
-   KyberSlash posture rests on the pinned post-patch ML-KEM libraries plus
-   the manual timing-histogram check (open item #1). Land a deterministic
-   regression vector of known-bad ML-KEM-1024 inputs that decrypt to a
-   fixed error in constant time.
+7. **KyberSlash regression vector.** `kyberslash_regression.json` shipped
+   with one append-only negative record (`mlkem_ct_corrupt_byte768`) exercising
+   ML-KEM decaps rejection. Expand with additional known-bad inputs as the
+   append-only file grows; timing flatness remains the timing-histogram script's
+   job, not the vector's.
 
 ## 5. References
 

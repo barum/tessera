@@ -29,10 +29,9 @@ jobs:
 
   timing-histogram:
     # TSEAL-00048 (TP-150): automated decrypt-path timing regression against the
-    # Python reference. Dispatch-only like every job in this workflow — NOT a
-    # blocking PR gate. Soft gate: warn > 50 ns, hard-fail > 500 ns on the median
-    # per-pair good-vs-bad delta; shared-runner noise is expected, so read the
-    # uploaded JSON artifact as a trend point, not a single-run verdict.
+    # Python reference. Dispatch-only like every job in this workflow. Default
+    # profile: warn > 50 ns, hard-fail > 500 ns. The blocking PR gate lives in
+    # conformance.yml (--profile ci: hard-fail > 50 µs for shared runners).
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

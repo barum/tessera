@@ -97,6 +97,27 @@ jobs:
       - name: TesseraSeal alpha conformance (Python + C + Go + Rust)
         run: TESSERA_CONFORMANCE_SKIP="cpp typescript java cpython" bash tools/conformance/run.sh
 
+      - name: TesseraSeal decrypt-path timing-histogram gate (TSEAL-00048, profile ci)
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/timing-histogram.py \
+            --profile ci \
+            --json-out timing-histogram-report.json
+          python3 -c "
+          import json, sys
+          r = json.load(open('timing-histogram-report.json'))
+          assert r.get('schema_version') == 1
+          print(f\"timing-histogram CI gate: verdict={r['verdict']} gate_passed={r['gate_passed']} "
+                f\"primary_metric_ns={r['primary_metric_ns']:.1f}\")
+          sys.exit(0 if r['gate_passed'] else r['exit_code'])
+          "
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: timing-histogram-report
+          path: timing-histogram-report.json
+
       - name: Full cross-language conformance (all 8 ports)
         run: bash tools/conformance/run.sh
         continue-on-error: true

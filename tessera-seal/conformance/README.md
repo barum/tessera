@@ -8,13 +8,14 @@ Cross-language Known-Answer-Test (KAT) vectors for TesseraSeal v1. Generated aga
 |------|--------:|---------|
 | `decrypt.json` | 9 | Known envelopes → known plaintexts (suites 0x01/0x02; incl. TESS-00009 boundary KATs: 64 KiB plaintext, `MAX_AD_LEN` = 65536 AD) |
 | `peek_header.json` | 5 | Header parsing without authentication (incl. `ctr=0xFFFF`) |
-| `invalid.json` | 31 | Bad variant bytes (0x00–0x03, 0x05, 0x10, 0x7F, 0xFE, 0xFF), bad suites, bit-flip auth failures, suite/key mismatch (`BAD_KEY`), TESS-00009 truncation classes (mid-KEM_CT, mid-AEAD_CT, one byte short of the commit tag) and a wrong-`KEM_CT_LEN`-with-valid-header record — all four `INVALID_LEN` |
+| `invalid.json` | 32 | Bad variant bytes (0x00–0x03, 0x05, 0x10, 0x7F, 0xFE, 0xFF), bad suites, bit-flip auth failures, suite/key mismatch (`BAD_KEY`), TESS-00009 truncation classes (mid-KEM_CT, mid-AEAD_CT, one byte short of the commit tag) and wrong-`KEM_CT_LEN` records — all `INVALID_LEN` |
 | `ad_binding.json` | 6 | TesseraID-as-AD positive + negative cases |
 | `commitment.json` | 3 | UtC commit tag KATs independent of the AEAD path |
 | `min_timestamp.json` | 4 | `MIN_TIMESTAMP_MS` helper parity with TesseraID and TesseraHash |
 | `hybrid_decrypt.json` | 4 | Hybrid suite 0x06 KAT round-trips (hybrid-capable languages only) |
 | `hybrid_ad_binding.json` | 4 | Hybrid AD binding positive + negative |
 | `hybrid_peek_header.json` | 1 | Hybrid header parse (`kem_ct_len = 1600`) |
+| `kyberslash_regression.json` | 1 | KyberSlash-class ML-KEM decaps negative KAT (append-only; first record: `mlkem_ct_corrupt_byte768`) |
 
 Regeneration: `python3 tessera-seal/conformance/scripts/generate.py` is a dry run by default;
 pass `--write` to rewrite (TESS-00009 / TP-113), then run
@@ -24,7 +25,9 @@ Known pre-existing caveat: `ad_binding.json`, `hybrid_decrypt.json`, and
 from the OS CSPRNG, not the seeded DRBG; `ad_binding.json` has drifted from its original DRBG
 pinning) — do not commit rewrites of those three without deliberately re-pinning them.
 
-A `kyberslash_regression.json` vector (known-bad ML-KEM-1024 inputs from KyberSlash 1/2) is **planned/backlog — not yet shipped and not loaded by any runner.** Until it lands, KyberSlash mitigation rests on the pinned post-patch ML-KEM libraries plus the manual timing-histogram check tracked in [`../docs/security-audit-v1.2.md`](../docs/security-audit-v1.2.md). Do not list it as existing coverage.
+KyberSlash-class functional rejection is pinned by `kyberslash_regression.json` (append-only).
+Decrypt-path timing flatness is enforced by `tools/scripts/timing-histogram.py` (CI gate in
+`.github/workflows/conformance.yml`, `--profile ci`).
 
 Record schema: each file is a JSON array of records with `name`, `op`
 (`decrypt`, `decrypt_should_fail`, `peek_header`, `peek_header_should_fail`,
