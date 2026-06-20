@@ -20,7 +20,7 @@ REF="${2:-HEAD}"
 OUT="${3:-$HUB/../tessera-$LANG_}"
 HUBSHA="$(git -C "$HUB" rev-parse "$REF")"
 VECTORS_REPO="git@github.com:barum/tessera-vectors.git"
-VECTORS_TAG="v1.3.1"
+VECTORS_TAG="v1.3.2"
 
 stage() {  # stage <hub-subpath> <dest> <strip>
   mkdir -p "$2"; git -C "$HUB" archive "$REF" "$1" | tar -x -C "$2" --strip-components="$3"
