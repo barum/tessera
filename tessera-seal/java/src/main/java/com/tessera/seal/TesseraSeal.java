@@ -402,7 +402,11 @@ public final class TesseraSeal {
             h.suite != (SUITE_MLKEM1024_CHACHA & 0xff)) {
             throw new UnknownSuite(h.suite);
         }
-        if (h.kemCtLen > MAX_KEM_CT_LEN) throw new InvalidLength("kem_ct_len");
+        // TSEAL-00049: pin KEM_CT_LEN to the suite-required ML-KEM-1024 ciphertext
+        // size (1568 for the pure-PQ suites 0x01/0x02 this port supports), not just
+        // the structural field cap. Accepting any other value let a fixed-size KEM
+        // read run past the envelope buffer (CWE-125). MAX_KEM_CT_LEN stays the cap.
+        if (h.kemCtLen != MLKEM1024_CT_BYTES) throw new InvalidLength("kem_ct_len");
         if (h.adLen > MAX_AD_LEN) throw new InvalidLength("ad_len");
         return h;
     }
