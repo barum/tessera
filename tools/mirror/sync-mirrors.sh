@@ -88,7 +88,9 @@ case "$LANG_" in
     mkdir -p "$OUT/tessera-hash/java/src/main/java/com/tessera/common"
     cp "$HUB/common/java/com/tessera/common/Keccak.java" "$OUT/tessera-hash/java/src/main/java/com/tessera/common/Keccak.java"
     perl -0pi -e 's{\n  <build>\s*\n(?:.*\n)*?  </build>\n}{\n}' "$OUT/tessera-hash/java/pom.xml"
-    perl -pi -e 's{\.\./conformance/vectors}{../../_vectors/vectors/tessera-seal}g' "$OUT/tessera-seal/java/src/test/java/com/tessera/seal/TesseraSealTest.java" 2>/dev/null || true ;;
+    perl -pi -e 's{\.\./conformance/vectors}{../../_vectors/vectors/tessera-seal}g' "$OUT/tessera-seal/java/src/test/java/com/tessera/seal/TesseraSealTest.java" 2>/dev/null || true
+    stage tools/conformance/java "$OUT/conformance" 3
+    [ -f "$OUT/conformance/Makefile" ] && perl -pi -e 's{^(REPO_ROOT\s*:=\s*)\.\./\.\./\.\.\s*$}{${1}..\n}; s{\$\(REPO_ROOT\)/common/java}{\$(REPO_ROOT)/tessera-hash/java/src/main/java}g' "$OUT/conformance/Makefile" ;;
   cpython)
     mkdir -p "$OUT/tessera-id-ext/vendor" "$OUT/tessera-seal-ext/vendor"
     stage tessera-id/cpython "$OUT/tessera-id-ext" 2; rm -rf "$OUT/tessera-id-ext"/{build,fuzz,common,tessera-hash,__pycache__}
