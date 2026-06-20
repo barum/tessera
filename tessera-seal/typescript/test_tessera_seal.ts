@@ -339,6 +339,27 @@ test("KAT decrypt.json", () => {
     }
 });
 
+// KyberSlash-class decapsulation-failure regression (suite 0x01, pure
+// ML-KEM-1024 + AES-256-GCM + UtC). The frozen record's ML-KEM ciphertext
+// byte 768 is corrupted, so decapsulation yields the WRONG shared secret;
+// the derived AEAD/commit keys diverge and verification MUST fail. This is a
+// genuine auth-class failure, so it MUST raise DecryptionError (NOT BadKey,
+// NOT UnknownSuite). The suite-0x01 secret key is rebuilt from the 64-byte
+// ML-KEM seed via generateKeypairFromSeed, exactly like KAT decrypt.json and
+// the C/Go/Rust/Python conformance runners.
+test("KAT kyberslash_regression.json", () => {
+    const recs = loadVectors("kyberslash_regression.json");
+    assert.ok(recs.length > 0, "no kyberslash_regression records");
+    for (const r of recs) {
+        assert.equal(r.op, "decrypt_should_fail", r.name);
+        const seed = hex(r.private_key_seed_hex);
+        const { priv } = generateKeypairFromSeed(seed, r.suite);
+        const env = hex(r.envelope_hex);
+        const ad = hex(r.expected_ad_hex || "");
+        assert.throws(() => decrypt(env, priv, ad), DecryptionError, r.name);
+    }
+});
+
 test("KAT ad_binding.json", () => {
     const recs = loadVectors("ad_binding.json");
     for (const r of recs) {

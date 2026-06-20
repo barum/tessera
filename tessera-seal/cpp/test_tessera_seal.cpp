@@ -302,6 +302,47 @@ int main() {
         }
     }
 
+    // KyberSlash regression KAT: kyberslash_regression.json carries ONE
+    // negative record (mlkem_ct_corrupt_byte768, op=decrypt_should_fail,
+    // suite=0x01 pure ML-KEM-1024 + AES-256-GCM + UtC). Its envelope is a valid
+    // suite-0x01 envelope whose ML-KEM ciphertext byte 768 has been flipped, so
+    // decapsulation yields the wrong shared secret -> AEAD auth fails. The
+    // suite-0x01 secret key is rebuilt from the record's private_key_hex (the
+    // expanded 3168-byte ML-KEM-1024 sk) exactly as the C/Go/Rust/Python
+    // conformance runners do for suite-0x01 decrypt records — pure ML-KEM-1024
+    // exposes no public from-seed keygen (only the hybrid 0x06 suite does), so
+    // private_key_hex is the canonical reconstruction path. The full decrypt()
+    // MUST raise the single auth-class DecryptionError (DECRYPT_FAILED), never
+    // BadKey (the suite tag matches the header) and never UnknownSuite.
+    {
+        std::string json = slurp("../conformance/vectors/kyberslash_regression.json");
+        if (json.empty()) {
+            std::printf("FAIL kat_kyberslash_regression: cannot read "
+                        "../conformance/vectors/kyberslash_regression.json\n");
+            ++g_fail;
+        } else {
+            auto sk  = unhex(first_str_field(json, "private_key_hex"));
+            auto env = unhex(first_str_field(json, "envelope_hex"));
+            auto expected_ad = unhex(first_str_field(json, "expected_ad_hex"));
+            if (sk.size() != kMLKem1024SKBytes || env.empty()) {
+                std::printf("FAIL kat_kyberslash_regression: malformed record "
+                            "(sk=%zu env=%zu)\n", sk.size(), env.size());
+                ++g_fail;
+            } else {
+                auto priv = PrivateKey::from_bytes(sk, kSuiteMLKEM1024AESGCM);
+                bool threw = false;
+                try {
+                    (void)decrypt(env, priv, expected_ad);
+                } catch (const DecryptionError&) {
+                    threw = true;
+                } catch (...) {
+                    threw = false;
+                }
+                EXPECT(threw, "kat_kyberslash_regression_decrypt_failed");
+            }
+        }
+    }
+
     // SenderContext (TSEAL-00047 / TP-080) — monotonic (ts, ctr) issuance.
     // CTR is informational (K_session is fresh per envelope) but
     // monotonicity is the documented sender discipline; the C++ wrapper

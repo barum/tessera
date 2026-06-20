@@ -38,6 +38,7 @@ public class TesseraSealTest {
         testKATADBinding();
         testKATPeekAd();
         testKATInvalid();
+        testKATKyberSlash();
         testKATMinTimestamp();
 
         System.out.println();
@@ -484,6 +485,43 @@ public class TesseraSealTest {
             if (ok) { System.out.println("PASS kat-inv:" + str(r, "name")); gPass++; }
             else    { System.out.println("FAIL kat-inv:" + str(r, "name")); gFail++; }
         }
+    }
+
+    static void testKATKyberSlash() throws Exception {
+        // KyberSlash-class regression KAT (kyberslash_regression.json): a
+        // single suite-0x01 record (mlkem_ct_corrupt_byte768) whose ML-KEM
+        // ciphertext byte 768 is corrupted. Decapsulation then yields the
+        // wrong shared secret, so the AEAD tag fails to verify and decrypt()
+        // MUST raise the auth-class DecryptionError — never the structural
+        // BadKey or UnknownSuite. This proves the decapsulation-failure path
+        // collapses into the single authentication-class error.
+        //
+        // Java's SunJCE provider exposes no seed-driven ML-KEM keygen, so the
+        // suite-0x01 secret key is rebuilt from the record's expanded
+        // private_key_hex via importKeypair(null, expandedSk, suite) — exactly
+        // the path testKATDecrypt / testKATInvalid use for KAT consumption.
+        String json = slurp("../conformance/vectors/kyberslash_regression.json");
+        List<Map<String, Object>> recs = parseRecords(json);
+        int n = 0;
+        for (Map<String, Object> r : recs) {
+            byte[] sk = hex(str(r, "private_key_hex"));
+            long suite = lng(r, "suite");
+            byte[] env = hex(str(r, "envelope_hex"));
+            byte[] ad = hex(str(r, "expected_ad_hex"));
+            KeyPair kp = TesseraSeal.importKeypair(null, sk, (byte) suite);
+            boolean ok = false;
+            try {
+                TesseraSeal.decrypt(env, kp.priv, ad);
+            } catch (DecryptionError e) {
+                ok = true;  // auth-class failure — the required outcome
+            } catch (Exception e) {
+                ok = false; // BadKey / UnknownSuite / anything else = FAIL
+            }
+            if (ok) { System.out.println("PASS kat-ks:" + str(r, "name")); gPass++; }
+            else    { System.out.println("FAIL kat-ks:" + str(r, "name")); gFail++; }
+            n++;
+        }
+        if (n == 0) { System.out.println("FAIL kat_kyberslash: no records"); gFail++; }
     }
 
     static void testKATMinTimestamp() throws Exception {

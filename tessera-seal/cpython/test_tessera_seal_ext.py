@@ -252,6 +252,29 @@ def main():
         except Exception as e:
             print(f"FAIL kat:{r['name']}: {type(e).__name__}: {e}"); fails += 1
 
+    # --- KyberSlash regression KAT (kyberslash_regression.json) ----------------
+    # A single suite-0x01 (pure ML-KEM-1024 + AES-256-GCM + UtC) record whose
+    # envelope has ML-KEM ciphertext byte 768 corrupted. Decapsulation yields the
+    # wrong shared secret -> the derived AEAD key is wrong -> AEAD auth fails. The
+    # ext MUST raise the single auth-class DecryptionError (NOT BadKey, NOT
+    # UnknownSuite — this is a genuine decapsulation failure, error_kind
+    # DECRYPT_FAILED). The ext exposes no suite-0x01 from-seed keygen (only the
+    # hybrid generate_keypair_hybrid_from_seed), so the suite-0x01 secret key is
+    # rebuilt from the record's expanded private_key_hex — exactly the public-API
+    # idiom the decrypt.json / ad_binding.json KAT loops above use.
+    try:
+        ks_recs = json.loads((VEC / "kyberslash_regression.json").read_text())
+    except Exception as e:
+        print(f"FAIL kat-ks:kyberslash_regression.json load: {type(e).__name__}: {e}"); fails += 1
+        ks_recs = []
+    for r in ks_recs:
+        sk_b = _h(r["private_key_hex"])
+        env_b = _h(r["envelope_hex"])
+        ad_b = _h(r.get("expected_ad_hex", ""))
+        fails += assert_raises(lambda env_b=env_b, sk_b=sk_b, ad_b=ad_b:
+                               tseal.decrypt(env_b, sk_b, expected_ad=ad_b),
+                               tseal.DecryptionError, f"kat-ks:{r['name']}")
+
     try:
         ab_recs = json.loads((VEC / "ad_binding.json").read_text())
     except Exception as e:
