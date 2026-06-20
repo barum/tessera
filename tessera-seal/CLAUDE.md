@@ -116,7 +116,7 @@ When changing wire / encoding / KDF / AEAD / commit / decrypt logic:
 - Suite-byte cross-rejection (only `0x01`, `0x02`, and — in hybrid-capable languages — `0x06` accepted; everything else rejected at decrypt with `UNKNOWN_SUITE`).
 - Variant-byte cross-rejection (`0x00`–`0x03`, `0x05`–`0xFF` rejected; only `0x04` accepted).
 - Truncation rejection at every header boundary.
-- KyberSlash-class timing-regression coverage: a dedicated regression vector (`kyberslash_regression.json`) is **planned/backlog, not yet shipped**. Current KyberSlash posture is the manual timing-histogram check tracked as an open item in `security-audit-v1.2.md` (the pinned post-patch libraries are the actual mitigation).
+- KyberSlash-class regression coverage: the dedicated regression vector (`kyberslash_regression.json`, TSEAL-00050) is **shipped** — one `decrypt_should_fail` record (`mlkem_ct_corrupt_byte768`, suite `0x01`) exercised by the Python/C/Go/Rust conformance runners and by an in-suite KAT case in C++/TypeScript/Java/CPython ext. Timing flatness remains the `timing-histogram.py` CI gate's job; the pinned post-patch libraries are the actual mitigation.
 - Timing-histogram regression: median bad/good decrypt-time difference < 50 ns on reference hardware (currently manual; CI automation tracked in `security-audit-v1.2.md` open item #1).
 - TesseraID-as-AD interop: a generated TesseraID, used as AD, round-trips; mutating the TesseraID by one byte fails decrypt.
 - **Hybrid suite `0x06` (where supported):** wire `KEM_CT_LEN = 1600`, public key = 1600 B, private key seed = 96 B, X25519-half tamper (flip a byte in the trailing 32 B of `KEM_CT`) → `DecryptionError` via combiner divergence.

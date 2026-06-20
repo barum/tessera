@@ -2,6 +2,7 @@
 
 Reverse-chronological. One entry per PR (or per logical change shipped together).
 
+- 2026-06-20 — [TSEAL-00050 + TSEAL-00049(java) — KyberSlash in-suite KAT in cpp/ts/java/cpython; Java KEM_CT_LEN pin (74/1→76/0) (sec)](2026-06-20-tseal-00050-kyberslash-insuite-java-ctlen-pin.md)
 - 2026-06-13 — [TSEAL-00034 — Hybrid suite 0x06 CPython extension port (wraps C; in-suite KAT byte-identity) (sec)](2026-06-13-tseal-00034-hybrid-cpython-port.md)
 - 2026-06-13 — [TSEAL-00032 — Hybrid suite 0x06 TypeScript port (@noble/curves 2.0.1; in-suite KAT byte-identity) (sec)](2026-06-13-tseal-00032-hybrid-typescript-port.md)
 - 2026-06-13 — [TSEAL-00031 — Hybrid suite 0x06 C++ wrapper port (wraps C; in-suite KAT byte-identity) (sec)](2026-06-13-tseal-00031-hybrid-cpp-port.md)
