@@ -107,8 +107,7 @@ jobs:
           import json, sys
           r = json.load(open('timing-histogram-report.json'))
           assert r.get('schema_version') == 1
-          print(f\"timing-histogram CI gate: verdict={r['verdict']} gate_passed={r['gate_passed']} "
-                f\"primary_metric_ns={r['primary_metric_ns']:.1f}\")
+          print('timing-histogram CI gate: verdict=%s gate_passed=%s primary_metric_ns=%.1f' % (r['verdict'], r['gate_passed'], r['primary_metric_ns']))
           sys.exit(0 if r['gate_passed'] else r['exit_code'])
           "
 

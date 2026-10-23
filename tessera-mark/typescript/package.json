@@ -1,0 +1,31 @@
+{
+  "name": "tessera-mark",
+  "version": "0.1.0",
+  "description": "TesseraMark: keyed compact forensic mark (variant 0x05) - TypeScript reference implementation",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/barum/tessera.git",
+    "directory": "tessera-mark/typescript"
+  },
+  "private": false,
+  "type": "module",
+  "main": "./dist/tessera_mark.js",
+  "types": "./dist/tessera_mark.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/tessera_mark.d.ts",
+      "default": "./dist/tessera_mark.js"
+    }
+  },
+  "files": ["dist", "tessera_mark.ts", "keccak.ts", "ff1.ts"],
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node dist/test_tessera_mark.js",
+    "prepare": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -128,3 +128,7 @@ tools/conformance/go/tessera_seal_runner/tesseraseal_runner
 # generated pkg-config files (templates .pc.in are tracked)
 */c/*.pc
 common/c/*.pc
+
+# TesseraMark TypeScript build output
+tessera-mark/typescript/dist/
+tessera-mark/typescript/node_modules/

@@ -64,7 +64,7 @@ security-report-worthy, not just classic memory-safety or crypto breaks:
 - **KAT / conformance divergence** — any case where a language port produces or accepts bytes
   that diverge from the committed conformance vectors or the Python reference.
 - **Malleability** — accepting non-canonical encodings (e.g. Crockford high-bit overflow,
-  reserved variant bytes `0x00`/`0x05`–`0xFE`/`0xFF`, unknown suite bytes).
+  reserved or foreign variant bytes `0x00`/`0x05` (TesseraMark)/`0x06`–`0xFE`/`0xFF`, unknown suite bytes).
 - **Commitment bypass** — any way to strip, forge, or bypass the 32-byte UtC commitment tag.
 - **HLC monotonicity break** — accepting peer HLC values beyond the 60 s drift bound, or
   clamping instead of erroring.

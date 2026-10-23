@@ -89,6 +89,19 @@ content identifier with hash-derived collision resistance.
 - CLI (Python): `tessera-hash` after `pip install -e tessera-hash/python`, or
   `python3 tessera-hash/python/cli.py` from a checkout (hash / verify / decode)
 
+### [tessera-mark/](tessera-mark/) — Keyed Compact Forensic Mark
+
+A short (24–64 bit) **keyed code** for low-bandwidth forensic channels (A/B segment watermarks,
+audio, image, text marks). It is a keyed permutation (12-round KMAC256 Feistel by default, FF1
+per SP 800-38G as an optional FIPS mode) of a per-asset allocation index, so codes are unique per
+asset by construction, non-sequential, authenticated by a keyed check tag, and invert to the index
+without a search. Profiles TM24/TM32 (default)/TM40/TM48/TM64. Owns variant byte `0x05`, which
+appears only in the 16-byte storage record, never in the embedded word.
+
+- Spec: [tessera-mark/SPEC.md](tessera-mark/SPEC.md) · Rationale: [tessera-mark/RATIONALE.md](tessera-mark/RATIONALE.md)
+- Implementations: Rust (`tessera-mark/rust`), TypeScript (`tessera-mark/typescript`), Python reference (`tessera-mark/python`)
+- Vectors: [tessera-mark/conformance/vectors/](tessera-mark/conformance/vectors/)
+
 ### [tessera-seal/](tessera-seal/) — Post-Quantum Encryption Envelope
 
 A 16-byte-header variable-body envelope that wraps a plaintext such that **only the

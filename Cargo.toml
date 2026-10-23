@@ -15,6 +15,7 @@ members = [
     "tessera-id/rust",
     "tessera-seal/rust",
     "tessera-hash/rust",
+    "tessera-mark/rust",
     "tools/conformance/rust",
 ]
 

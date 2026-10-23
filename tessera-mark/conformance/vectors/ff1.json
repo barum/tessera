@@ -1,0 +1,177 @@
+[
+  {
+    "name": "ff1_tm24_index_0",
+    "op": "allocate_ff1",
+    "profile": "TM24",
+    "index": 0,
+    "code": 14198881
+  },
+  {
+    "name": "ff1_tm24_index_1",
+    "op": "allocate_ff1",
+    "profile": "TM24",
+    "index": 1,
+    "code": 14722966
+  },
+  {
+    "name": "ff1_tm24_index_2",
+    "op": "allocate_ff1",
+    "profile": "TM24",
+    "index": 2,
+    "code": 13381040
+  },
+  {
+    "name": "ff1_tm24_index_1000",
+    "op": "allocate_ff1",
+    "profile": "TM24",
+    "index": 1000,
+    "code": 5895169
+  },
+  {
+    "name": "ff1_tm24_index_16777215",
+    "op": "allocate_ff1",
+    "profile": "TM24",
+    "index": 16777215,
+    "code": 9252527
+  },
+  {
+    "name": "ff1_tm32_index_0",
+    "op": "allocate_ff1",
+    "profile": "TM32",
+    "index": 0,
+    "code": 224300693
+  },
+  {
+    "name": "ff1_tm32_index_1",
+    "op": "allocate_ff1",
+    "profile": "TM32",
+    "index": 1,
+    "code": 1671458500
+  },
+  {
+    "name": "ff1_tm32_index_2",
+    "op": "allocate_ff1",
+    "profile": "TM32",
+    "index": 2,
+    "code": 886367729
+  },
+  {
+    "name": "ff1_tm32_index_1000",
+    "op": "allocate_ff1",
+    "profile": "TM32",
+    "index": 1000,
+    "code": 1349506172
+  },
+  {
+    "name": "ff1_tm32_index_4294967295",
+    "op": "allocate_ff1",
+    "profile": "TM32",
+    "index": 4294967295,
+    "code": 1096602706
+  },
+  {
+    "name": "ff1_tm40_index_0",
+    "op": "allocate_ff1",
+    "profile": "TM40",
+    "index": 0,
+    "code": 1032982520030
+  },
+  {
+    "name": "ff1_tm40_index_1",
+    "op": "allocate_ff1",
+    "profile": "TM40",
+    "index": 1,
+    "code": 21427720550
+  },
+  {
+    "name": "ff1_tm40_index_2",
+    "op": "allocate_ff1",
+    "profile": "TM40",
+    "index": 2,
+    "code": 375708191603
+  },
+  {
+    "name": "ff1_tm40_index_1000",
+    "op": "allocate_ff1",
+    "profile": "TM40",
+    "index": 1000,
+    "code": 268603177906
+  },
+  {
+    "name": "ff1_tm40_index_1099511627775",
+    "op": "allocate_ff1",
+    "profile": "TM40",
+    "index": 1099511627775,
+    "code": 889886029977
+  },
+  {
+    "name": "ff1_tm48_index_0",
+    "op": "allocate_ff1",
+    "profile": "TM48",
+    "index": 0,
+    "code": 139412461205828
+  },
+  {
+    "name": "ff1_tm48_index_1",
+    "op": "allocate_ff1",
+    "profile": "TM48",
+    "index": 1,
+    "code": 65180916732057
+  },
+  {
+    "name": "ff1_tm48_index_2",
+    "op": "allocate_ff1",
+    "profile": "TM48",
+    "index": 2,
+    "code": 171460222685030
+  },
+  {
+    "name": "ff1_tm48_index_1000",
+    "op": "allocate_ff1",
+    "profile": "TM48",
+    "index": 1000,
+    "code": 163958689549316
+  },
+  {
+    "name": "ff1_tm48_index_281474976710655",
+    "op": "allocate_ff1",
+    "profile": "TM48",
+    "index": 281474976710655,
+    "code": 125396717941333
+  },
+  {
+    "name": "ff1_tm64_index_0",
+    "op": "allocate_ff1",
+    "profile": "TM64",
+    "index": 0,
+    "code": 2075856561955742600
+  },
+  {
+    "name": "ff1_tm64_index_1",
+    "op": "allocate_ff1",
+    "profile": "TM64",
+    "index": 1,
+    "code": 16950084014355764531
+  },
+  {
+    "name": "ff1_tm64_index_2",
+    "op": "allocate_ff1",
+    "profile": "TM64",
+    "index": 2,
+    "code": 11142248510187413475
+  },
+  {
+    "name": "ff1_tm64_index_1000",
+    "op": "allocate_ff1",
+    "profile": "TM64",
+    "index": 1000,
+    "code": 6905818679063661787
+  },
+  {
+    "name": "ff1_tm64_index_18446744073709551615",
+    "op": "allocate_ff1",
+    "profile": "TM64",
+    "index": 18446744073709551615,
+    "code": 2687689811750251041
+  }
+]
