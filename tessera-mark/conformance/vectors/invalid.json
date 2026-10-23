@@ -1,0 +1,74 @@
+[
+  {
+    "name": "variant_0x00",
+    "op": "decode_record",
+    "input_hex": "666bdd0dd47c00020000000000000007",
+    "error": "UNKNOWN_VARIANT"
+  },
+  {
+    "name": "variant_0x01",
+    "op": "decode_record",
+    "input_hex": "666bdd0dd47c01020000000000000007",
+    "error": "UNKNOWN_VARIANT"
+  },
+  {
+    "name": "variant_0x02",
+    "op": "decode_record",
+    "input_hex": "666bdd0dd47c02020000000000000007",
+    "error": "UNKNOWN_VARIANT"
+  },
+  {
+    "name": "variant_0x03",
+    "op": "decode_record",
+    "input_hex": "666bdd0dd47c03020000000000000007",
+    "error": "UNKNOWN_VARIANT"
+  },
+  {
+    "name": "variant_0x04",
+    "op": "decode_record",
+    "input_hex": "666bdd0dd47c04020000000000000007",
+    "error": "UNKNOWN_VARIANT"
+  },
+  {
+    "name": "variant_0x06",
+    "op": "decode_record",
+    "input_hex": "666bdd0dd47c06020000000000000007",
+    "error": "UNKNOWN_VARIANT"
+  },
+  {
+    "name": "variant_0xff",
+    "op": "decode_record",
+    "input_hex": "666bdd0dd47cff020000000000000007",
+    "error": "UNKNOWN_VARIANT"
+  },
+  {
+    "name": "profile_0x00",
+    "op": "decode_record",
+    "input_hex": "666bdd0dd47c05000000000000000007",
+    "error": "UNKNOWN_PROFILE"
+  },
+  {
+    "name": "profile_0x06",
+    "op": "decode_record",
+    "input_hex": "666bdd0dd47c05060000000000000007",
+    "error": "UNKNOWN_PROFILE"
+  },
+  {
+    "name": "profile_0xff",
+    "op": "decode_record",
+    "input_hex": "666bdd0dd47c05ff0000000000000007",
+    "error": "UNKNOWN_PROFILE"
+  },
+  {
+    "name": "noncanonical_high_bits",
+    "op": "decode_record",
+    "input_hex": "666bdd0dd47c05020000000100000007",
+    "error": "NONCANONICAL"
+  },
+  {
+    "name": "short_record",
+    "op": "decode_record",
+    "input_hex": "666bdd0dd47c050200000000000000",
+    "error": "INVALID_LEN"
+  }
+]

@@ -90,7 +90,8 @@ These are cross-cutting and apply to every project in this monorepo:
    | `0x02` | TesseraID | HLC generator |
    | `0x03` | TesseraHash | SHAKE-256 / 64 B digest |
    | `0x04` | **TesseraSeal** | **Encryption envelope v1** |
-   | `0x05`–`0xFE` | — | Reserved-future (current decoders MUST reject) |
+   | `0x05` | TesseraMark | Keyed forensic mark, 16-byte storage record only (never embedded) |
+   | `0x06`–`0xFE` | — | Reserved-future (current decoders MUST reject) |
    | `0xFF` | — | **Permanently reserved**, never assign |
 
    Every project's decoder rejects every byte it does not own. New variant byte = ABI break = whitepaper update required.

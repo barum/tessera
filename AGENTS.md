@@ -36,7 +36,8 @@ and reference implementations as the source of truth:
   | `0x02` | TesseraID | HLC generator |
   | `0x03` | TesseraHash | SHAKE-256 content hash |
   | `0x04` | TesseraSeal | Encryption envelope v1 |
-  | `0x05`–`0xFE` | — | Reserved-future (current decoders MUST reject) |
+  | `0x05` | TesseraMark | Keyed forensic mark, 16-byte storage record only (never embedded) |
+  | `0x06`–`0xFE` | — | Reserved-future (current decoders MUST reject) |
   | `0xFF` | — | **Permanently reserved**, never assign |
 
   Hybrid suite byte `0x06` is a **TesseraSeal suite byte** (offset 7 in the TesseraSeal header), NOT a

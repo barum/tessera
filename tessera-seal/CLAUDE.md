@@ -21,7 +21,7 @@ When sources disagree, whitepaper wins, then Python, then C.
 These are checked by tests in every language. Breaking them in one implementation is a bug in that implementation, not a design decision:
 
 - **16-byte fixed header**: `TS(6) || VAR(1) || SUITE(1) || CTR(2) || KEM_CT_LEN(2) || AD_LEN(4)`, big-endian.
-- **Variant byte**: `0x04` (TesseraSeal v1). Decoders MUST reject every other byte. `0x00` and `0xFF` are **permanently reserved** monorepo-wide. `0x01/0x02` belong to TesseraID; `0x03` belongs to TesseraHash; `0x05`–`0xFE` are reserved-future.
+- **Variant byte**: `0x04` (TesseraSeal v1). Decoders MUST reject every other byte. `0x00` and `0xFF` are **permanently reserved** monorepo-wide. `0x01/0x02` belong to TesseraID; `0x03` belongs to TesseraHash; `0x05` belongs to TesseraMark; `0x06`–`0xFE` are reserved-future.
 - **Suite byte** at offset 7. v1.x allocates:
   - `0x01` — ML-KEM-1024 + AES-256-GCM + UtC commit (32 B) + HKDF-SHA3-256. **Mandatory.** Pure post-quantum.
   - `0x02` — ML-KEM-1024 + ChaCha20-Poly1305 + UtC commit (32 B) + HKDF-SHA3-256. Optional (software-only callers). Pure post-quantum.

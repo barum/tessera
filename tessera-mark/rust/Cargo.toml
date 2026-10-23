@@ -1,0 +1,23 @@
+[package]
+name = "tessera-mark"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "TesseraMark: keyed compact forensic mark (variant 0x05) - Rust reference implementation"
+repository = "https://github.com/barum/tessera"
+readme = "../README.md"
+keywords = ["watermark", "forensic", "kmac", "fingerprint", "post-quantum"]
+categories = ["cryptography", "encoding"]
+
+[dependencies]
+sha3 = "0.10"
+aes = "0.8"
+zeroize = "1"
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+hex = "0.4"
+
+[lib]
+name = "tessera_mark"
+path = "src/lib.rs"
